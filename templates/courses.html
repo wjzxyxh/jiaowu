@@ -1,0 +1,2047 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>排课管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>排课管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-start;">
+                <button class="btn btn-primary" onclick="showAddCourseModal()">新增排课</button>
+                <button class="btn btn-secondary" onclick="goToPreviousWeek()" title="上一周">← 上一周</button>
+                <input type="month" id="course-month" value="" onchange="updateWeekOptions()">
+                <select id="course-week-select" onchange="handleWeekChange();">
+                    <option value="1">第1周</option>
+                    <option value="2">第2周</option>
+                    <option value="3">第3周</option>
+                    <option value="4">第4周</option>
+                    <option value="5">第5周</option>
+                </select>
+                <button class="btn btn-secondary" onclick="goToNextWeek()" title="下一周">下一周 →</button>
+                <button class="btn btn-secondary" id="view-mode-btn" onclick="toggleViewMode()">切换到星期模式</button>
+                <span id="week-info-label" class="week-info-label"></span>
+                <button class="btn btn-secondary" id="copy-to-specified-week-btn" onclick="showCopyToSpecifiedWeekModal()">复制到指定周</button>
+                <button class="btn btn-secondary" id="copy-to-next-week-btn" onclick="copyToNextWeek()" style="margin-left: 0; margin-right: 0;">复制到下一周</button>
+            </div>
+            <div class="filter-bar" style="margin-bottom: 15px; padding: 10px; background: #f5f5f5; border-radius: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <label style="font-weight: bold;">筛选：</label>
+                <select id="filter-teacher" onchange="applyFilters()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">全部老师</option>
+                </select>
+                <select id="filter-classroom" onchange="applyFilters()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">全部教室</option>
+                </select>
+                <select id="filter-subject" onchange="applyFilters()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">全部科目</option>
+                </select>
+                <select id="filter-grade" onchange="applyFilters()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">全部年级</option>
+                </select>
+                <button class="btn btn-secondary" onclick="clearFilters()" style="padding: 6px 12px;">清除筛选</button>
+                <button class="btn btn-success" id="batch-confirm-btn" onclick="batchConfirmCourses()" style="background: #28a745; color: white; padding: 6px 12px;">批量确认</button>
+                <button class="btn btn-secondary" id="batch-cancel-btn" onclick="batchCancelConfirmCourses()" style="background: #6c757d; color: white; padding: 6px 12px;">批量取消</button>
+                <button class="btn btn-danger" id="batch-delete-btn" onclick="batchDeleteCourses()" style="padding: 6px 12px;">批量删除</button>
+            </div>
+            <div id="courses-list-view">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll()"></th>
+                            <th>序号</th>
+                            <th>学生姓名</th>
+                            <th>年级</th>
+                            <th>科目</th>
+                            <th>课程名称</th>
+                            <th>老师</th>
+                            <th>日期</th>
+                            <th>星期</th>
+                            <th>时段</th>
+                            <th>教室</th>
+                            <th>状态</th>
+                            <th>确认</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="courses-table-body"></tbody>
+                </table>
+                <!-- 分页控件 -->
+                <div id="courses-pagination" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                    <button class="btn btn-secondary" id="courses-prev-btn" onclick="coursesPreviousPage()" disabled>上一页</button>
+                    <span id="courses-page-info" style="padding: 0 15px;">第 1 页，共 1 页</span>
+                    <button class="btn btn-secondary" id="courses-next-btn" onclick="coursesNextPage()" disabled>下一页</button>
+                </div>
+            </div>
+            <div id="courses-week-view" style="display: none;">
+                <table class="data-table" id="week-view-table">
+                    <thead id="week-view-thead"></thead>
+                    <tbody id="week-view-tbody"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 视图模式：'list' 或 'week'
+        let currentViewMode = 'list';
+        
+        // 切换视图模式
+        function toggleViewMode() {
+            const listView = document.getElementById('courses-list-view');
+            const weekView = document.getElementById('courses-week-view');
+            const modeBtn = document.getElementById('view-mode-btn');
+            
+            if (currentViewMode === 'list') {
+                // 切换到星期模式
+                currentViewMode = 'week';
+                window.currentViewMode = 'week'; // 设置为全局变量
+                listView.style.display = 'none';
+                weekView.style.display = 'block';
+                modeBtn.textContent = '切换到列表模式';
+                loadCourses();
+            } else {
+                // 切换到列表模式
+                currentViewMode = 'list';
+                window.currentViewMode = 'list'; // 设置为全局变量
+                listView.style.display = 'block';
+                weekView.style.display = 'none';
+                modeBtn.textContent = '切换到星期模式';
+                loadCourses();
+            }
+        }
+        
+        // 初始化视图模式
+        window.currentViewMode = 'list';
+        
+        // 更新周信息显示
+        function updateWeekInfo() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            const weekInfoLabel = document.getElementById('week-info-label');
+            
+            if (!monthInput || !weekSelect || !weekInfoLabel) return;
+            
+            const monthValue = monthInput.value;
+            const weekValue = weekSelect.value;
+            
+            if (!monthValue || !weekValue) {
+                weekInfoLabel.textContent = '';
+                return;
+            }
+            
+            const [year, month] = monthValue.split('-').map(Number);
+            const weekNum = parseInt(weekValue);
+            const firstDay = new Date(year, month - 1, 1);
+            const firstDayWeekday = firstDay.getDay();
+            const lastDay = new Date(year, month, 0);
+            const monthEnd = lastDay.getDate();
+            
+            let startDate, endDate;
+            
+            if (weekNum === 1) {
+                // 第1周：从1号开始，到第一个周日结束
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第1周只有1号
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, 1);
+                } else {
+                    // 找到第一个周日
+                    // JavaScript getDay(): 0=周日, 1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六
+                    // 计算到周日(0)需要多少天：如果firstDayWeekday是n，需要(7-n)天到达下一个周日
+                    // 但需要处理firstDayWeekday=0的情况，所以用(7 - firstDayWeekday) % 7
+                    // 当firstDayWeekday=0时，(7-0)%7=0，但实际应该是7（下一周），所以需要特殊处理
+                    // 当firstDayWeekday>0时，直接计算(7 - firstDayWeekday)
+                    const daysToSunday = firstDayWeekday === 0 ? 0 : (7 - firstDayWeekday);
+                    const firstSundayDate = Math.min(1 + daysToSunday, monthEnd);
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, firstSundayDate);
+                }
+            } else {
+                // 第2周及以后：从第一个周一开始
+                let daysToMonday;
+                if (firstDayWeekday === 0) {
+                    daysToMonday = 1; // 1号是周日，第一个周一是2号
+                } else {
+                    daysToMonday = 7 - firstDayWeekday;
+                }
+                
+                const firstMondayDate = 1 + daysToMonday;
+                const startDateNum = firstMondayDate + (weekNum - 2) * 7;
+                
+                // 如果开始日期超出月份，说明该周不存在，清空显示
+                if (startDateNum > monthEnd) {
+                    weekInfoLabel.textContent = '';
+                    return;
+                }
+                
+                startDate = new Date(year, month - 1, startDateNum);
+                // 一周的结束是周日，所以结束日期是开始日期（周一）+6天
+                const endDateNum = Math.min(startDateNum + 6, monthEnd);
+                endDate = new Date(year, month - 1, endDateNum);
+            }
+            
+            // 格式化日期为 MM-DD
+            const formatDate = (date) => {
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${m}-${d}`;
+            };
+            
+            const startStr = formatDate(startDate);
+            const endStr = formatDate(endDate);
+            weekInfoLabel.textContent = `${year}年${String(month).padStart(2, '0')}月 第${weekNum}周 ${startStr} 至 ${endStr}`;
+        }
+        
+        // 处理周数改变事件
+        function handleWeekChange() {
+            const weekSelect = document.getElementById('course-week-select');
+            const monthInput = document.getElementById('course-month');
+            
+            console.log('handleWeekChange 被调用');
+            console.log('月份:', monthInput ? monthInput.value : 'null');
+            console.log('周数:', weekSelect ? weekSelect.value : 'null');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                console.log('月份或周数未选择，退出');
+                return;
+            }
+            
+            console.log('更新周信息并加载数据，月份:', monthInput.value, '周数:', weekSelect.value);
+            updateWeekInfo();
+            // 直接调用loadCourses，确保数据加载
+            loadCourses();
+        }
+        
+        // 保存当前选择状态到URL参数
+        function saveCurrentSelection() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (monthInput && weekSelect && monthInput.value && weekSelect.value) {
+                const params = new URLSearchParams();
+                params.set('month', monthInput.value);
+                params.set('week', weekSelect.value);
+                
+                // 更新URL但不刷新页面
+                const newUrl = window.location.pathname + '?' + params.toString();
+                window.history.replaceState({}, '', newUrl);
+            }
+        }
+        
+        // 从URL参数恢复选择状态
+        function restoreSelectionFromURL() {
+            const params = new URLSearchParams(window.location.search);
+            const month = params.get('month');
+            const week = params.get('week');
+            
+            if (month && week) {
+                const monthInput = document.getElementById('course-month');
+                const weekSelect = document.getElementById('course-week-select');
+                
+                if (monthInput && weekSelect) {
+                    monthInput.value = month;
+                    updateWeekOptions();
+                    weekSelect.value = week;
+                    console.log('从URL恢复选择状态:', month, week);
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // 刷新页面并保持当前选择
+        function refreshPageWithCurrentSelection() {
+            saveCurrentSelection();
+            window.location.reload();
+        }
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('页面初始化开始');
+            
+            // 检查URL参数中是否有student_id（用于从学生删除页面跳转过来）
+            const urlParams = new URLSearchParams(window.location.search);
+            const studentIdFromURL = urlParams.get('student_id');
+            let studentNoticeElement = null;
+            if (studentIdFromURL) {
+                // 创建提示信息元素（先不显示，等数据加载完成后再决定显示内容）
+                const toolbar = document.querySelector('.toolbar');
+                if (toolbar) {
+                    studentNoticeElement = document.createElement('div');
+                    studentNoticeElement.id = 'student-filter-notice';
+                    studentNoticeElement.style.cssText = 'background: #fff3cd; border: 1px solid #ffc107; padding: 10px; margin: 10px 0; border-radius: 4px; color: #856404;';
+                    studentNoticeElement.textContent = `正在筛选学生ID为 ${studentIdFromURL} 的排课记录...`;
+                    toolbar.insertAdjacentElement('afterend', studentNoticeElement);
+                }
+            }
+            
+            // 尝试从URL参数恢复选择状态
+            const restored = restoreSelectionFromURL();
+            
+            if (!restored) {
+                // 如果没有URL参数，设置当前年月
+                const today = new Date();
+                const currentMonth = today.toISOString().slice(0, 7);
+                const monthInput = document.getElementById('course-month');
+                monthInput.value = currentMonth;
+                console.log('设置月份:', currentMonth);
+                
+                // 先更新周选择器选项（这会计算该月有多少周）
+                updateWeekOptions();
+                
+                // 计算当前日期在该月是第几周
+                const weekNum = getWeekInMonth(today);
+                const weekSelect = document.getElementById('course-week-select');
+                weekSelect.value = weekNum;
+                console.log('设置周数:', weekNum);
+            }
+            
+            updateWeekInfo();
+            initFilters();
+            loadCourses();
+            
+            // 保存当前选择状态到URL（在loadCourses之后，确保数据已加载）
+            setTimeout(() => {
+                saveCurrentSelection();
+            }, 100);
+            
+            console.log('页面初始化完成');
+            
+            // 监听月份和周数的变化，自动保存到URL
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (monthInput) {
+                monthInput.addEventListener('change', function() {
+                    setTimeout(() => saveCurrentSelection(), 100);
+                });
+            }
+            
+            if (weekSelect) {
+                weekSelect.addEventListener('change', function() {
+                    setTimeout(() => saveCurrentSelection(), 100);
+                });
+            }
+        });
+        
+        // 初始化筛选选项
+        function initFilters() {
+            // 获取所有课程数据来提取筛选选项
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            let url = '/api/courses';
+            if (monthInput && monthInput.value && weekSelect && weekSelect.value) {
+                const month = monthInput.value;
+                const week = weekSelect.value;
+                url += `?month=${month}&week=${week}`;
+            }
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(data => {
+                    // 提取唯一的选项
+                    const teachers = new Set();
+                    const classrooms = new Set();
+                    const subjects = new Set();
+                    const grades = new Set();
+                    
+                    data.forEach(c => {
+                        if (c.teacher_name) teachers.add(c.teacher_name);
+                        if (c.classroom) classrooms.add(c.classroom);
+                        if (c.subject) subjects.add(c.subject);
+                        if (c.grade) grades.add(c.grade);
+                    });
+                    
+                    // 填充老师筛选
+                    const teacherSelect = document.getElementById('filter-teacher');
+                    const currentTeacher = teacherSelect.value;
+                    teacherSelect.innerHTML = '<option value="">全部老师</option>';
+                    Array.from(teachers).sort().forEach(teacher => {
+                        const option = document.createElement('option');
+                        option.value = teacher;
+                        option.textContent = teacher;
+                        teacherSelect.appendChild(option);
+                    });
+                    if (currentTeacher) teacherSelect.value = currentTeacher;
+                    
+                    // 填充教室筛选
+                    const classroomSelect = document.getElementById('filter-classroom');
+                    const currentClassroom = classroomSelect.value;
+                    classroomSelect.innerHTML = '<option value="">全部教室</option>';
+                    Array.from(classrooms).sort().forEach(classroom => {
+                        const option = document.createElement('option');
+                        option.value = classroom;
+                        option.textContent = classroom;
+                        classroomSelect.appendChild(option);
+                    });
+                    if (currentClassroom) classroomSelect.value = currentClassroom;
+                    
+                    // 填充科目筛选
+                    const subjectSelect = document.getElementById('filter-subject');
+                    const currentSubject = subjectSelect.value;
+                    subjectSelect.innerHTML = '<option value="">全部科目</option>';
+                    Array.from(subjects).sort().forEach(subject => {
+                        const option = document.createElement('option');
+                        option.value = subject;
+                        option.textContent = subject;
+                        subjectSelect.appendChild(option);
+                    });
+                    if (currentSubject) subjectSelect.value = currentSubject;
+                    
+                    // 填充年级筛选
+                    const gradeSelect = document.getElementById('filter-grade');
+                    const currentGrade = gradeSelect.value;
+                    gradeSelect.innerHTML = '<option value="">全部年级</option>';
+                    Array.from(grades).sort().forEach(grade => {
+                        const option = document.createElement('option');
+                        option.value = grade;
+                        option.textContent = grade;
+                        gradeSelect.appendChild(option);
+                    });
+                    if (currentGrade) gradeSelect.value = currentGrade;
+                });
+        }
+        
+        // 应用筛选条件
+        function applyFilters() {
+            loadCourses();
+        }
+        
+        // 清除筛选条件
+        function clearFilters() {
+            document.getElementById('filter-teacher').value = '';
+            document.getElementById('filter-classroom').value = '';
+            document.getElementById('filter-subject').value = '';
+            document.getElementById('filter-grade').value = '';
+            loadCourses();
+        }
+        
+        // 获取当前周的日期范围
+        function getCurrentWeekDateRange() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                return null;
+            }
+            
+            const [year, month] = monthInput.value.split('-').map(Number);
+            const weekNum = parseInt(weekSelect.value);
+            const firstDay = new Date(year, month - 1, 1);
+            const firstDayWeekday = firstDay.getDay();
+            const lastDay = new Date(year, month, 0);
+            const monthEnd = lastDay.getDate();
+            
+            let startDate, endDate;
+            
+            if (weekNum === 1) {
+                if (firstDayWeekday === 0) {
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, 1);
+                } else {
+                    // JavaScript getDay(): 0=周日, 1=周一, ..., 6=周六
+                    // 计算到周日(0)需要多少天：(0 - firstDayWeekday + 7) % 7
+                    const daysToSunday = (0 - firstDayWeekday + 7) % 7;
+                    const firstSundayDate = Math.min(1 + daysToSunday, monthEnd);
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, firstSundayDate);
+                }
+            } else {
+                // 计算第一个周一
+                // JavaScript的getDay(): 0=周日, 1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六
+                let daysToMonday;
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第一个周一是2号
+                    daysToMonday = 1;
+                } else if (firstDayWeekday === 1) {
+                    // 1号是周一，第一个周一就是1号
+                    daysToMonday = 0;
+                } else {
+                    // 1号是周二到周六，计算到下一个周一需要多少天
+                    // 周二(2) -> 周一需要6天, 周三(3) -> 周一需要5天, ..., 周六(6) -> 周一需要2天
+                    daysToMonday = 8 - firstDayWeekday;
+                }
+                
+                const firstMondayDate = 1 + daysToMonday;
+                const startDateNum = firstMondayDate + (weekNum - 2) * 7;
+                
+                if (startDateNum > monthEnd) {
+                    return null;
+                }
+                
+                startDate = new Date(year, month - 1, startDateNum);
+                // 一周的结束是周日，所以结束日期是开始日期（周一）+6天
+                const calculatedEndDateNum = startDateNum + 6;
+                const endDateNum = Math.min(calculatedEndDateNum, monthEnd);
+                endDate = new Date(year, month - 1, endDateNum);
+            }
+            
+            return { startDate, endDate, year, month };
+        }
+        
+        // 获取下一周的日期范围
+        function getNextWeekDateRange() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                return null;
+            }
+            
+            const [year, month] = monthInput.value.split('-').map(Number);
+            const weekNum = parseInt(weekSelect.value);
+            const firstDay = new Date(year, month - 1, 1);
+            const firstDayWeekday = firstDay.getDay();
+            const lastDay = new Date(year, month, 0);
+            const monthEnd = lastDay.getDate();
+            
+            const nextWeekNum = weekNum + 1;
+            let startDate, endDate;
+            
+            // 检查下一周是否在当前月内
+            if (weekNum === 1) {
+                // 当前是第1周，下一周是第2周
+                // 计算第一个周一
+                let daysToMonday;
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第一个周一是2号
+                    daysToMonday = 1;
+                } else if (firstDayWeekday === 1) {
+                    // 1号是周一，第一个周一就是1号
+                    daysToMonday = 0;
+                } else {
+                    // 1号是周二到周六，计算到下一个周一需要多少天
+                    daysToMonday = 8 - firstDayWeekday;
+                }
+                
+                const firstMondayDate = 1 + daysToMonday;
+                const startDateNum = firstMondayDate;
+                
+                if (startDateNum > monthEnd) {
+                    return null;
+                }
+                
+                startDate = new Date(year, month - 1, startDateNum);
+                // 一周的结束是周日，所以结束日期是开始日期（周一）+6天
+                const endDateNum = Math.min(startDateNum + 6, monthEnd);
+                endDate = new Date(year, month - 1, endDateNum);
+            } else {
+                // 当前是第2周及以后，下一周是weekNum + 1
+                // 计算第一个周一
+                let daysToMonday;
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第一个周一是2号
+                    daysToMonday = 1;
+                } else if (firstDayWeekday === 1) {
+                    // 1号是周一，第一个周一就是1号
+                    daysToMonday = 0;
+                } else {
+                    // 1号是周二到周六，计算到下一个周一需要多少天
+                    daysToMonday = 8 - firstDayWeekday;
+                }
+                
+                const firstMondayDate = 1 + daysToMonday;
+                const startDateNum = firstMondayDate + (nextWeekNum - 2) * 7;
+                
+                // 如果下一周超出当前月，检查是否在下一个月
+                if (startDateNum > monthEnd) {
+                    // 下一周在下一个月
+                    const nextMonth = month === 12 ? 1 : month + 1;
+                    const nextYear = month === 12 ? year + 1 : year;
+                    const nextMonthFirstDay = new Date(nextYear, nextMonth - 1, 1);
+                    const nextMonthFirstDayWeekday = nextMonthFirstDay.getDay();
+                    const nextMonthLastDay = new Date(nextYear, nextMonth, 0);
+                    const nextMonthEnd = nextMonthLastDay.getDate();
+                    
+                    // 计算下一月第1周的日期范围
+                    if (nextMonthFirstDayWeekday === 0) {
+                        startDate = nextMonthFirstDay;
+                        endDate = nextMonthFirstDay;
+                    } else {
+                        // 计算到周日需要多少天：7 - nextMonthFirstDayWeekday
+                        const daysToSunday = 7 - nextMonthFirstDayWeekday;
+                        const firstSundayDate = Math.min(1 + daysToSunday, nextMonthEnd);
+                        startDate = nextMonthFirstDay;
+                        endDate = new Date(nextYear, nextMonth - 1, firstSundayDate);
+                    }
+                    
+                    return { startDate, endDate, year: nextYear, month: nextMonth };
+                }
+                
+                startDate = new Date(year, month - 1, startDateNum);
+                // 一周的结束是周日，所以结束日期是开始日期（周一）+6天
+                const endDateNum = Math.min(startDateNum + 6, monthEnd);
+                endDate = new Date(year, month - 1, endDateNum);
+            }
+            
+            return { startDate, endDate, year, month };
+        }
+        
+        // 获取下下周的日期范围（基于下一周的日期范围）
+        function getNextNextWeekDateRange(nextWeekRange) {
+            if (!nextWeekRange) return null;
+            
+            const nextYear = nextWeekRange.year;
+            const nextMonth = nextWeekRange.month;
+            const nextStart = nextWeekRange.startDate;
+            const nextEnd = nextWeekRange.endDate;
+            
+            // 计算下下周：从下一周的结束日期+1天开始，往后7天
+            const nextNextStart = new Date(nextEnd);
+            nextNextStart.setDate(nextNextStart.getDate() + 1);
+            
+            const nextNextEnd = new Date(nextNextStart);
+            nextNextEnd.setDate(nextNextEnd.getDate() + 6);
+            
+            // 检查是否跨月
+            const nextNextYear = nextNextStart.getFullYear();
+            const nextNextMonth = nextNextStart.getMonth() + 1;
+            
+            return {
+                startDate: nextNextStart,
+                endDate: nextNextEnd,
+                year: nextNextYear,
+                month: nextNextMonth
+            };
+        }
+        
+        // 切换到上一周
+        function goToPreviousWeek() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                alert('请先选择月份和周');
+                return;
+            }
+            
+            const [year, month] = monthInput.value.split('-').map(Number);
+            const weekNum = parseInt(weekSelect.value);
+            
+            if (weekNum > 1) {
+                // 上一周在当前月内
+                weekSelect.value = weekNum - 1;
+                updateWeekInfo();
+                loadCourses();
+            } else {
+                // 上一周在上一个月
+                let prevMonth, prevYear;
+                if (month === 1) {
+                    prevMonth = 12;
+                    prevYear = year - 1;
+                } else {
+                    prevMonth = month - 1;
+                    prevYear = year;
+                }
+                
+                // 切换到上一月
+                monthInput.value = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
+                
+                // 更新周选择器选项
+                updateWeekOptions();
+                
+                // 获取上一月的最大周数
+                const prevMonthFirstDay = new Date(prevYear, prevMonth - 1, 1);
+                const prevMonthFirstDayWeekday = prevMonthFirstDay.getDay();
+                const prevMonthLastDay = new Date(prevYear, prevMonth, 0);
+                const prevMonthEnd = prevMonthLastDay.getDate();
+                
+                let maxWeeks = 1;
+                
+                if (prevMonthFirstDayWeekday === 0) {
+                    // 1号是周日，第1周只有1号
+                    const firstMonday = new Date(prevYear, prevMonth - 1, 2);
+                    let currentMonday = new Date(firstMonday);
+                    let weekNum = 2;
+                    
+                    while (currentMonday.getDate() <= prevMonthEnd && weekNum <= 5) {
+                        maxWeeks = weekNum;
+                        currentMonday = new Date(currentMonday);
+                        currentMonday.setDate(currentMonday.getDate() + 7);
+                        weekNum++;
+                    }
+                } else {
+                    // 第1周：1号到第一个周日
+                    maxWeeks = 1;
+                    
+                    const daysToMonday = 7 - prevMonthFirstDayWeekday;
+                    const firstMonday = new Date(prevYear, prevMonth - 1, 1 + daysToMonday);
+                    let currentMonday = new Date(firstMonday);
+                    let weekNum = 2;
+                    
+                    while (currentMonday.getDate() <= prevMonthEnd && weekNum <= 5) {
+                        maxWeeks = weekNum;
+                        currentMonday = new Date(currentMonday);
+                        currentMonday.setDate(currentMonday.getDate() + 7);
+                        weekNum++;
+                    }
+                }
+                
+                // 设置为上一月的最后一周
+                weekSelect.value = maxWeeks;
+                updateWeekInfo();
+                loadCourses();
+            }
+        }
+        
+        // 切换到下一周
+        function goToNextWeek() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                alert('请先选择月份和周');
+                return;
+            }
+            
+            const [year, month] = monthInput.value.split('-').map(Number);
+            const weekNum = parseInt(weekSelect.value);
+            
+            // 计算当前月的最大周数
+            const firstDay = new Date(year, month - 1, 1);
+            const firstDayWeekday = firstDay.getDay();
+            const lastDay = new Date(year, month, 0);
+            const monthEnd = lastDay.getDate();
+            
+            let maxWeeks = 1;
+            
+            if (firstDayWeekday === 0) {
+                // 1号是周日，第1周只有1号
+                const firstMonday = new Date(year, month - 1, 2);
+                let currentMonday = new Date(firstMonday);
+                let weekNumCalc = 2;
+                
+                while (currentMonday.getDate() <= monthEnd && weekNumCalc <= 5) {
+                    maxWeeks = weekNumCalc;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNumCalc++;
+                }
+            } else {
+                // 第1周：1号到第一个周日
+                maxWeeks = 1;
+                
+                const daysToMonday = 7 - firstDayWeekday;
+                const firstMonday = new Date(year, month - 1, 1 + daysToMonday);
+                let currentMonday = new Date(firstMonday);
+                let weekNumCalc = 2;
+                
+                while (currentMonday.getDate() <= monthEnd && weekNumCalc <= 5) {
+                    maxWeeks = weekNumCalc;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNumCalc++;
+                }
+            }
+            
+            if (weekNum < maxWeeks) {
+                // 下一周在当前月内
+                weekSelect.value = weekNum + 1;
+                updateWeekInfo();
+                loadCourses();
+            } else {
+                // 下一周在下一个月
+                let nextMonth, nextYear;
+                if (month === 12) {
+                    nextMonth = 1;
+                    nextYear = year + 1;
+                } else {
+                    nextMonth = month + 1;
+                    nextYear = year;
+                }
+                
+                // 切换到下一月
+                monthInput.value = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+                
+                // 更新周选择器选项
+                updateWeekOptions();
+                
+                // 设置为下一月的第1周
+                weekSelect.value = 1;
+                updateWeekInfo();
+                loadCourses();
+            }
+        }
+        
+        // 获取指定月份和周数的日期范围
+        function getSpecifiedWeekDateRange(monthValue, weekNum) {
+            if (!monthValue || !weekNum) {
+                return null;
+            }
+            
+            const [year, month] = monthValue.split('-').map(Number);
+            const weekNumber = parseInt(weekNum);
+            const firstDay = new Date(year, month - 1, 1);
+            const firstDayWeekday = firstDay.getDay();
+            const lastDay = new Date(year, month, 0);
+            const monthEnd = lastDay.getDate();
+            
+            let startDate, endDate;
+            
+            if (weekNumber === 1) {
+                // 第1周：从1号开始，到第一个周日结束
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第1周只有1号
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, 1);
+                } else {
+                    // 计算到周日需要多少天：7 - firstDayWeekday
+                    const daysToSunday = 7 - firstDayWeekday;
+                    const firstSundayDate = Math.min(1 + daysToSunday, monthEnd);
+                    startDate = new Date(year, month - 1, 1);
+                    endDate = new Date(year, month - 1, firstSundayDate);
+                }
+            } else {
+                // 第2周及以后：从第一个周一开始
+                let daysToMonday;
+                if (firstDayWeekday === 0) {
+                    // 1号是周日，第一个周一是2号
+                    daysToMonday = 1;
+                } else if (firstDayWeekday === 1) {
+                    // 1号是周一，第一个周一就是1号
+                    daysToMonday = 0;
+                } else {
+                    // 1号是周二到周六，计算到下一个周一需要多少天
+                    daysToMonday = 8 - firstDayWeekday;
+                }
+                
+                const firstMondayDate = 1 + daysToMonday;
+                const startDateNum = firstMondayDate + (weekNumber - 2) * 7;
+                
+                // 如果开始日期超出月份，说明该周不存在
+                if (startDateNum > monthEnd) {
+                    return null;
+                }
+                
+                startDate = new Date(year, month - 1, startDateNum);
+                // 一周的结束是周日，所以结束日期是开始日期（周一）+6天
+                const endDateNum = Math.min(startDateNum + 6, monthEnd);
+                endDate = new Date(year, month - 1, endDateNum);
+            }
+            
+            return { startDate, endDate, year, month };
+        }
+        
+        // 显示复制到指定周的模态框
+        function showCopyToSpecifiedWeekModal() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                alert('请先选择当前月份和周');
+                return;
+            }
+            
+            // 获取当前日期，用于设置默认值
+            const today = new Date();
+            const defaultMonth = today.toISOString().slice(0, 7);
+            
+            const modalBody = `
+                <h2>复制到指定周</h2>
+                <form id="copy-to-specified-week-form" style="margin-top: 20px;">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">目标月份：</label>
+                        <input type="month" id="target-month" value="${defaultMonth}" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" onchange="updateTargetWeekOptions()">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display: block; margin-bottom: 5px; font-weight: bold;">目标周数：</label>
+                        <select id="target-week-select" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                            <option value="1">第1周</option>
+                            <option value="2">第2周</option>
+                            <option value="3">第3周</option>
+                            <option value="4">第4周</option>
+                            <option value="5">第5周</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeModal()">取消</button>
+                        <button type="button" class="btn btn-primary" onclick="copyToSpecifiedWeek()">确定</button>
+                    </div>
+                </form>
+            `;
+            
+            showModal(modalBody);
+            
+            // 初始化目标周选择器选项
+            updateTargetWeekOptions();
+        }
+        
+        // 更新目标周选择器选项
+        function updateTargetWeekOptions() {
+            const targetMonthInput = document.getElementById('target-month');
+            const targetWeekSelect = document.getElementById('target-week-select');
+            
+            if (!targetMonthInput || !targetWeekSelect || !targetMonthInput.value) {
+                return;
+            }
+            
+            const monthValue = targetMonthInput.value;
+            const [year, month] = monthValue.split('-').map(Number);
+            const firstDay = new Date(year, month - 1, 1);
+            const lastDay = new Date(year, month, 0);
+            const firstDayWeekday = firstDay.getDay();
+            const daysInMonth = lastDay.getDate();
+            
+            let maxWeeks = 1;
+            
+            if (firstDayWeekday === 0) {
+                // 1号是周日，第1周只有1号
+                const firstMonday = new Date(year, month - 1, 2);
+                let currentMonday = new Date(firstMonday);
+                let weekNum = 2;
+                
+                while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+                    maxWeeks = weekNum;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNum++;
+                }
+            } else {
+                // 第1周：1号到第一个周日
+                maxWeeks = 1;
+                
+                const daysToMonday = 7 - firstDayWeekday;
+                const firstMonday = new Date(year, month - 1, 1 + daysToMonday);
+                let currentMonday = new Date(firstMonday);
+                let weekNum = 2;
+                
+                while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+                    maxWeeks = weekNum;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNum++;
+                }
+            }
+            
+            // 更新周选择器选项
+            const currentValue = targetWeekSelect.value;
+            const newValue = (!currentValue || parseInt(currentValue) > maxWeeks || parseInt(currentValue) < 1) ? '1' : currentValue;
+            
+            targetWeekSelect.innerHTML = '';
+            for (let i = 1; i <= maxWeeks; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `第${i}周`;
+                targetWeekSelect.appendChild(option);
+            }
+            
+            targetWeekSelect.value = newValue;
+        }
+        
+        // 复制当前周排课到指定周
+        function copyToSpecifiedWeek() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            const targetMonthInput = document.getElementById('target-month');
+            const targetWeekSelect = document.getElementById('target-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                alert('请先选择当前月份和周');
+                closeModal();
+                return;
+            }
+            
+            if (!targetMonthInput || !targetWeekSelect || !targetMonthInput.value || !targetWeekSelect.value) {
+                alert('请选择目标月份和周数');
+                return;
+            }
+            
+            const targetMonth = targetMonthInput.value;
+            const targetWeek = targetWeekSelect.value;
+            
+            // 检查目标周是否存在
+            const targetWeekRange = getSpecifiedWeekDateRange(targetMonth, targetWeek);
+            if (!targetWeekRange) {
+                alert(`目标月份 ${targetMonth} 的第${targetWeek}周不存在，请重新选择`);
+                return;
+            }
+            
+            closeModal();
+            
+            // 获取选中的课程复选框
+            const checkedBoxes = document.querySelectorAll('.course-checkbox:checked');
+            const selectedCourseIds = Array.from(checkedBoxes).map(cb => {
+                const value = cb.value;
+                const id = typeof value === 'string' ? parseInt(value, 10) : value;
+                if (isNaN(id)) {
+                    console.warn('无效的课程ID:', value);
+                    return null;
+                }
+                return id;
+            }).filter(id => id !== null);
+            
+            const currentWeek = getCurrentWeekDateRange();
+            
+            if (!currentWeek) {
+                alert('无法计算当前周的日期范围');
+                return;
+            }
+            
+            // 获取当前周的排课数据
+            const month = monthInput.value;
+            const week = weekSelect.value;
+            
+            // 构建URL，包含筛选参数
+            const params = [`month=${encodeURIComponent(month)}`, `week=${encodeURIComponent(week)}`];
+            
+            const filterTeacher = document.getElementById('filter-teacher');
+            const filterClassroom = document.getElementById('filter-classroom');
+            const filterSubject = document.getElementById('filter-subject');
+            const filterGrade = document.getElementById('filter-grade');
+            
+            if (filterTeacher && filterTeacher.value) {
+                params.push(`teacher=${encodeURIComponent(filterTeacher.value)}`);
+            }
+            if (filterClassroom && filterClassroom.value) {
+                params.push(`classroom=${encodeURIComponent(filterClassroom.value)}`);
+            }
+            if (filterSubject && filterSubject.value) {
+                params.push(`subject=${encodeURIComponent(filterSubject.value)}`);
+            }
+            if (filterGrade && filterGrade.value) {
+                params.push(`grade=${encodeURIComponent(filterGrade.value)}`);
+            }
+            
+            const url = `/api/courses?${params.join('&')}`;
+            
+            // 辅助函数：格式化日期为 YYYY-MM-DD
+            function formatDate(date) {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            
+            // 同时获取当前周和目标周的排课数据
+            Promise.all([
+                fetch(url).then(res => res.json()),
+                (() => {
+                    // 构建目标周的URL，也包含筛选参数
+                    const targetParams = [`month=${encodeURIComponent(targetMonth)}`, `week=${encodeURIComponent(targetWeek)}`];
+                    if (filterTeacher && filterTeacher.value) {
+                        targetParams.push(`teacher=${encodeURIComponent(filterTeacher.value)}`);
+                    }
+                    if (filterClassroom && filterClassroom.value) {
+                        targetParams.push(`classroom=${encodeURIComponent(filterClassroom.value)}`);
+                    }
+                    if (filterSubject && filterSubject.value) {
+                        targetParams.push(`subject=${encodeURIComponent(filterSubject.value)}`);
+                    }
+                    if (filterGrade && filterGrade.value) {
+                        targetParams.push(`grade=${encodeURIComponent(filterGrade.value)}`);
+                    }
+                    
+                    return fetch(`/api/courses?${targetParams.join('&')}`).then(res => res.json());
+                })()
+            ])
+                .then(([courses, targetWeekCourses]) => {
+                    // 过滤掉已删除的排课
+                    let validCourses = courses.filter(c => c.status !== '删除');
+                    
+                    if (validCourses.length === 0) {
+                        alert('当前周没有有效的排课数据。请确认：\n1. 当前周是否有排课\n2. 筛选条件是否正确\n3. 课程是否已被删除');
+                        return;
+                    }
+                    
+                    // 如果用户选中了课程，只保留选中的课程；否则使用所有有效课程
+                    if (selectedCourseIds.length > 0) {
+                        validCourses = validCourses.filter(c => {
+                            const courseId = typeof c.id === 'string' ? parseInt(c.id) : c.id;
+                            return selectedCourseIds.includes(courseId);
+                        });
+                        
+                        if (validCourses.length === 0) {
+                            alert('选中的课程中没有有效的排课数据。\n\n可能的原因：\n1. 选中的课程不在当前周内\n2. 选中的课程已被删除\n3. 选中的课程已被筛选条件过滤');
+                            return;
+                        }
+                    }
+                    
+                    // 过滤掉目标周已删除的排课
+                    const validTargetWeekCourses = targetWeekCourses.filter(c => c.status !== '删除');
+                    
+                    // 创建日期映射：当前周的日期 -> 目标周的对应日期（按星期匹配）
+                    const dateMap = new Map();
+                    
+                    const currentStart = new Date(currentWeek.startDate.getFullYear(), currentWeek.startDate.getMonth(), currentWeek.startDate.getDate());
+                    const currentEnd = new Date(currentWeek.endDate.getFullYear(), currentWeek.endDate.getMonth(), currentWeek.endDate.getDate());
+                    const targetStart = new Date(targetWeekRange.startDate.getFullYear(), targetWeekRange.startDate.getMonth(), targetWeekRange.startDate.getDate());
+                    const targetEnd = new Date(targetWeekRange.endDate.getFullYear(), targetWeekRange.endDate.getMonth(), targetWeekRange.endDate.getDate());
+                    
+                    // 按星期匹配：周一的课复制到目标周的周一，周二的课复制到目标周的周二，以此类推
+                    let currentDate = new Date(currentStart);
+                    const currentEndTime = currentEnd.getTime();
+                    const targetStartTime = targetStart.getTime();
+                    const targetEndTime = targetEnd.getTime();
+                    
+                    while (currentDate.getTime() <= currentEndTime) {
+                        const currentWeekday = currentDate.getDay();
+                        const currentDateStr = formatDate(currentDate);
+                        
+                        // 在目标周范围内找到相同星期的日期
+                        let targetDate = null;
+                        let checkDate = new Date(targetStart);
+                        
+                        while (checkDate.getTime() <= targetEndTime) {
+                            if (checkDate.getDay() === currentWeekday) {
+                                targetDate = new Date(checkDate);
+                                break;
+                            }
+                            checkDate.setDate(checkDate.getDate() + 1);
+                        }
+                        
+                        if (targetDate) {
+                            const targetDateStr = formatDate(targetDate);
+                            dateMap.set(currentDateStr, targetDateStr);
+                        }
+                        
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    
+                    if (dateMap.size === 0) {
+                        alert('无法创建日期映射。当前周和目标周没有重叠的星期。');
+                        return;
+                    }
+                    
+                    // 创建目标周排课的唯一标识集合
+                    const targetWeekCourseKeys = new Set();
+                    validTargetWeekCourses.forEach(course => {
+                        const dateStr = course.course_date;
+                        const key = `${dateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`;
+                        targetWeekCourseKeys.add(key);
+                    });
+                    
+                    // 过滤掉重复的课程
+                    const processedKeys = new Set();
+                    const coursesToCopy = validCourses.filter(course => {
+                        const currentDateStr = course.course_date;
+                        const targetDateStr = dateMap.get(currentDateStr);
+                        
+                        if (!targetDateStr) {
+                            return false;
+                        }
+                        
+                        const key = `${targetDateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`;
+                        
+                        if (targetWeekCourseKeys.has(key)) {
+                            return false;
+                        }
+                        
+                        if (processedKeys.has(key)) {
+                            return false;
+                        }
+                        
+                        processedKeys.add(key);
+                        return true;
+                    });
+                    
+                    const skippedCount = validCourses.length - coursesToCopy.length;
+                    
+                    if (coursesToCopy.length === 0) {
+                        alert('没有可复制的排课记录。\n\n所有排课记录都已存在于目标周，或没有匹配的日期。');
+                        return;
+                    }
+                    
+                    // 构建确认消息
+                    const confirmMessage = `确定要将 ${coursesToCopy.length} 条排课复制到${targetWeekRange.year}年${targetWeekRange.month}月第${targetWeek}周吗？`;
+                    
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                    
+                    // 批量创建排课
+                    let successCount = 0;
+                    let failCount = 0;
+                    const failMessages = [];
+                    
+                    const promises = coursesToCopy.map(course => {
+                        const currentDateStr = course.course_date;
+                        const targetDateStr = dateMap.get(currentDateStr);
+                        
+                        if (!targetDateStr) {
+                            const msg = `课程日期 ${currentDateStr} 没有找到对应的目标周日期`;
+                            failMessages.push(msg);
+                            failCount++;
+                            return Promise.resolve();
+                        }
+                        
+                        const newCourseData = {
+                            student_id: course.student_id,
+                            teacher_id: course.teacher_id,
+                            course_date: targetDateStr,
+                            subject: course.subject,
+                            time_slot: course.time_slot || '',
+                            classroom: course.classroom || '',
+                            course_id: course.course_id || null
+                        };
+                        
+                        return fetch('/api/courses', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(newCourseData)
+                        })
+                        .then(async res => {
+                            const result = await res.json();
+                            if (!res.ok) {
+                                const errorMsg = result.error || result.message || `HTTP ${res.status} 错误`;
+                                failMessages.push(`${currentDateStr} -> ${targetDateStr}: ${errorMsg}`);
+                                failCount++;
+                                return;
+                            }
+                            
+                            if (result.id) {
+                                successCount++;
+                            } else {
+                                failMessages.push(`${currentDateStr} -> ${targetDateStr}: 返回结果异常`);
+                                failCount++;
+                            }
+                        })
+                        .catch(err => {
+                            failMessages.push(`${currentDateStr} -> ${targetDateStr}: ${err.message}`);
+                            failCount++;
+                        });
+                    });
+                    
+                    Promise.all(promises).then(() => {
+                        let message = `复制完成！成功：${successCount}条，失败：${failCount}条`;
+                        if (skippedCount > 0) {
+                            message += `，跳过重复：${skippedCount}条`;
+                        }
+                        if (failMessages.length > 0) {
+                            message += '\n\n失败详情：\n' + failMessages.slice(0, 5).join('\n');
+                            if (failMessages.length > 5) {
+                                message += `\n... 还有 ${failMessages.length - 5} 条错误`;
+                            }
+                        }
+                        alert(message);
+                        
+                        // 清除选中的复选框
+                        checkedBoxes.forEach(cb => cb.checked = false);
+                        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+                        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+                        updateBatchDeleteButton();
+                        
+                        // 切换到目标周查看结果
+                        setTimeout(() => {
+                            monthInput.value = targetMonth;
+                            updateWeekOptions();
+                            weekSelect.value = targetWeek;
+                            refreshPageWithCurrentSelection();
+                        }, 300);
+                    });
+                })
+                .catch(err => {
+                    console.error('获取排课数据失败:', err);
+                    alert('获取排课数据失败：' + err.message);
+                });
+        }
+        
+        // 复制当前周排课到下一周
+        function copyToNextWeek() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect || !monthInput.value || !weekSelect.value) {
+                alert('请先选择月份和周');
+                return;
+            }
+            
+            // 获取选中的课程复选框
+            const checkedBoxes = document.querySelectorAll('.course-checkbox:checked');
+            const selectedCourseIds = Array.from(checkedBoxes).map(cb => {
+                const value = cb.value;
+                // 确保转换为数字类型
+                const id = typeof value === 'string' ? parseInt(value, 10) : value;
+                if (isNaN(id)) {
+                    console.warn('无效的课程ID:', value);
+                    return null;
+                }
+                return id;
+            }).filter(id => id !== null);
+            
+            console.log('选中的课程复选框数量:', checkedBoxes.length);
+            console.log('解析后的课程ID:', selectedCourseIds);
+            
+            // 如果没有选中任何课程，使用当前周的所有课程
+            // 注意：这里不提前返回，而是继续执行，在获取数据后再检查
+            
+            const currentWeek = getCurrentWeekDateRange();
+            const nextWeek = getNextWeekDateRange();
+            
+            if (!currentWeek || !nextWeek) {
+                alert('无法计算下一周的日期范围');
+                return;
+            }
+            
+            // 注意：确认消息将在获取数据后显示，因为需要知道实际要复制的课程数量
+            
+            // 获取当前周的排课数据
+            const month = monthInput.value;
+            const week = weekSelect.value;
+            
+            // 构建URL，包含筛选参数（与loadCourses函数保持一致）
+            const params = [`month=${encodeURIComponent(month)}`, `week=${encodeURIComponent(week)}`];
+            
+            // 添加筛选参数
+            const filterTeacher = document.getElementById('filter-teacher');
+            const filterClassroom = document.getElementById('filter-classroom');
+            const filterSubject = document.getElementById('filter-subject');
+            const filterGrade = document.getElementById('filter-grade');
+            
+            if (filterTeacher && filterTeacher.value) {
+                params.push(`teacher=${encodeURIComponent(filterTeacher.value)}`);
+            }
+            if (filterClassroom && filterClassroom.value) {
+                params.push(`classroom=${encodeURIComponent(filterClassroom.value)}`);
+            }
+            if (filterSubject && filterSubject.value) {
+                params.push(`subject=${encodeURIComponent(filterSubject.value)}`);
+            }
+            if (filterGrade && filterGrade.value) {
+                params.push(`grade=${encodeURIComponent(filterGrade.value)}`);
+            }
+            
+            const url = `/api/courses?${params.join('&')}`;
+            
+            // 辅助函数：格式化日期为 YYYY-MM-DD
+            function formatDate(date) {
+                const y = date.getFullYear();
+                const m = String(date.getMonth() + 1).padStart(2, '0');
+                const d = String(date.getDate()).padStart(2, '0');
+                return `${y}-${m}-${d}`;
+            }
+            
+            // 辅助函数：根据日期获取星期
+            function getWeekday(dateStr) {
+                const date = new Date(dateStr);
+                const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+                return weekdays[date.getDay()];
+            }
+            
+            // 同时获取当前周和下一周的排课数据
+            Promise.all([
+                fetch(url).then(res => res.json()),
+                (() => {
+                    // 计算下一周的月份和周数
+                    const currentMonthNum = parseInt(month.split('-')[1]);
+                    const currentYear = parseInt(month.split('-')[0]);
+                    let nextMonth, nextWeekNum;
+                    
+                    if (nextWeek.month !== currentMonthNum) {
+                        // 下一周在下一个月
+                        nextMonth = `${nextWeek.year}-${String(nextWeek.month).padStart(2, '0')}`;
+                        nextWeekNum = 1;
+                    } else {
+                        // 下一周在当前月内
+                        nextMonth = month;
+                        nextWeekNum = parseInt(week) + 1;
+                    }
+                    
+                    // 构建下一周的URL，也包含筛选参数
+                    const nextParams = [`month=${encodeURIComponent(nextMonth)}`, `week=${encodeURIComponent(nextWeekNum)}`];
+                    if (filterTeacher && filterTeacher.value) {
+                        nextParams.push(`teacher=${encodeURIComponent(filterTeacher.value)}`);
+                    }
+                    if (filterClassroom && filterClassroom.value) {
+                        nextParams.push(`classroom=${encodeURIComponent(filterClassroom.value)}`);
+                    }
+                    if (filterSubject && filterSubject.value) {
+                        nextParams.push(`subject=${encodeURIComponent(filterSubject.value)}`);
+                    }
+                    if (filterGrade && filterGrade.value) {
+                        nextParams.push(`grade=${encodeURIComponent(filterGrade.value)}`);
+                    }
+                    
+                    return fetch(`/api/courses?${nextParams.join('&')}`).then(res => res.json());
+                })()
+            ])
+                .then(([courses, nextWeekCourses]) => {
+                    console.log('API返回的当前周课程数量:', courses.length);
+                    console.log('选中的课程ID:', selectedCourseIds);
+                    console.log('API返回的所有课程ID:', courses.map(c => ({id: c.id, status: c.status, date: c.course_date})));
+                    
+                    // 过滤掉已删除的排课
+                    let validCourses = courses.filter(c => c.status !== '删除');
+                    console.log('过滤已删除后的课程数量:', validCourses.length);
+                    console.log('有效课程的ID:', validCourses.map(c => c.id));
+                    
+                    // 检查是否有有效的排课数据
+                    if (validCourses.length === 0) {
+                        console.log('当前周没有有效的排课数据');
+                        console.log('API返回的所有课程:', courses);
+                        alert('当前周没有排课数据。请确认：\n1. 当前周是否有排课\n2. 筛选条件是否正确\n3. 课程是否已被删除');
+                        return;
+                    }
+                    
+                    // 如果用户选中了课程，只保留选中的课程；否则使用所有有效课程
+                    if (selectedCourseIds.length > 0) {
+                        const beforeFilter = validCourses.length;
+                        // 确保ID类型匹配：将API返回的ID转换为数字进行比较
+                        validCourses = validCourses.filter(c => {
+                            const courseId = typeof c.id === 'string' ? parseInt(c.id) : c.id;
+                            return selectedCourseIds.includes(courseId);
+                        });
+                        console.log('过滤选中课程后的数量:', validCourses.length, '(之前:', beforeFilter, ')');
+                        
+                        if (validCourses.length === 0) {
+                            console.log('选中的课程ID:', selectedCourseIds);
+                            console.log('有效课程的ID:', validCourses.map(c => c.id));
+                            console.log('API返回的所有课程（包括已删除）:', courses.map(c => ({id: c.id, status: c.status, date: c.course_date})));
+                            
+                            // 检查选中的课程是否在其他周
+                            const allCheckedBoxes = document.querySelectorAll('.course-checkbox');
+                            const checkedCoursesInfo = Array.from(checkedBoxes).map(cb => {
+                                const row = cb.closest('tr');
+                                const dateCell = row ? row.querySelector('td:nth-child(8)') : null;
+                                const date = dateCell ? dateCell.textContent.trim() : '未知';
+                                return {id: parseInt(cb.value), date: date};
+                            });
+                            console.log('选中的课程详细信息:', checkedCoursesInfo);
+                            
+                            // 获取当前周的日期范围用于提示
+                            const currentWeek = getCurrentWeekDateRange();
+                            let dateRangeHint = '';
+                            if (currentWeek) {
+                                const formatDate = (date) => {
+                                    const m = String(date.getMonth() + 1).padStart(2, '0');
+                                    const d = String(date.getDate()).padStart(2, '0');
+                                    return `${m}-${d}`;
+                                };
+                                dateRangeHint = `\n当前周日期范围: ${formatDate(currentWeek.startDate)} 至 ${formatDate(currentWeek.endDate)}`;
+                            }
+                            
+                            alert(`选中的课程中没有有效的排课数据。\n\n可能的原因：\n1. 选中的课程不在当前周内${dateRangeHint}\n2. 选中的课程已被删除\n3. 选中的课程已被筛选条件过滤\n\n请检查选中的课程是否在当前周内，或取消选中后使用"复制到下一周"复制当前周所有课程。`);
+                            return;
+                        }
+                    } else {
+                        // 如果没有选中任何课程，使用所有有效课程
+                        console.log('未选中任何课程，使用当前周所有有效课程');
+                    }
+                    
+                    // 过滤掉下一周已删除的排课，只保留有效的排课用于重复检查
+                    const validNextWeekCourses = nextWeekCourses.filter(c => c.status !== '删除');
+                    
+                    // 创建日期映射：当前周的日期 -> 下一周的对应日期（按星期匹配）
+                    const dateMap = new Map();
+                    
+                    // 为当前周的每一天创建映射（按星期匹配）
+                    // 使用本地日期，避免时区问题
+                    const currentStart = new Date(currentWeek.startDate.getFullYear(), currentWeek.startDate.getMonth(), currentWeek.startDate.getDate());
+                    const currentEnd = new Date(currentWeek.endDate.getFullYear(), currentWeek.endDate.getMonth(), currentWeek.endDate.getDate());
+                    const nextStart = new Date(nextWeek.startDate.getFullYear(), nextWeek.startDate.getMonth(), nextWeek.startDate.getDate());
+                    const nextEnd = new Date(nextWeek.endDate.getFullYear(), nextWeek.endDate.getMonth(), nextWeek.endDate.getDate());
+                    
+                    console.log('当前周日期范围:', formatDate(currentStart), '至', formatDate(currentEnd));
+                    console.log('下一周日期范围:', formatDate(nextStart), '至', formatDate(nextEnd));
+                    
+                    // 检查是否跨月复制
+                    const isCrossMonth = currentWeek.month !== nextWeek.month || currentWeek.year !== nextWeek.year;
+                    
+                    // 计算下下周的日期范围（用于fallback）
+                    const nextNextWeek = getNextNextWeekDateRange(nextWeek);
+                    let nextNextStart = null;
+                    let nextNextEnd = null;
+                    if (nextNextWeek) {
+                        nextNextStart = new Date(nextNextWeek.startDate.getFullYear(), nextNextWeek.startDate.getMonth(), nextNextWeek.startDate.getDate());
+                        nextNextEnd = new Date(nextNextWeek.endDate.getFullYear(), nextNextWeek.endDate.getMonth(), nextNextWeek.endDate.getDate());
+                        console.log('下下周日期范围:', formatDate(nextNextStart), '至', formatDate(nextNextEnd));
+                    }
+                    
+                    // 按星期匹配：周一的课复制到下一周的周一，周二的课复制到下一周的周二，以此类推
+                    // 遍历当前周的每一天
+                    let currentDate = new Date(currentStart);
+                    const currentEndTime = currentEnd.getTime();
+                    const nextStartTime = nextStart.getTime();
+                    const nextEndTime = nextEnd.getTime();
+                    const nextNextStartTime = nextNextStart ? nextNextStart.getTime() : null;
+                    const nextNextEndTime = nextNextEnd ? nextNextEnd.getTime() : null;
+                    
+                    // 如果跨月复制，记录下一周和下下周已使用的日期，避免重复映射
+                    const usedNextDates = new Set();
+                    const usedNextNextDates = new Set();
+                    
+                    while (currentDate.getTime() <= currentEndTime) {
+                        const currentWeekday = currentDate.getDay(); // 0=周日, 1=周一, ..., 6=周六
+                        const currentDateStr = formatDate(currentDate);
+                        
+                        // 计算下一周相同星期的日期
+                        // 方法：找到下一周范围内相同星期的日期
+                        let nextDate = null;
+                        let mappedToNextNextWeek = false;
+                        
+                        // 首先尝试在下一周找到相同星期的日期
+                        let checkDate = new Date(nextStart);
+                        const checkEndTime = nextEnd.getTime();
+                        
+                        while (checkDate.getTime() <= checkEndTime) {
+                            if (checkDate.getDay() === currentWeekday) {
+                                const checkDateStr = formatDate(checkDate);
+                                // 如果跨月复制，检查该日期是否已被使用
+                                if (!isCrossMonth || !usedNextDates.has(checkDateStr)) {
+                                    nextDate = new Date(checkDate);
+                                    usedNextDates.add(formatDate(nextDate));
+                                    break;
+                                }
+                            }
+                            checkDate.setDate(checkDate.getDate() + 1);
+                        }
+                        
+                        // 如果下一周没有找到匹配的日期，尝试在下下周查找
+                        if (!nextDate && nextNextStart && nextNextEnd) {
+                            let checkNextNextDate = new Date(nextNextStart);
+                            const checkNextNextEndTime = nextNextEnd.getTime();
+                            
+                            while (checkNextNextDate.getTime() <= checkNextNextEndTime) {
+                                if (checkNextNextDate.getDay() === currentWeekday) {
+                                    const checkNextNextDateStr = formatDate(checkNextNextDate);
+                                    if (!usedNextNextDates.has(checkNextNextDateStr)) {
+                                        nextDate = new Date(checkNextNextDate);
+                                        usedNextNextDates.add(formatDate(nextDate));
+                                        mappedToNextNextWeek = true;
+                                        console.log(`跨周映射（下一周无匹配）: ${currentDateStr} (星期${currentWeekday}) -> ${formatDate(nextDate)} (下下周相同星期)`);
+                                        break;
+                                    }
+                                }
+                                checkNextNextDate.setDate(checkNextNextDate.getDate() + 1);
+                            }
+                        }
+                        
+                        // 如果跨月复制且仍然没有找到对应日期，使用fallback机制
+                        if (!nextDate && isCrossMonth) {
+                            // 优先尝试下一周的第一个可用日期
+                            let fallbackDate = new Date(nextStart);
+                            while (fallbackDate.getTime() <= nextEndTime) {
+                                const fallbackDateStr = formatDate(fallbackDate);
+                                if (!usedNextDates.has(fallbackDateStr)) {
+                                    nextDate = new Date(fallbackDate);
+                                    usedNextDates.add(fallbackDateStr);
+                                    console.log(`跨月映射（无对应星期，使用下一周fallback）: ${currentDateStr} (星期${currentWeekday}) -> ${fallbackDateStr}`);
+                                    break;
+                                }
+                                fallbackDate.setDate(fallbackDate.getDate() + 1);
+                            }
+                            
+                            // 如果下一周也没有可用日期，尝试下下周
+                            if (!nextDate && nextNextStart && nextNextEnd) {
+                                fallbackDate = new Date(nextNextStart);
+                                while (fallbackDate.getTime() <= nextNextEndTime) {
+                                    const fallbackDateStr = formatDate(fallbackDate);
+                                    if (!usedNextNextDates.has(fallbackDateStr)) {
+                                        nextDate = new Date(fallbackDate);
+                                        usedNextNextDates.add(fallbackDateStr);
+                                        mappedToNextNextWeek = true;
+                                        console.log(`跨月映射（无对应星期，使用下下周fallback）: ${currentDateStr} (星期${currentWeekday}) -> ${fallbackDateStr}`);
+                                        break;
+                                    }
+                                    fallbackDate.setDate(fallbackDate.getDate() + 1);
+                                }
+                            }
+                        }
+                        
+                        if (nextDate) {
+                            const nextDateStr = formatDate(nextDate);
+                            dateMap.set(currentDateStr, nextDateStr);
+                            if (mappedToNextNextWeek) {
+                                console.log(`日期映射（下下周）: ${currentDateStr} (星期${currentWeekday}) -> ${nextDateStr} (下下周)`);
+                            } else if (isCrossMonth && nextDate.getDay() !== currentWeekday) {
+                                console.log(`跨月映射（星期不匹配）: ${currentDateStr} (星期${currentWeekday}) -> ${nextDateStr} (星期${nextDate.getDay()})`);
+                            } else {
+                                console.log(`日期映射: ${currentDateStr} (星期${currentWeekday}) -> ${nextDateStr} (下一周相同星期)`);
+                            }
+                        } else {
+                            // 如果仍然没有找到日期（这种情况不应该发生），使用下一周的第一天
+                            const fallbackDateStr = formatDate(nextStart);
+                            dateMap.set(currentDateStr, fallbackDateStr);
+                            console.warn(`警告: 当前周 ${currentDateStr} (星期${currentWeekday}) 无法找到对应日期，使用下一周第一天: ${fallbackDateStr}`);
+                        }
+                        
+                        // 移动到下一天
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    
+                    console.log('日期映射表:', Array.from(dateMap.entries()));
+                    
+                    // 检查日期映射是否有效
+                    if (dateMap.size === 0) {
+                        alert('无法创建日期映射。当前周和下一周没有重叠的星期。\n\n这可能是因为跨月时，当前周的最后几天在下一周没有对应的日期。\n\n建议：\n1. 检查当前周和下一周的日期范围\n2. 确保下一周包含当前周的所有星期');
+                        return;
+                    }
+                    
+                    // 统计有多少课程因为没有对应日期而被跳过（跨月复制时应该为0，因为我们已经做了fallback映射）
+                    const coursesWithoutMapping = validCourses.filter(course => {
+                        const currentDateStr = course.course_date;
+                        return !dateMap.has(currentDateStr);
+                    });
+                    
+                    if (coursesWithoutMapping.length > 0) {
+                        const skippedDates = [...new Set(coursesWithoutMapping.map(c => c.course_date))];
+                        console.warn(`警告: 有 ${coursesWithoutMapping.length} 条课程因为没有对应日期将被跳过`);
+                        console.warn(`跳过的日期:`, skippedDates);
+                    } else if (isCrossMonth) {
+                        // 统计有多少课程被映射到下下周
+                        let mappedToNextNextCount = 0;
+                        if (nextNextStart && nextNextEnd) {
+                            validCourses.forEach(course => {
+                                const currentDateStr = course.course_date;
+                                const mappedDateStr = dateMap.get(currentDateStr);
+                                if (mappedDateStr) {
+                                    const mappedDate = new Date(mappedDateStr);
+                                    if (mappedDate.getTime() >= nextNextStart.getTime() && mappedDate.getTime() <= nextNextEnd.getTime()) {
+                                        mappedToNextNextCount++;
+                                    }
+                                }
+                            });
+                        }
+                        if (mappedToNextNextCount > 0) {
+                            console.log(`跨月复制：${mappedToNextNextCount} 条课程被映射到下下周，其余课程映射到下一周`);
+                        } else {
+                            console.log('跨月复制：所有课程都已成功映射到下一周（包括fallback映射）');
+                        }
+                    }
+                    
+                    // 创建下一周排课的唯一标识集合，用于快速检查重复
+                    // 检查条件：日期、学生姓名、科目、时段相同（因为日期已经确定了星期）
+                    const nextWeekCourseKeys = new Set();
+                    console.log('下一周已存在的排课记录:');
+                    validNextWeekCourses.forEach(course => {
+                        // 确保日期格式一致（YYYY-MM-DD）
+                        const dateStr = course.course_date;
+                        // 使用日期+学生姓名+科目+时段作为唯一标识
+                        const key = `${dateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`;
+                        nextWeekCourseKeys.add(key);
+                        console.log(`  - ${key}`);
+                    });
+                    console.log(`下一周共有 ${nextWeekCourseKeys.size} 条唯一记录`);
+                    
+                    // 过滤掉重复的课程
+                    // 同时记录已经处理过的记录，避免当前周内重复记录被重复复制
+                    const processedKeys = new Set();
+                    const coursesToCopy = validCourses.filter(course => {
+                        const currentDateStr = course.course_date;
+                        const nextDateStr = dateMap.get(currentDateStr);
+                        
+                        if (!nextDateStr) {
+                            console.log(`跳过（无对应日期）: ${currentDateStr} - ${course.student_name}`);
+                            return false; // 没有对应的下一周日期，跳过
+                        }
+                        
+                        // 确保日期格式一致（YYYY-MM-DD）
+                        // 构建唯一标识：日期、学生姓名、科目、时段
+                        // 使用日期而不是星期，因为日期是唯一的，且已经确定了星期
+                        const key = `${nextDateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`;
+                        
+                        // 如果下一周已存在相同的记录，则跳过
+                        if (nextWeekCourseKeys.has(key)) {
+                            console.log(`跳过重复记录（下一周已存在）: ${currentDateStr} -> ${nextDateStr} | ${course.student_name} | ${course.subject} | ${course.time_slot || ''}`);
+                            return false;
+                        }
+                        
+                        // 如果当前周内已经有相同的记录要复制，也跳过（避免当前周内重复记录被重复复制）
+                        if (processedKeys.has(key)) {
+                            console.log(`跳过重复记录（当前周内重复）: ${currentDateStr} -> ${nextDateStr} | ${course.student_name} | ${course.subject} | ${course.time_slot || ''}`);
+                            return false;
+                        }
+                        
+                        // 标记这条记录已经被处理
+                        processedKeys.add(key);
+                        console.log(`将复制: ${currentDateStr} -> ${nextDateStr} | ${course.student_name} | ${course.subject} | ${course.time_slot || ''}`);
+                        return true;
+                    });
+                    
+                    const skippedCount = validCourses.length - coursesToCopy.length;
+                    const skippedWithoutMapping = coursesWithoutMapping.length;
+                    const skippedDuplicates = skippedCount - skippedWithoutMapping;
+                    
+                    if (skippedCount > 0) {
+                        console.log(`已跳过 ${skippedCount} 条记录（其中 ${skippedWithoutMapping} 条因为没有对应日期，${skippedDuplicates} 条因为重复）`);
+                    }
+                    
+                    if (coursesToCopy.length === 0) {
+                        let alertMessage = '没有可复制的排课记录。\n\n';
+                        if (skippedWithoutMapping > 0) {
+                            alertMessage += `原因：\n1. 有 ${skippedWithoutMapping} 条课程因为没有对应日期被跳过\n`;
+                        }
+                        if (skippedDuplicates > 0) {
+                            alertMessage += `${skippedWithoutMapping > 0 ? '2. ' : ''}有 ${skippedDuplicates} 条课程因为下一周已存在相同记录被跳过\n`;
+                        }
+                        if (skippedWithoutMapping === 0 && skippedDuplicates === 0) {
+                            alertMessage += '所有排课记录都已存在于下一周，无需复制。';
+                        }
+                        alert(alertMessage);
+                        return;
+                    }
+                    
+                    // 构建确认消息（在coursesToCopy定义之后）
+                    const currentMonthNum = parseInt(monthInput.value.split('-')[1]);
+                    let confirmMessage;
+                    if (nextWeek.month !== currentMonthNum) {
+                        // 下一周在下一个月
+                        const nextMonth = nextWeek.month;
+                        const nextYear = nextWeek.year;
+                        confirmMessage = `确定要将 ${coursesToCopy.length} 条排课复制到${nextYear}年${nextMonth}月第1周吗？`;
+                    } else {
+                        // 下一周在当前月内
+                        const nextWeekNum = parseInt(weekSelect.value) + 1;
+                        confirmMessage = `确定要将 ${coursesToCopy.length} 条排课复制到第${nextWeekNum}周吗？`;
+                    }
+                    
+                    // 添加额外提示信息
+                    if (skippedWithoutMapping > 0) {
+                        confirmMessage += `\n\n注意：有 ${skippedWithoutMapping} 条课程因为没有对应日期将被跳过。`;
+                    }
+                    if (skippedDuplicates > 0) {
+                        confirmMessage += `\n\n注意：有 ${skippedDuplicates} 条课程因为下一周已存在相同记录将被跳过。`;
+                    }
+                    
+                    // 跨月复制时的特殊提示
+                    let confirmMessageExtra = '';
+                    if (skippedWithoutMapping === 0 && isCrossMonth && nextNextStart && nextNextEnd) {
+                        // 统计有多少课程被映射到下下周
+                        let mappedToNextNextCount = 0;
+                        validCourses.forEach(course => {
+                            const currentDateStr = course.course_date;
+                            const mappedDateStr = dateMap.get(currentDateStr);
+                            if (mappedDateStr) {
+                                const mappedDate = new Date(mappedDateStr);
+                                if (mappedDate.getTime() >= nextNextStart.getTime() && mappedDate.getTime() <= nextNextEnd.getTime()) {
+                                    mappedToNextNextCount++;
+                                }
+                            }
+                        });
+                        
+                        if (mappedToNextNextCount > 0) {
+                            confirmMessageExtra = `\n\n注意：跨月复制时，有 ${mappedToNextNextCount} 条课程因为在下一周没有匹配的日期，将被复制到下下周（${formatDate(nextNextStart)} 至 ${formatDate(nextNextEnd)}）。`;
+                        } else {
+                            confirmMessageExtra = `\n\n注意：跨月复制时，如果当前周的某些日期在下一周没有对应星期，这些课程将被映射到下一周的第一个可用日期。`;
+                        }
+                    }
+                    if (confirmMessageExtra) {
+                        confirmMessage += confirmMessageExtra;
+                    }
+                    
+                    if (!confirm(confirmMessage)) {
+                        return;
+                    }
+                    
+                    // 批量创建排课
+                    let successCount = 0;
+                    let failCount = 0;
+                    const failMessages = [];
+                    
+                    const promises = coursesToCopy.map(course => {
+                        const currentDateStr = course.course_date;
+                        const nextDateStr = dateMap.get(currentDateStr);
+                        
+                        if (!nextDateStr) {
+                            const msg = `课程日期 ${currentDateStr} 没有找到对应的下一周日期`;
+                            console.warn(msg);
+                            failMessages.push(msg);
+                            failCount++;
+                            return Promise.resolve();
+                        }
+                        
+                        // 创建新的排课数据
+                        const newCourseData = {
+                            student_id: course.student_id,
+                            teacher_id: course.teacher_id,
+                            course_date: nextDateStr,
+                            subject: course.subject,
+                            time_slot: course.time_slot || '',
+                            classroom: course.classroom || '',
+                            course_id: course.course_id || null
+                        };
+                        
+                        console.log(`复制课程: ${currentDateStr} -> ${nextDateStr}`, newCourseData);
+                        
+                        return fetch('/api/courses', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(newCourseData)
+                        })
+                        .then(async res => {
+                            const result = await res.json();
+                            if (!res.ok) {
+                                // API返回错误
+                                const errorMsg = result.error || result.message || `HTTP ${res.status} 错误`;
+                                console.error('复制排课失败:', errorMsg, result);
+                                failMessages.push(`${currentDateStr} -> ${nextDateStr}: ${errorMsg}`);
+                                failCount++;
+                                return;
+                            }
+                            
+                            if (result.id) {
+                                console.log('复制成功:', result.id);
+                                successCount++;
+                            } else {
+                                console.warn('复制返回结果异常:', result);
+                                failMessages.push(`${currentDateStr} -> ${nextDateStr}: 返回结果异常`);
+                                failCount++;
+                            }
+                        })
+                        .catch(err => {
+                            console.error('复制排课异常:', err);
+                            failMessages.push(`${currentDateStr} -> ${nextDateStr}: ${err.message}`);
+                            failCount++;
+                        });
+                    });
+                    
+                    Promise.all(promises).then(() => {
+                        let message = `复制完成！成功：${successCount}条，失败：${failCount}条`;
+                        if (skippedCount > 0) {
+                            if (skippedWithoutMapping > 0 && skippedDuplicates > 0) {
+                                message += `，跳过：${skippedWithoutMapping}条（无对应日期）+ ${skippedDuplicates}条（重复）`;
+                            } else if (skippedWithoutMapping > 0) {
+                                message += `，跳过：${skippedWithoutMapping}条（无对应日期）`;
+                            } else {
+                                message += `，跳过重复：${skippedDuplicates}条`;
+                            }
+                        }
+                        if (failMessages.length > 0) {
+                            message += '\n\n失败详情：\n' + failMessages.slice(0, 5).join('\n');
+                            if (failMessages.length > 5) {
+                                message += `\n... 还有 ${failMessages.length - 5} 条错误`;
+                            }
+                            console.error('复制失败详情:', failMessages);
+                        }
+                        alert(message);
+                        
+                        // 清除选中的复选框
+                        checkedBoxes.forEach(cb => cb.checked = false);
+                        const selectAllCheckbox = document.getElementById('select-all-checkbox');
+                        if (selectAllCheckbox) selectAllCheckbox.checked = false;
+                        updateBatchDeleteButton();
+                        
+                        // 切换到下一周查看结果
+                        // 等待一小段时间确保数据已保存到数据库
+                        setTimeout(() => {
+                            // 根据nextWeek的结果判断是否需要切换月份
+                            const currentMonthNum = parseInt(month.split('-')[1]);
+                            if (nextWeek.month !== currentMonthNum) {
+                                // 下一周在下一个月，切换到下一月第1周
+                                const nextMonth = nextWeek.month;
+                                const nextYear = nextWeek.year;
+                                monthInput.value = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+                                weekSelect.value = 1;
+                            } else {
+                                // 下一周在当前月内
+                                const nextWeekNum = parseInt(week) + 1;
+                                if (nextWeekNum <= 5) {
+                                    weekSelect.value = nextWeekNum;
+                                } else {
+                                    // 如果周数超出范围，说明已经是最后一周，切换到下一月第1周
+                                    const [year, monthNum] = month.split('-').map(Number);
+                                    const nextMonth = monthNum === 12 ? 1 : monthNum + 1;
+                                    const nextYear = monthNum === 12 ? year + 1 : year;
+                                    monthInput.value = `${nextYear}-${String(nextMonth).padStart(2, '0')}`;
+                                    weekSelect.value = 1;
+                                }
+                            }
+                            // 刷新页面并保持当前选择（已切换到下一周）
+                            refreshPageWithCurrentSelection();
+                        }, 300); // 等待300ms确保数据已保存
+                    });
+                })
+                .catch(err => {
+                    console.error('获取排课数据失败:', err);
+                    alert('获取排课数据失败：' + err.message);
+                });
+        }
+        
+        // 计算日期在该月是第几周（每月从第1周开始）
+        // 第1周：从1号开始，到第一个周日结束
+        // 第2周及以后：从第一个周一开始，每7天一周
+        function getWeekInMonth(date) {
+            const year = date.getFullYear();
+            const month = date.getMonth();
+            const dayOfMonth = date.getDate();
+            
+            // 获取该月1号
+            const firstDay = new Date(year, month, 1);
+            const firstDayWeekday = firstDay.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+            
+            if (firstDayWeekday === 0) {
+                // 1号是周日，第1周只有1号
+                if (dayOfMonth === 1) {
+                    return 1;
+                } else {
+                    // 从第2周开始
+                    const firstMonday = new Date(year, month, 2);
+                    const daysFromFirstMonday = dayOfMonth - firstMonday.getDate();
+                    const weekNum = Math.floor(daysFromFirstMonday / 7) + 2;
+                    return Math.min(weekNum, 5);
+                }
+            } else {
+                // 找到第一个周日
+                // 计算到周日需要多少天：7 - firstDayWeekday
+                // 例如：周一(1)->6天到周日, 周二(2)->5天, ..., 周六(6)->1天
+                const daysToSunday = 7 - firstDayWeekday;
+                const firstSunday = new Date(year, month, 1 + daysToSunday);
+                
+                if (dayOfMonth <= firstSunday.getDate()) {
+                    // 在第1周内（1号到第一个周日）
+                    return 1;
+                } else {
+                    // 在第2周及以后
+                    // 找到第一个周一
+                    const daysToMonday = 7 - firstDayWeekday; // 1=周二->6天, 2=周三->5天, ..., 6=周日->1天
+                    const firstMonday = new Date(year, month, 1 + daysToMonday);
+                    const daysFromFirstMonday = dayOfMonth - firstMonday.getDate();
+                    const weekNum = Math.floor(daysFromFirstMonday / 7) + 2;
+                    return Math.min(weekNum, 5);
+                }
+            }
+        }
+        
+        // 更新周选择器选项（根据月份计算该月有几周）
+        function updateWeekOptions() {
+            const monthInput = document.getElementById('course-month');
+            const weekSelect = document.getElementById('course-week-select');
+            
+            if (!monthInput || !weekSelect) return;
+            
+            const monthValue = monthInput.value;
+            if (!monthValue) return;
+            
+            // 计算该月有多少周
+            // 第1周：从1号开始，到第一个周日结束
+            // 第2周及以后：从第一个周一开始，每7天一周
+            const [year, month] = monthValue.split('-').map(Number);
+            const firstDay = new Date(year, month - 1, 1);
+            const lastDay = new Date(year, month, 0);
+            const firstDayWeekday = firstDay.getDay();
+            const daysInMonth = lastDay.getDate();
+            
+            let maxWeeks = 1;
+            
+            if (firstDayWeekday === 0) {
+                // 1号是周日，第1周只有1号
+                // 从第2周开始计算
+                const firstMonday = new Date(year, month - 1, 2);
+                let currentMonday = new Date(firstMonday);
+                let weekNum = 2;
+                
+                while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+                    maxWeeks = weekNum;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNum++;
+                }
+            } else {
+                // 第1周：1号到第一个周日
+                maxWeeks = 1;
+                
+                // 从第2周开始计算
+                const daysToMonday = 7 - firstDayWeekday;
+                const firstMonday = new Date(year, month - 1, 1 + daysToMonday);
+                let currentMonday = new Date(firstMonday);
+                let weekNum = 2;
+                
+                while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+                    maxWeeks = weekNum;
+                    currentMonday = new Date(currentMonday);
+                    currentMonday.setDate(currentMonday.getDate() + 7);
+                    weekNum++;
+                }
+            }
+            
+            // 更新周选择器选项
+            const currentValue = weekSelect.value;
+            const newValue = (!currentValue || parseInt(currentValue) > maxWeeks || parseInt(currentValue) < 1) ? '1' : currentValue;
+            
+            // 临时移除onchange属性，避免触发handleWeekChange
+            const originalOnchange = weekSelect.getAttribute('onchange');
+            weekSelect.removeAttribute('onchange');
+            
+            weekSelect.innerHTML = '';
+            for (let i = 1; i <= maxWeeks; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `第${i}周`;
+                weekSelect.appendChild(option);
+            }
+            
+            // 设置周数选择器的值
+            weekSelect.value = newValue;
+            
+            // 恢复onchange属性
+            if (originalOnchange) {
+                weekSelect.setAttribute('onchange', originalOnchange);
+            } else {
+                weekSelect.setAttribute('onchange', 'handleWeekChange();');
+            }
+            
+            console.log('updateWeekOptions 完成，当前周数:', weekSelect.value, '月份:', monthValue);
+            updateWeekInfo();
+            // 确保数据加载 - 直接调用loadCourses，因为此时周数选择器已经更新完成
+            console.log('updateWeekOptions 调用 loadCourses，月份:', monthValue, '周数:', weekSelect.value);
+            loadCourses();
+            // 数据加载完成后再更新筛选选项（异步）
+            setTimeout(() => {
+                initFilters();
+            }, 200);
+        }
+        
+        // 全选/取消全选函数在app.js中定义，这里不需要重复定义
+        
+        // updateBatchDeleteButton函数在app.js中定义，这里不需要重复定义
+        
+        // 批量删除排课
+        function batchDeleteCourses() {
+            const checkboxes = document.querySelectorAll('.course-checkbox:checked');
+            const selectedIds = Array.from(checkboxes).map(cb => parseInt(cb.value));
+            
+            if (selectedIds.length === 0) {
+                alert('请先选择要删除的排课');
+                return;
+            }
+            
+            if (!confirm(`确定要删除选中的 ${selectedIds.length} 条排课吗？`)) {
+                return;
+            }
+            
+            // 批量删除
+            let successCount = 0;
+            let failCount = 0;
+            const promises = selectedIds.map(id => {
+                return fetch(`/api/courses/${id}`, { method: 'DELETE' })
+                    .then(res => {
+                        if (res.ok) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                        }
+                    })
+                    .catch(err => {
+                        console.error('删除排课失败:', err);
+                        failCount++;
+                    });
+            });
+            
+            Promise.all(promises).then(() => {
+                alert(`批量删除完成！成功：${successCount}条，失败：${failCount}条`);
+                // 刷新页面并保持当前选择
+                refreshPageWithCurrentSelection();
+            });
+        }
+    </script>
+</body>
+</html>
+

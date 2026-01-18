@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>教师管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar">
+                <button class="btn btn-primary" onclick="showAddTeacherModal()">新增教师</button>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>姓名</th>
+                        <th>科目</th>
+                        <th>联系电话</th>
+                        <th>简介</th>
+                        <th>底薪</th>
+                        <th>兼职/全职</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="teachers-table-body"></tbody>
+            </table>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadTeachers();
+        });
+    </script>
+</body>
+</html>
+

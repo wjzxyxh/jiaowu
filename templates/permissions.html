@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统管理员 - 用户与权限管理</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .admin-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .admin-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .admin-tab {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .admin-tab:hover {
+            color: #333;
+        }
+        .admin-tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .permissions-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .user-selector {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .user-selector select {
+            width: 100%;
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .users-section {
+            margin-top: 20px;
+        }
+        .users-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .users-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .users-table td {
+            padding: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .users-table tr:hover {
+            background: #f8f9fa;
+        }
+        .role-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .role-admin { background: #dc3545; color: white; }
+        .role-teacher { background: #007bff; color: white; }
+        .role-finance { background: #28a745; color: white; }
+        .role-readonly { background: #6c757d; color: white; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+        }
+        .status-active { background: #d4edda; color: #155724; }
+        .status-inactive { background: #f8d7da; color: #721c24; }
+        .permissions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .permission-card {
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: all 0.3s;
+        }
+        .permission-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .permission-card.granted {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+        .permission-card.denied {
+            border-color: #dc3545;
+            background: #fff5f5;
+        }
+        .permission-info {
+            flex: 1;
+        }
+        .permission-icon {
+            font-size: 24px;
+            margin-right: 10px;
+        }
+        .permission-name {
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        .permission-code {
+            font-size: 12px;
+            color: #999;
+        }
+        .permission-toggle {
+            position: relative;
+            width: 50px;
+            height: 26px;
+        }
+        .permission-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .permission-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 26px;
+        }
+        .permission-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        .permission-toggle input:checked + .permission-toggle-slider {
+            background-color: #28a745;
+        }
+        .permission-toggle input:checked + .permission-toggle-slider:before {
+            transform: translateX(24px);
+        }
+        .batch-actions {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            gap: 10px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>系统管理员 - 用户与权限管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+
+            <div class="admin-container">
+                <!-- 标签页 -->
+                <div class="admin-tabs">
+                    <button class="admin-tab active" onclick="switchTab('users')">子管理员管理</button>
+                    <button class="admin-tab" onclick="switchTab('permissions')">权限授权</button>
+                </div>
+
+                <!-- 用户管理标签页 -->
+                <div id="users-tab" class="tab-content active">
+                    <div class="users-section">
+                        <div class="users-toolbar">
+                            <div>
+                                <h2 style="margin: 0;">子管理员管理</h2>
+                                <p style="margin: 5px 0 0 0; color: #666; font-size: 14px;">管理子管理员账号，子管理员需要授权后才能访问功能模块</p>
+                            </div>
+                            <button class="btn btn-primary" onclick="showAddUserModal()">新增子管理员</button>
+                        </div>
+                        <table class="users-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>用户名</th>
+                                    <th>真实姓名</th>
+                                    <th>角色</th>
+                                    <th>状态</th>
+                                    <th>创建时间</th>
+                                    <th>最后登录</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-table-body">
+                                <tr>
+                                    <td colspan="8" style="text-align: center; padding: 40px; color: #999;">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- 权限管理标签页 -->
+                <div id="permissions-tab" class="tab-content">
+                    <div class="permissions-container">
+                        <div style="margin-bottom: 20px; padding: 15px; background: #f0f7ff; border-radius: 8px; border-left: 4px solid #667eea;">
+                            <h3 style="margin: 0 0 5px 0; color: #333;">子管理员权限授权</h3>
+                            <p style="margin: 0; color: #666; font-size: 14px;">为子管理员授权功能模块访问权限，未授权的模块将不会显示在首页</p>
+                        </div>
+                        <div class="user-selector">
+                            <label style="display: block; margin-bottom: 10px; font-weight: 500;">选择子管理员：</label>
+                            <select id="user-select" onchange="loadUserPermissions()">
+                                <option value="">-- 请选择子管理员 --</option>
+                            </select>
+                        </div>
+
+                        <div id="permissions-content" style="display: none;">
+                            <div class="batch-actions">
+                                <button class="btn btn-primary" onclick="grantAll()">全部授权</button>
+                                <button class="btn btn-secondary" onclick="revokeAll()">全部撤销</button>
+                                <button class="btn btn-success" onclick="savePermissions()">保存更改</button>
+                            </div>
+
+                            <div class="permissions-grid" id="permissions-grid"></div>
+                        </div>
+
+                        <div id="empty-state" class="empty-state">
+                            <div class="empty-state-icon">🔐</div>
+                            <div>请选择一个子管理员来管理权限</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        let currentUserId = null;
+        let permissions = [];
+        let allUsers = [];
+
+        // 页面加载时加载用户列表
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUsersList();
+            loadUsers();
+        });
+
+        // 切换标签页
+        function switchTab(tabName) {
+            // 更新标签样式
+            document.querySelectorAll('.admin-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            event.target.classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // 如果切换到子管理员管理标签，刷新用户列表
+            if (tabName === 'users') {
+                loadUsersList();
+            }
+        }
+
+        // 加载用户列表到表格
+        async function loadUsersList() {
+            try {
+                const response = await fetch('/api/users');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '加载用户列表失败');
+                }
+                const users = await response.json();
+                allUsers = users;
+                
+                const tbody = document.getElementById('users-table-body');
+                
+                if (users.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #999;">暂无用户</td></tr>';
+                    return;
+                }
+                
+                const roleMap = {
+                    'admin': { name: '系统管理员', class: 'role-admin' },
+                    'teacher': { name: '子管理员（教务）', class: 'role-teacher' },
+                    'finance': { name: '子管理员（财务）', class: 'role-finance' },
+                    'readonly': { name: '子管理员（只读）', class: 'role-readonly' }
+                };
+                
+                tbody.innerHTML = users.map(user => {
+                    const roleInfo = roleMap[user.role] || { name: user.role, class: '' };
+                    return `
+                        <tr>
+                            <td>${user.id}</td>
+                            <td>${user.username}</td>
+                            <td>${user.real_name || '-'}</td>
+                            <td><span class="role-badge ${roleInfo.class}">${roleInfo.name}</span></td>
+                            <td><span class="status-badge ${user.is_active ? 'status-active' : 'status-inactive'}">${user.is_active ? '启用' : '禁用'}</span></td>
+                            <td>${user.created_at || '-'}</td>
+                            <td>${user.last_login || '-'}</td>
+                            <td>
+                                <button class="btn btn-warning btn-sm" onclick="showEditUserModal(${user.id})" ${user.role === 'admin' ? 'disabled title="不能编辑管理员"' : ''}>编辑</button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteUser(${user.id})" ${user.role === 'admin' ? 'disabled title="不能删除管理员"' : ''}>删除</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (error) {
+                console.error('加载用户列表失败:', error);
+                const errorMessage = error.message || '未知错误';
+                let displayMessage = '加载失败：' + errorMessage;
+                
+                // 如果是权限错误，显示更友好的提示
+                if (errorMessage.includes('需要管理员权限') || errorMessage.includes('管理员')) {
+                    displayMessage = '需要管理员权限才能访问此页面。如果您是管理员，请确保已正确登录。';
+                }
+                
+                document.getElementById('users-table-body').innerHTML = 
+                    '<tr><td colspan="8" style="text-align: center; padding: 40px; color: #dc3545;">' + displayMessage + '</td></tr>';
+            }
+        }
+
+        // 加载用户列表到下拉框
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/users');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || '加载用户列表失败');
+                }
+                const users = await response.json();
+                
+                const select = document.getElementById('user-select');
+                select.innerHTML = '<option value="">-- 请选择子管理员 --</option>';
+                
+                users.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.id;
+                    // 显示用户信息，管理员显示为"系统管理员"，其他显示为"子管理员"
+                    const roleText = user.role === 'admin' ? '系统管理员' : '子管理员';
+                    option.textContent = `${user.real_name || user.username} (${roleText})`;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('加载用户列表失败:', error);
+                const errorMessage = error.message || '未知错误';
+                
+                // 如果是权限错误，显示更友好的提示
+                if (errorMessage.includes('需要管理员权限') || errorMessage.includes('管理员')) {
+                    alert('需要管理员权限才能访问此页面。如果您是管理员，请确保已正确登录。');
+                } else {
+                    alert('加载用户列表失败：' + errorMessage);
+                }
+            }
+        }
+
+        // 显示新增子管理员模态框
+        function showAddUserModal() {
+            const modalBody = `
+                <h2>新增子管理员</h2>
+                <form id="user-form" onsubmit="saveUser(event)">
+                    <div class="form-group">
+                        <label>用户名 *</label>
+                        <input type="text" name="username" required>
+                        <small style="color: #666; display: block; margin-top: 5px;">子管理员的登录用户名</small>
+                    </div>
+                    <div class="form-group">
+                        <label>密码 *</label>
+                        <input type="password" name="password" required maxlength="72">
+                        <small style="color: #666; display: block; margin-top: 5px;">密码长度不能超过72个字符</small>
+                    </div>
+                    <div class="form-group">
+                        <label>真实姓名</label>
+                        <input type="text" name="real_name">
+                        <small style="color: #666; display: block; margin-top: 5px;">子管理员的真实姓名（可选）</small>
+                    </div>
+                    <div class="form-group">
+                        <label>角色类型 *</label>
+                        <select name="role" required>
+                            <option value="teacher">子管理员（教务权限）</option>
+                            <option value="finance">子管理员（财务权限）</option>
+                            <option value="readonly">子管理员（只读权限）</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">选择子管理员的角色类型，创建后需要在"权限管理"标签页中授权功能模块</small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            const modalBodyEl = document.getElementById('modal-body');
+            const modal = document.getElementById('modal');
+            
+            if (!modalBodyEl || !modal) {
+                console.error('Modal elements not found');
+                alert('无法打开新增窗口，请刷新页面重试');
+                return;
+            }
+            
+            modalBodyEl.innerHTML = modalBody;
+            modal.style.display = 'block';
+            modal.classList.add('show');
+            console.log('Add user modal opened');
+        }
+        
+        // 确保函数在全局作用域可用
+        window.showAddUserModal = showAddUserModal;
+
+        // 显示编辑子管理员模态框
+        function showEditUserModal(userId) {
+            console.log('showEditUserModal called with userId:', userId);
+            const user = allUsers.find(u => u.id === userId);
+            if (!user) {
+                alert('子管理员不存在');
+                return;
+            }
+            
+            // 不能编辑系统管理员
+            if (user.role === 'admin') {
+                alert('不能编辑系统管理员');
+                return;
+            }
+
+            // 转义用户数据，防止XSS攻击
+            const escapeHtml = (text) => {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            };
+
+            const modalBody = `
+                <h2>编辑子管理员</h2>
+                <form id="user-form" onsubmit="saveUser(event, ${userId})">
+                    <div class="form-group">
+                        <label>用户名</label>
+                        <input type="text" value="${escapeHtml(user.username)}" disabled style="background: #f5f5f5;">
+                        <small style="color: #666;">用户名不可修改</small>
+                    </div>
+                    <div class="form-group">
+                        <label>密码</label>
+                        <input type="password" name="password" placeholder="留空则不修改密码" maxlength="72">
+                        <small style="color: #666; display: block; margin-top: 5px;">密码长度不能超过72个字符，留空则不修改密码</small>
+                    </div>
+                    <div class="form-group">
+                        <label>真实姓名</label>
+                        <input type="text" name="real_name" value="${escapeHtml(user.real_name || '')}">
+                        <small style="color: #666; display: block; margin-top: 5px;">子管理员的真实姓名</small>
+                    </div>
+                    <div class="form-group">
+                        <label>角色类型 *</label>
+                        <select name="role" required>
+                            <option value="teacher" ${user.role === 'teacher' ? 'selected' : ''}>子管理员（教务权限）</option>
+                            <option value="finance" ${user.role === 'finance' ? 'selected' : ''}>子管理员（财务权限）</option>
+                            <option value="readonly" ${user.role === 'readonly' ? 'selected' : ''}>子管理员（只读权限）</option>
+                        </select>
+                        <small style="color: #666; display: block; margin-top: 5px;">注意：不能将子管理员角色修改为系统管理员</small>
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select name="is_active">
+                            <option value="true" ${user.is_active ? 'selected' : ''}>启用</option>
+                            <option value="false" ${!user.is_active ? 'selected' : ''}>禁用</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            
+            const modalBodyEl = document.getElementById('modal-body');
+            const modal = document.getElementById('modal');
+            
+            if (!modalBodyEl || !modal) {
+                console.error('Modal elements not found');
+                alert('无法打开编辑窗口，请刷新页面重试');
+                return;
+            }
+            
+            modalBodyEl.innerHTML = modalBody;
+            modal.style.display = 'block';
+            modal.classList.add('show');
+            
+            console.log('Modal opened');
+        }
+        
+        // 确保函数在全局作用域可用
+        window.showEditUserModal = showEditUserModal;
+
+        // 保存用户（新增或编辑）
+        async function saveUser(e, userId) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            // 处理布尔值
+            if (data.is_active !== undefined) {
+                data.is_active = data.is_active === 'true';
+            }
+            
+            // 验证密码长度（bcrypt限制72字节）
+            if (data.password && data.password.trim() !== '') {
+                // 计算UTF-8编码的字节长度
+                const passwordBytes = new TextEncoder().encode(data.password).length;
+                if (passwordBytes > 72) {
+                    alert('密码长度不能超过72个字符（UTF-8编码）');
+                    return;
+                }
+            } else {
+                // 如果密码为空，删除该字段
+                delete data.password;
+            }
+
+            const url = userId ? `/api/users/${userId}` : '/api/users';
+            const method = userId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    // 先关闭模态框（在alert之前）
+                    closeModal();
+                    // 显示成功提示
+                    setTimeout(() => {
+                        alert(userId ? '子管理员更新成功！' : '子管理员创建成功！');
+                        // 刷新用户列表
+                        loadUsersList();
+                        loadUsers(); // 同时更新下拉框
+                    }, 100);
+                } else {
+                    throw new Error(result.error || '保存失败');
+                }
+            } catch (error) {
+                console.error('保存子管理员失败:', error);
+                alert('保存子管理员失败：' + error.message);
+            }
+        }
+
+        // 删除子管理员
+        async function deleteUser(userId) {
+            const user = allUsers.find(u => u.id === userId);
+            if (!user) {
+                alert('子管理员不存在');
+                return;
+            }
+            
+            // 不能删除系统管理员
+            if (user.role === 'admin') {
+                alert('不能删除系统管理员');
+                return;
+            }
+
+            if (!confirm(`确定要删除子管理员 "${user.real_name || user.username}" 吗？\n\n此操作不可恢复！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/users/${userId}`, {
+                    method: 'DELETE'
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert('子管理员删除成功！');
+                    loadUsersList();
+                    loadUsers(); // 同时更新下拉框
+                } else {
+                    throw new Error(result.error || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除子管理员失败:', error);
+                alert('删除子管理员失败：' + error.message);
+            }
+        }
+        
+        // 确保函数在全局作用域可用
+        window.deleteUser = deleteUser;
+        window.saveUser = saveUser;
+
+        // 关闭模态框
+        function closeModal() {
+            const modal = document.getElementById('modal');
+            if (modal) {
+                // 移除show类（CSS通过.modal.show类控制显示）
+                modal.classList.remove('show');
+                // 确保设置display为none（双重保险）
+                modal.style.display = 'none';
+                // 清空模态框内容
+                const modalBody = document.getElementById('modal-body');
+                if (modalBody) {
+                    modalBody.innerHTML = '';
+                }
+            }
+        }
+        
+        // 确保全局closeModal函数可用（如果app.js中也有定义，优先使用本页面的）
+        window.closeModal = closeModal;
+
+        // 点击模态框外部关闭
+        document.getElementById('modal')?.addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+        
+        // ESC键关闭模态框
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('modal');
+                if (modal && modal.classList.contains('show')) {
+                    closeModal();
+                }
+            }
+        });
+
+        // 加载用户权限
+        async function loadUserPermissions() {
+            const userId = document.getElementById('user-select').value;
+            if (!userId) {
+                document.getElementById('permissions-content').style.display = 'none';
+                document.getElementById('empty-state').style.display = 'block';
+                return;
+            }
+
+            currentUserId = parseInt(userId);
+
+            try {
+                // 加载模块列表
+                const modulesResponse = await fetch('/api/permissions/modules');
+                if (!modulesResponse.ok) {
+                    const errorData = await modulesResponse.json().catch(() => ({ error: '加载模块列表失败' }));
+                    throw new Error(errorData.error || '加载模块列表失败');
+                }
+                const modules = await modulesResponse.json();
+
+                // 加载用户权限
+                const permissionsResponse = await fetch(`/api/permissions/users/${userId}`);
+                if (!permissionsResponse.ok) {
+                    const errorData = await permissionsResponse.json().catch(() => ({ error: '加载用户权限失败' }));
+                    throw new Error(errorData.error || '加载用户权限失败');
+                }
+                permissions = await permissionsResponse.json();
+
+                // 渲染权限列表
+                renderPermissions(modules, permissions);
+
+                document.getElementById('permissions-content').style.display = 'block';
+                document.getElementById('empty-state').style.display = 'none';
+            } catch (error) {
+                console.error('加载权限失败:', error);
+                const errorMessage = error.message || '未知错误';
+                
+                // 如果是权限错误，显示更友好的提示
+                if (errorMessage.includes('需要管理员权限') || errorMessage.includes('管理员')) {
+                    alert('需要管理员权限才能访问此功能。如果您是管理员，请确保已正确登录。');
+                } else {
+                    alert('加载权限失败：' + errorMessage);
+                }
+            }
+        }
+
+        // 渲染权限列表
+        function renderPermissions(modules, permissions) {
+            const grid = document.getElementById('permissions-grid');
+            grid.innerHTML = '';
+
+            modules.forEach(module => {
+                const permission = permissions.find(p => p.module === module.code) || {
+                    module: module.code,
+                    is_granted: false
+                };
+
+                const card = document.createElement('div');
+                card.className = `permission-card ${permission.is_granted ? 'granted' : 'denied'}`;
+                card.innerHTML = `
+                    <div class="permission-info">
+                        <div class="permission-name">
+                            <span class="permission-icon">${module.icon}</span>
+                            ${module.name}
+                        </div>
+                        <div class="permission-code">${module.code}</div>
+                    </div>
+                    <label class="permission-toggle">
+                        <input type="checkbox" 
+                               ${permission.is_granted ? 'checked' : ''} 
+                               onchange="togglePermission('${module.code}', this.checked)">
+                        <span class="permission-toggle-slider"></span>
+                    </label>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        // 切换单个权限
+        function togglePermission(module, isGranted) {
+            const permission = permissions.find(p => p.module === module);
+            if (permission) {
+                permission.is_granted = isGranted;
+            } else {
+                permissions.push({
+                    module: module,
+                    is_granted: isGranted
+                });
+            }
+
+            // 更新UI
+            const card = event.target.closest('.permission-card');
+            if (isGranted) {
+                card.classList.remove('denied');
+                card.classList.add('granted');
+            } else {
+                card.classList.remove('granted');
+                card.classList.add('denied');
+            }
+        }
+
+        // 全部授权
+        function grantAll() {
+            permissions.forEach(p => {
+                p.is_granted = true;
+            });
+            loadUserPermissions();
+        }
+
+        // 全部撤销
+        function revokeAll() {
+            permissions.forEach(p => {
+                p.is_granted = false;
+            });
+            loadUserPermissions();
+        }
+
+        // 保存权限
+        async function savePermissions() {
+            if (!currentUserId) {
+                alert('请先选择子管理员');
+                return;
+            }
+
+            if (!confirm('确定要保存权限更改吗？')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/permissions/users/${currentUserId}/modules`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        permissions: permissions
+                    })
+                });
+
+                const result = await response.json();
+                if (response.ok) {
+                    alert('权限保存成功！');
+                    loadUserPermissions(); // 重新加载以刷新数据
+                } else {
+                    throw new Error(result.error || '保存失败');
+                }
+            } catch (error) {
+                console.error('保存权限失败:', error);
+                alert('保存权限失败：' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

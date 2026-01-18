@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>学生管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar">
+                <button class="btn btn-primary" onclick="showAddStudentModal()">新增学生</button>
+                <button class="btn btn-secondary" onclick="exportStudents()">导出Excel</button>
+                <button class="btn btn-secondary" onclick="importStudents()">导入Excel</button>
+                <input type="file" id="import-file" accept=".xlsx,.xls" style="display: none;" onchange="handleImportFile(event)">
+                <input type="text" id="student-search" placeholder="搜索学生..." onkeyup="searchStudents()">
+                <select id="student-status-filter" onchange="loadStudents()">
+                    <option value="">全部状态</option>
+                    <option value="在校">在校</option>
+                    <option value="离校">离校</option>
+                </select>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>姓名</th>
+                        <th>年级</th>
+                        <th>状态</th>
+                        <th>联系电话</th>
+                        <th>家长姓名</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="students-table-body"></tbody>
+            </table>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 导出学生列表
+        function exportStudents() {
+            window.open('/api/export/students', '_blank');
+        }
+
+        // 导入学生
+        function importStudents() {
+            document.getElementById('import-file').click();
+        }
+
+        // 处理导入文件
+        function handleImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            if (!confirm('确定要导入学生数据吗？\n\n注意：已存在的学生将被跳过。')) {
+                event.target.value = '';
+                return;
+            }
+
+            fetch('/api/import/students', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('导入失败：' + data.error);
+                } else {
+                    alert(data.message);
+                    if (data.errors && data.errors.length > 0) {
+                        console.log('导入错误：', data.errors);
+                    }
+                    loadStudents();
+                }
+            })
+            .catch(error => {
+                console.error('导入失败:', error);
+                alert('导入失败：' + error.message);
+            })
+            .finally(() => {
+                event.target.value = '';
+            });
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStudents();
+            
+            // 使用事件委托处理删除按钮点击
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('btn-danger') && e.target.textContent === '删除') {
+                    const studentId = e.target.getAttribute('data-student-id') || e.target.getAttribute('onclick')?.match(/deleteStudent\((\d+)\)/)?.[1];
+                    if (studentId) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteStudent(parseInt(studentId));
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+

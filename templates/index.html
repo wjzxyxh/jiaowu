@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header style="display: flex; justify-content: space-between; align-items: center;">
+            <h1 style="margin: 0; flex: 1; text-align: center;">教务管理系统</h1>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <!-- 通知中心按钮 -->
+                <div id="notification-center-btn" style="display: none; position: relative; cursor: pointer;">
+                    <div id="notification-icon-wrapper" style="position: relative; padding: 8px; background: rgba(255, 255, 255, 0.2); border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.3); transition: all 0.3s;" onmouseover="this.style.background='rgba(255, 255, 255, 0.3)'" onmouseout="this.style.background='rgba(255, 255, 255, 0.2)'">
+                        <span style="font-size: 20px; color: white;">🔔</span>
+                        <span id="notification-badge" style="display: none; position: absolute; top: -2px; right: -2px; background: #dc3545; color: white; border-radius: 50%; width: 18px; height: 18px; font-size: 11px; font-weight: bold; display: flex; align-items: center; justify-content: center; border: 2px solid white;">0</span>
+                    </div>
+                    <!-- 通知弹窗 -->
+                    <div id="notification-popup" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 10px; background: white; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); width: 400px; max-height: 500px; z-index: 1001; overflow: hidden; animation: slideDown 0.3s ease-out;">
+                        <div style="padding: 16px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                            <h3 style="margin: 0; color: white; font-size: 16px; font-weight: 600;">通知中心</h3>
+                            <button id="mark-all-read-popup-btn" style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 12px; transition: all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">全部已读</button>
+                        </div>
+                        <div id="notification-popup-list" style="max-height: 400px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: #ddd transparent;">
+                            <div style="padding: 40px; text-align: center; color: #999;">
+                                <div style="font-size: 48px; margin-bottom: 10px;">📭</div>
+                                <div>暂无通知</div>
+                            </div>
+                        </div>
+                    </div>
+                    <style>
+                        @keyframes slideDown {
+                            from {
+                                opacity: 0;
+                                transform: translateY(-10px);
+                            }
+                            to {
+                                opacity: 1;
+                                transform: translateY(0);
+                            }
+                        }
+                        #notification-popup-list::-webkit-scrollbar {
+                            width: 6px;
+                        }
+                        #notification-popup-list::-webkit-scrollbar-track {
+                            background: transparent;
+                        }
+                        #notification-popup-list::-webkit-scrollbar-thumb {
+                            background: #ddd;
+                            border-radius: 3px;
+                        }
+                        #notification-popup-list::-webkit-scrollbar-thumb:hover {
+                            background: #bbb;
+                        }
+                    </style>
+                </div>
+                <!-- 登录状态栏 -->
+                <div id="login-status-bar" style="display: none; position: relative;">
+                    <div id="status-bar-trigger" style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 8px 16px; background: rgba(255, 255, 255, 0.2); border-radius: 20px; border: 1px solid rgba(255, 255, 255, 0.3); transition: all 0.3s;">
+                        <span id="user-info" style="color: white; font-size: 14px;"></span>
+                        <span style="color: white; font-size: 12px;">▼</span>
+                    </div>
+                    <div id="status-bar-menu" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 5px; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); min-width: 180px; z-index: 1000; overflow: hidden;">
+                        <div style="padding: 12px 16px; border-bottom: 1px solid #eee;">
+                            <div style="font-weight: 500; color: #333; font-size: 14px;" id="menu-user-name"></div>
+                            <div style="font-size: 12px; color: #999; margin-top: 4px;" id="menu-user-role"></div>
+                        </div>
+                        <div style="padding: 8px 0;">
+                            <button id="profile-btn" style="width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; color: #333; cursor: pointer; font-size: 14px; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='none'">个人设置</button>
+                            <button id="logout-btn" style="width: 100%; padding: 10px 16px; text-align: left; border: none; background: none; color: #dc3545; cursor: pointer; font-size: 14px; transition: background 0.2s;" onmouseover="this.style.background='#f8f9fa'" onmouseout="this.style.background='none'">退出登录</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            <div class="home-content">
+                <div class="function-grid" id="function-grid">
+                    <!-- 功能模块将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal" style="display: none; position: fixed; z-index: 2000; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.4);">
+        <div class="modal-content" style="background-color: #fefefe; margin: 5% auto; padding: 0; border: none; border-radius: 12px; width: 90%; max-width: 500px; box-shadow: 0 8px 32px rgba(0,0,0,0.2);">
+            <div style="padding: 20px 24px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                <h2 style="margin: 0; font-size: 20px; color: #333;" id="modal-title">个人设置</h2>
+                <span class="close" onclick="closeProfileModal()" style="color: #aaa; font-size: 28px; font-weight: bold; cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='#000'" onmouseout="this.style.color='#aaa'">&times;</span>
+            </div>
+            <div id="modal-body" style="padding: 24px;">
+                <!-- 模态框内容将通过JavaScript动态加载 -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局API错误处理：检测会话失效
+        let sessionExpiredHandled = false; // 防止重复弹窗
+        
+        (function() {
+            // 保存原始的fetch函数
+            const originalFetch = window.fetch;
+            
+            // 重写fetch函数，添加全局错误处理
+            window.fetch = function(...args) {
+                return originalFetch.apply(this, args)
+                    .then(async response => {
+                        // 检查是否是401错误
+                        if (response.status === 401 && !sessionExpiredHandled) {
+                            try {
+                                const data = await response.json();
+                                if (data.session_expired) {
+                                    sessionExpiredHandled = true;
+                                    
+                                    // 显示确认弹窗
+                                    const confirmed = confirm('您的账号在其他地方登录，当前会话已失效。\n\n点击"确定"将跳转到登录页面重新登录。\n点击"取消"可以继续浏览（但操作可能失败）。');
+                                    
+                                    if (confirmed) {
+                                        // 用户确认，清除本地数据并跳转到登录页
+                                        console.warn('用户确认会话失效，跳转到登录页');
+                                        localStorage.clear();
+                                        sessionStorage.clear();
+                                        window.location.href = '/login';
+                                    } else {
+                                        // 用户取消，重置标志，允许继续操作（但可能会失败）
+                                        console.warn('用户取消跳转，继续当前会话（操作可能失败）');
+                                        sessionExpiredHandled = false;
+                                    }
+                                    
+                                    // 返回一个rejected promise，阻止后续处理
+                                    return Promise.reject(new Error('Session expired'));
+                                }
+                            } catch (e) {
+                                // 如果解析JSON失败，继续处理
+                            }
+                        }
+                        return Promise.resolve(response);
+                    });
+            };
+        })();
+        
+        // 检查登录状态（带重试机制）
+        async function checkLogin(retryCount = 0) {
+            try {
+                console.log(`[checkLogin] 开始检查登录状态 (尝试 ${retryCount + 1})`);
+                const response = await fetch('/api/current-user', {
+                    credentials: 'include' // 确保发送cookie
+                });
+                
+                console.log('[checkLogin] HTTP状态:', response.status);
+                console.log('[checkLogin] Response OK:', response.ok);
+                console.log('[checkLogin] Content-Type:', response.headers.get('content-type'));
+                
+                if (!response.ok) {
+                    // 检查是否是会话失效
+                    if (response.status === 401) {
+                        try {
+                            const data = await response.json();
+                            if (data.session_expired) {
+                                // 显示确认弹窗
+                                const confirmed = confirm('您的账号在其他地方登录，当前会话已失效。\n\n点击"确定"将跳转到登录页面重新登录。\n点击"取消"可以继续浏览（但操作可能失败）。');
+                                
+                                if (confirmed) {
+                                    localStorage.clear();
+                                    sessionStorage.clear();
+                                    window.location.href = '/login';
+                                }
+                                return;
+                            }
+                        } catch (e) {
+                            // 忽略解析错误
+                        }
+                    }
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                
+                // 先读取响应文本，确保能正确解析
+                const responseText = await response.text();
+                console.log('[checkLogin] 响应文本:', responseText);
+                
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (parseError) {
+                    console.error('[checkLogin] JSON解析失败:', parseError);
+                    console.error('[checkLogin] 响应文本内容:', responseText);
+                    throw new Error('JSON解析失败: ' + parseError.message);
+                }
+                
+                console.log('[checkLogin] 解析后的数据:', JSON.stringify(data));
+                console.log('[checkLogin] data对象:', data);
+                console.log('[checkLogin] data.user:', data.user);
+                console.log('[checkLogin] data.user类型:', typeof data.user);
+                console.log('[checkLogin] data.user是否为null:', data.user === null);
+                console.log('[checkLogin] data.user是否为undefined:', data.user === undefined);
+                console.log('[checkLogin] data.user是否为false:', data.user === false);
+                console.log('[checkLogin] 条件检查 - data存在:', !!data);
+                console.log('[checkLogin] 条件检查 - data.user不为null:', data.user !== null);
+                console.log('[checkLogin] 条件检查 - data.user不为undefined:', data.user !== undefined);
+                
+                if (data && data.user !== null && data.user !== undefined) {
+                    console.log('[checkLogin] ✓ 用户已登录，开始更新UI');
+                    const user = data.user;
+                    console.log('用户已登录，用户信息:', user);
+                    const displayName = user.real_name || user.username;
+                    const roleMap = {
+                        'admin': '管理员',
+                        'teacher': '教务',
+                        'finance': '财务',
+                        'readonly': '只读',
+                        'user': '用户'
+                    };
+                    
+                    // 更新状态栏
+                    document.getElementById('user-info').textContent = displayName;
+                    document.getElementById('menu-user-name').textContent = displayName;
+                    document.getElementById('menu-user-role').textContent = roleMap[user.role] || '用户';
+                    document.getElementById('login-status-bar').style.display = 'block';
+                    document.getElementById('notification-center-btn').style.display = 'block';
+                    
+                    // 加载通知（使用try-catch确保不会影响登录流程）
+                    try {
+                        loadUnreadCount();
+                    } catch (error) {
+                        console.error('[checkLogin] 加载通知失败:', error);
+                    }
+                    
+                    // 加载功能模块
+                    try {
+                        loadModules();
+                    } catch (error) {
+                        console.error('[checkLogin] 加载模块失败:', error);
+                    }
+                    
+                    console.log('[checkLogin] ✓ UI更新完成');
+                    return; // 成功登录，直接返回
+                } else {
+                    console.log('[checkLogin] ✗ 用户未登录');
+                    console.log('[checkLogin] data:', data);
+                    console.log('[checkLogin] data.user:', data.user);
+                    // 如果重试次数少于2次，等待后重试（可能是session还未同步）
+                    if (retryCount < 2) {
+                        console.log(`[checkLogin] 等待200ms后重试 (${retryCount + 1}/2)`);
+                        await new Promise(resolve => setTimeout(resolve, 200));
+                        return checkLogin(retryCount + 1);
+                    }
+                    console.log('[checkLogin] ✗ 登录检查失败，跳转到登录页面');
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('检查登录状态失败:', error);
+                console.error('错误详情:', error.stack);
+                // 如果重试次数少于2次，等待后重试
+                if (retryCount < 2) {
+                    console.log(`错误重试 (${retryCount + 1}/2)`);
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    return checkLogin(retryCount + 1);
+                }
+                console.log('登录检查异常，跳转到登录页面');
+                window.location.href = '/login';
+            }
+        }
+
+        // 切换状态栏菜单
+        document.getElementById('status-bar-trigger').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const menu = document.getElementById('status-bar-menu');
+            const popup = document.getElementById('notification-popup');
+            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+            popup.style.display = 'none'; // 关闭通知弹窗
+        });
+
+        // 切换通知弹窗
+        document.getElementById('notification-icon-wrapper').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const popup = document.getElementById('notification-popup');
+            const menu = document.getElementById('status-bar-menu');
+            popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+            menu.style.display = 'none'; // 关闭用户菜单
+            if (popup.style.display === 'block') {
+                loadNotificationsToPopup();
+            }
+        });
+
+        // 点击其他地方关闭菜单和弹窗
+        document.addEventListener('click', function(e) {
+            const statusBar = document.getElementById('login-status-bar');
+            const notificationBtn = document.getElementById('notification-center-btn');
+            if (!statusBar.contains(e.target) && !notificationBtn.contains(e.target)) {
+                document.getElementById('status-bar-menu').style.display = 'none';
+                document.getElementById('notification-popup').style.display = 'none';
+            }
+        });
+
+
+        // 加载未读通知数量
+        async function loadUnreadCount() {
+            try {
+                const response = await fetch('/api/notifications/unread-count');
+                const data = await response.json();
+                if (response.ok) {
+                    const count = data.count || 0;
+                    const badge = document.getElementById('notification-badge');
+                    if (count > 0) {
+                        badge.textContent = count > 99 ? '99+' : count;
+                        badge.style.display = 'flex';
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            } catch (error) {
+                console.error('加载未读通知数量失败:', error);
+            }
+        }
+
+        // 加载通知到弹窗
+        async function loadNotificationsToPopup() {
+            try {
+                const response = await fetch('/api/notifications');
+                const data = await response.json();
+                if (response.ok) {
+                    const list = document.getElementById('notification-popup-list');
+                    if (data.length > 0) {
+                        list.innerHTML = data.map(n => `
+                            <div id="notification-item-${n.id}" style="padding: 12px 16px; border-bottom: 1px solid #eee; cursor: pointer; transition: background 0.2s; ${n.is_read ? '' : 'background: #f0f7ff;'}" 
+                                 onmouseover="this.style.background='#f8f9fa'" 
+                                 onmouseout="this.style.background='${n.is_read ? 'transparent' : '#f0f7ff'}'"
+                                 onclick="markNotificationRead(${n.id}, '${n.link || ''}')">
+                                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                    <div style="flex: 1;">
+                                        <div style="font-weight: ${n.is_read ? 'normal' : '600'}; color: #333; font-size: 14px; margin-bottom: 4px;">
+                                            ${n.is_read ? '' : '<span style="display: inline-block; width: 8px; height: 8px; background: #667eea; border-radius: 50%; margin-right: 8px; vertical-align: middle;"></span>'}
+                                            ${n.title}
+                                        </div>
+                                        <div style="font-size: 13px; color: #666; margin-bottom: 6px; line-height: 1.4;">${n.content}</div>
+                                        <div style="font-size: 11px; color: #999;">${n.created_at}</div>
+                                    </div>
+                                    ${n.link ? '<span style="color: #667eea; font-size: 12px; margin-left: 8px;">→</span>' : ''}
+                                </div>
+                            </div>
+                        `).join('');
+                    } else {
+                        list.innerHTML = `
+                            <div style="padding: 40px; text-align: center; color: #999;">
+                                <div style="font-size: 48px; margin-bottom: 10px;">📭</div>
+                                <div>暂无通知</div>
+                            </div>
+                        `;
+                    }
+                    // 更新未读数量
+                    loadUnreadCount();
+                }
+            } catch (error) {
+                console.error('加载通知失败:', error);
+            }
+        }
+
+        // 标记通知为已读
+        async function markNotificationRead(notificationId, link) {
+            try {
+                const response = await fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+                if (response.ok) {
+                    // 更新UI
+                    const item = document.getElementById(`notification-item-${notificationId}`);
+                    if (item) {
+                        item.style.background = 'transparent';
+                        const dot = item.querySelector('span[style*="background: #667eea"]');
+                        if (dot) dot.remove();
+                        const title = item.querySelector('div[style*="font-weight"]');
+                        if (title) title.style.fontWeight = 'normal';
+                    }
+                    // 更新未读数量
+                    loadUnreadCount();
+                    // 如果有链接，跳转
+                    if (link) {
+                        window.open(link, '_blank');
+                    }
+                }
+            } catch (error) {
+                console.error('标记通知失败:', error);
+            }
+        }
+
+        // 全局函数，供HTML调用
+        window.markNotificationRead = markNotificationRead;
+
+        // 个人设置
+        document.getElementById('profile-btn').addEventListener('click', function() {
+            showProfileModal();
+        });
+
+        // 显示个人设置模态框
+        async function showProfileModal() {
+            try {
+                // 获取当前用户信息
+                const response = await fetch('/api/current-user');
+                const data = await response.json();
+                
+                if (!response.ok || !data.user) {
+                    alert('获取用户信息失败');
+                    return;
+                }
+                
+                const user = data.user;
+                const modalBody = `
+                    <form id="profile-form" onsubmit="saveProfile(event)">
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">用户名</label>
+                            <input type="text" value="${escapeHtml(user.username)}" disabled style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5; color: #666;">
+                            <small style="color: #999; font-size: 12px; display: block; margin-top: 5px;">用户名不可修改</small>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">真实姓名</label>
+                            <input type="text" name="real_name" value="${escapeHtml(user.real_name || '')}" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                            <small style="color: #999; font-size: 12px; display: block; margin-top: 5px;">您的真实姓名（可选）</small>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">新密码</label>
+                            <input type="password" name="password" placeholder="留空则不修改密码" maxlength="72" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                            <small style="color: #999; font-size: 12px; display: block; margin-top: 5px;">密码长度不能超过72个字符，留空则不修改密码</small>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 20px;">
+                            <label style="display: block; margin-bottom: 8px; font-weight: 500; color: #333;">确认新密码</label>
+                            <input type="password" name="password_confirm" placeholder="再次输入新密码" maxlength="72" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                            <small style="color: #999; font-size: 12px; display: block; margin-top: 5px;">如果修改密码，请再次输入确认</small>
+                        </div>
+                        <div class="form-actions" style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+                            <button type="button" class="btn" onclick="closeProfileModal()" style="padding: 10px 20px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='white'">取消</button>
+                            <button type="submit" class="btn btn-primary" style="padding: 10px 20px; border: none; background: #667eea; color: white; border-radius: 6px; cursor: pointer; transition: all 0.2s;" onmouseover="this.style.background='#5568d3'" onmouseout="this.style.background='#667eea'">保存</button>
+                        </div>
+                    </form>
+                `;
+                
+                document.getElementById('modal-body').innerHTML = modalBody;
+                document.getElementById('modal').style.display = 'block';
+                
+                // 关闭菜单
+                document.getElementById('status-bar-menu').style.display = 'none';
+            } catch (error) {
+                console.error('显示个人设置失败:', error);
+                alert('显示个人设置失败: ' + error.message);
+            }
+        }
+
+        // 保存个人设置
+        async function saveProfile(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            
+            // 验证密码
+            if (data.password && data.password.trim() !== '') {
+                // 验证密码长度（bcrypt限制72字节）
+                const passwordBytes = new TextEncoder().encode(data.password).length;
+                if (passwordBytes > 72) {
+                    alert('密码长度不能超过72个字符（UTF-8编码）');
+                    return;
+                }
+                
+                // 验证两次密码输入是否一致
+                if (data.password !== data.password_confirm) {
+                    alert('两次输入的密码不一致，请重新输入');
+                    return;
+                }
+            } else {
+                // 如果密码为空，删除该字段
+                delete data.password;
+            }
+            
+            // 删除确认密码字段
+            delete data.password_confirm;
+            
+            try {
+                const response = await fetch('/api/users/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    alert('个人信息更新成功！');
+                    closeProfileModal();
+                    // 刷新用户信息显示
+                    checkLogin();
+                } else {
+                    throw new Error(result.error || '更新失败');
+                }
+            } catch (error) {
+                console.error('保存个人信息失败:', error);
+                alert('保存失败：' + (error.message || '未知错误'));
+            }
+        }
+
+        // 关闭个人设置模态框
+        function closeProfileModal() {
+            document.getElementById('modal').style.display = 'none';
+            document.getElementById('modal-body').innerHTML = '';
+        }
+
+        // HTML转义函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 点击模态框外部关闭
+        document.getElementById('modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeProfileModal();
+            }
+        });
+
+        // ESC键关闭模态框
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('modal');
+                if (modal && modal.style.display === 'block') {
+                    closeProfileModal();
+                }
+            }
+        });
+
+        // 退出登录
+        document.getElementById('logout-btn').addEventListener('click', async function() {
+            if (confirm('确定要退出登录吗？')) {
+                try {
+                    await fetch('/api/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                } catch (error) {
+                    console.error('退出登录失败:', error);
+                }
+            }
+        });
+
+        // 标记所有通知为已读（弹窗中的按钮）
+        document.getElementById('mark-all-read-popup-btn').addEventListener('click', async function(e) {
+            e.stopPropagation();
+            try {
+                const response = await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+                if (response.ok) {
+                    loadNotificationsToPopup();
+                    loadUnreadCount();
+                }
+            } catch (error) {
+                console.error('标记通知失败:', error);
+            }
+        });
+
+        // 功能模块配置
+        const MODULE_CONFIG = [
+            {code: 'students', name: '学生管理', icon: '👥', path: '/students', desc: '管理学生信息，包括姓名、年级、联系方式等'},
+            {code: 'teachers', name: '教师管理', icon: '👨‍🏫', path: '/teachers', desc: '管理教师信息，设置底薪和课时成本'},
+            {code: 'courses_manage', name: '课程管理', icon: '📚', path: '/courses_manage', desc: '管理课程信息，设置课程单价'},
+            {code: 'courses', name: '排课管理', icon: '📅', path: '/courses', desc: '为学生排课，管理课程安排'},
+            {code: 'all_courses', name: '全部排课', icon: '📋', path: '/all_courses', desc: '查看所有排课记录，支持筛选、删除、新增等操作'},
+            {code: 'student_courses', name: '学生课程', icon: '📚', path: '/student_courses', desc: '查看已缴费需要排课的学生课程列表'},
+            {code: 'payments', name: '缴费管理', icon: '💰', path: '/payments', desc: '记录学生缴费信息，管理剩余课时'},
+            {code: 'stats', name: '学生课时', icon: '📊', path: '/stats', desc: '查看学生课时统计和剩余课时'},
+            {code: 'teacher_hours', name: '老师课时', icon: '👨‍🏫', path: '/teacher_hours', desc: '查看老师课时统计'},
+            {code: 'finance', name: '财务统计', icon: '💵', path: '/finance', desc: '查看收支情况和利润统计'},
+            {code: 'others_manage', name: '其它管理', icon: '⚙️', path: '/others_manage', desc: '管理时段和教室设置'},
+            {code: 'calendar', name: '课程表日历', icon: '📆', path: '/calendar', desc: '日历视图查看课程安排，支持筛选和查看详情'},
+        ];
+
+        // 加载功能模块（根据权限）
+        async function loadModules() {
+            try {
+                // 获取当前用户的权限
+                const response = await fetch('/api/permissions/current-user');
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || '获取权限失败');
+                }
+
+                const grantedModules = data.modules || [];
+                const grid = document.getElementById('function-grid');
+                
+                // 如果是管理员，显示所有模块 + 系统管理员
+                let modulesToShow = [];
+                if (grantedModules.length === MODULE_CONFIG.length || grantedModules.length === 0) {
+                    // 可能是管理员（拥有所有权限）或首次加载
+                    modulesToShow = [...MODULE_CONFIG];
+                } else {
+                    // 根据权限过滤模块
+                    modulesToShow = MODULE_CONFIG.filter(m => grantedModules.includes(m.code));
+                }
+
+                // 检查是否是管理员（显示系统管理员入口）
+                const userResponse = await fetch('/api/current-user');
+                const userData = await userResponse.json();
+                const isAdmin = userData.user && userData.user.role === 'admin';
+
+                // 渲染模块
+                grid.innerHTML = modulesToShow.map(module => `
+                    <a href="${module.path}" target="_blank" class="function-card-link">
+                        <div class="function-card">
+                            <div class="function-icon">${module.icon}</div>
+                            <h3>${module.name}</h3>
+                            <p>${module.desc}</p>
+                        </div>
+                    </a>
+                `).join('');
+
+                // 如果是管理员，添加系统管理员入口
+                if (isAdmin) {
+                    grid.innerHTML += `
+                        <a href="/permissions" target="_blank" class="function-card-link">
+                            <div class="function-card" style="border: 2px solid #667eea;">
+                                <div class="function-icon">🔐</div>
+                                <h3>系统管理员</h3>
+                                <p>管理用户权限，授权用户访问指定功能模块</p>
+                            </div>
+                        </a>
+                    `;
+                }
+            } catch (error) {
+                console.error('加载功能模块失败:', error);
+                // 如果加载失败，显示所有模块（向后兼容）
+                const grid = document.getElementById('function-grid');
+                grid.innerHTML = MODULE_CONFIG.map(module => `
+                    <a href="${module.path}" target="_blank" class="function-card-link">
+                        <div class="function-card">
+                            <div class="function-icon">${module.icon}</div>
+                            <h3>${module.name}</h3>
+                            <p>${module.desc}</p>
+                        </div>
+                    </a>
+                `).join('');
+            }
+        }
+
+        // 页面加载时检查登录状态
+        checkLogin();
+        
+        // 每30秒刷新一次未读通知数量
+        setInterval(() => {
+            loadUnreadCount();
+        }, 30000);
+    </script>
+</body>
+</html>

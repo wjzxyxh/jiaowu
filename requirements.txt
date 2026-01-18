@@ -1,0 +1,21 @@
+Flask>=2.0.0
+Flask-SQLAlchemy>=2.5.0
+Flask-Login>=0.6.0
+Flask-WTF>=1.0.0
+Flask-Limiter>=2.6.0
+passlib[bcrypt]>=1.7.4
+openpyxl>=3.0.0
+pandas>=1.5.0
+PyMySQL>=1.0.2
+
+# 文件验证（可选，但推荐）
+# 注意：python-magic在某些系统上可能需要额外安装系统库
+# Linux: sudo apt-get install libmagic1
+# macOS: brew install libmagic
+# Windows: 使用 python-magic-bin 代替
+# python-magic>=0.4.27
+
+# 测试依赖（可选）
+pytest>=7.0.0
+pytest-flask>=1.2.0
+pytest-cov>=4.0.0

@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>课程管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            color: #667eea;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>课程管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('courses')">课程管理</button>
+                <button class="tab" onclick="switchTab('teacher-costs')">教师成本</button>
+                <button class="tab" onclick="switchTab('experience-costs')">经验成本</button>
+            </div>
+
+            <!-- 课程管理标签页 -->
+            <div id="courses-tab" class="tab-content active">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="showAddCourseModal()">新增课程</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>课程名称</th>
+                            <th>科目</th>
+                            <th>课程单价</th>
+                            <th>课程描述</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="courses-manage-table-body"></tbody>
+                </table>
+            </div>
+
+            <!-- 教师成本标签页 -->
+            <div id="teacher-costs-tab" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="showAddTeacherCostModal()">新增教师成本</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>教师姓名</th>
+                            <th>课程名称</th>
+                            <th>每次课成本</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="teacher-costs-table-body"></tbody>
+                </table>
+            </div>
+
+            <!-- 经验成本标签页 -->
+            <div id="experience-costs-tab" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="showAddExperienceCostModal()">新增经验成本</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>教师姓名</th>
+                            <th>课程名称</th>
+                            <th>学生姓名</th>
+                            <th>经验（每次课）</th>
+                            <th>生效时间段</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="experience-costs-table-body"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 标签页切换
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+            
+            // 加载对应数据
+            if (tabName === 'courses') {
+                loadCoursesManage();
+            } else if (tabName === 'teacher-costs') {
+                loadTeacherCosts();
+            } else if (tabName === 'experience-costs') {
+                loadExperienceCosts();
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCoursesManage();
+        });
+
+        // ==================== 课程管理 ====================
+
+        function loadCoursesManage() {
+            fetch('/api/courses_manage')
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('courses-manage-table-body');
+                    tbody.innerHTML = data.map(c => `
+                        <tr>
+                            <td>${c.id}</td>
+                            <td>${c.name}</td>
+                            <td>${c.subject}</td>
+                            <td>${c.unit_price}</td>
+                            <td>${c.description || '-'}</td>
+                            <td><span class="status-badge status-${c.status === '启用' ? 'normal' : 'deleted'}">${c.status}</span></td>
+                            <td>
+                                <button class="btn btn-warning" onclick="showEditCourseManageModal(${c.id})">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteCourseManage(${c.id})">删除</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                });
+        }
+
+        function showAddCourseModal() {
+            const modalBody = `
+                <h2>新增课程</h2>
+                <form id="course-manage-form" onsubmit="saveCourseManage(event)">
+                    <div class="form-group">
+                        <label>课程名称 *</label>
+                        <input type="text" name="name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>科目 *</label>
+                        <input type="text" name="subject" required>
+                    </div>
+                    <div class="form-group">
+                        <label>课程单价 *</label>
+                        <input type="number" name="unit_price" step="0.01" required min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>课程描述（可选）</label>
+                        <textarea name="description" placeholder="可不填写"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select name="status">
+                            <option value="启用">启用</option>
+                            <option value="停用">停用</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            showModal(modalBody);
+        }
+
+        function showEditCourseManageModal(id) {
+            fetch('/api/courses_manage')
+                .then(res => res.json())
+                .then(courses => {
+                    const course = courses.find(c => c.id === id);
+                    if (!course) return;
+                    
+                    const modalBody = `
+                        <h2>编辑课程</h2>
+                        <form id="course-manage-form" onsubmit="saveCourseManage(event, ${id})">
+                            <div class="form-group">
+                                <label>课程名称 *</label>
+                                <input type="text" name="name" value="${course.name}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>科目 *</label>
+                                <input type="text" name="subject" value="${course.subject}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>课程单价 *</label>
+                                <input type="number" name="unit_price" step="0.01" value="${course.unit_price}" required min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>课程描述（可选）</label>
+                                <textarea name="description" placeholder="可不填写">${course.description || ''}</textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>状态</label>
+                                <select name="status">
+                                    <option value="启用" ${course.status === '启用' ? 'selected' : ''}>启用</option>
+                                    <option value="停用" ${course.status === '停用' ? 'selected' : ''}>停用</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn" onclick="closeModal()">取消</button>
+                                <button type="submit" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    `;
+                    showModal(modalBody);
+                });
+        }
+
+        function saveCourseManage(e, id) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.unit_price = parseFloat(data.unit_price) || 0;
+            
+            const url = id ? `/api/courses_manage/${id}` : '/api/courses_manage';
+            const method = id ? 'PUT' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(async res => {
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await res.text();
+                    console.error('服务器返回非JSON响应:', text.substring(0, 500));
+                    throw new Error(`服务器返回了HTML页面 (状态码: ${res.status})，可能是路由错误`);
+                }
+                
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || `HTTP ${res.status} 错误`);
+                }
+                return result;
+            })
+            .then((result) => {
+                console.log('保存成功:', result);
+                alert(id ? '编辑成功！' : '创建成功！');
+                closeModal();
+                loadCoursesManage();
+            })
+            .catch(err => {
+                console.error('保存课程失败:', err);
+                alert('保存失败：' + (err.message || '未知错误'));
+            });
+        }
+
+        function deleteCourseManage(id) {
+            if (!confirm('确定要删除这个课程吗？')) return;
+            
+            fetch(`/api/courses_manage/${id}`, { method: 'DELETE' })
+                .then(() => loadCoursesManage());
+        }
+
+        function resetCourses() {
+            if (!confirm('确定要重置所有课程为默认数据吗？这将删除所有现有课程并恢复默认课程！')) return;
+            
+            fetch('/api/courses_manage/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(data.message || '重置成功');
+                loadCoursesManage();
+            })
+            .catch(err => {
+                alert('重置失败：' + err.message);
+            });
+        }
+
+        // ==================== 教师成本管理 ====================
+
+        function loadTeacherCosts() {
+            fetch('/api/teacher-course-costs')
+                .then(async res => {
+                    if (!res.ok) {
+                        const result = await res.json().catch(() => ({ error: '加载失败' }));
+                        throw new Error(result.error || '加载失败');
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    const tbody = document.getElementById('teacher-costs-table-body');
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">暂无教师成本数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.map(tc => {
+                        return `
+                        <tr>
+                            <td>${tc.id}</td>
+                            <td>${tc.teacher_name}</td>
+                            <td>${tc.course_name}</td>
+                            <td>${tc.cost_per_class.toFixed(2)}</td>
+                            <td>
+                                <button class="btn btn-warning" onclick="showEditTeacherCostModal(${tc.id})">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteTeacherCost(${tc.id})">删除</button>
+                                <button class="btn btn-info" onclick="showTeacherCostHistory(${tc.id})">操作记录</button>
+                            </td>
+                        </tr>
+                    `;
+                    }).join('');
+                })
+                .catch(err => {
+                    console.error('加载教师成本失败:', err);
+                    const tbody = document.getElementById('teacher-costs-table-body');
+                    if (tbody) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: red;">加载失败：' + err.message + '</td></tr>';
+                    }
+                });
+        }
+
+        function showAddTeacherCostModal() {
+            Promise.all([
+                fetch('/api/teachers?status=启用').then(r => r.json()),
+                fetch('/api/courses_manage').then(r => r.json())
+            ]).then(([teachers, courses]) => {
+                const teacherOptions = teachers.length > 0
+                    ? teachers.map(t => `<option value="${t.id}" data-name="${t.name}">${t.name} (${t.subject || ''})</option>`).join('')
+                    : '<option value="">暂无启用教师</option>';
+                const courseOptions = courses.filter(c => c.status === '启用').length > 0
+                    ? courses.filter(c => c.status === '启用').map(c => `<option value="${c.id}" data-name="${c.name}">${c.name} (${c.subject})</option>`).join('')
+                    : '<option value="">暂无启用课程</option>';
+                
+                const modalBody = `
+                    <h2>新增教师成本</h2>
+                    <form id="teacher-cost-form" onsubmit="saveTeacherCost(event)">
+                        <div class="form-group">
+                            <label>教师 *</label>
+                            <select name="teacher_id" id="teacher-cost-teacher-select" required onchange="updateTeacherName()">${teacherOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>课程 *</label>
+                            <select name="course_id" id="teacher-cost-course-select" required onchange="updateCourseName()">${courseOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>每次课成本 *</label>
+                            <input type="number" name="cost_per_class" step="0.01" required min="0" placeholder="请输入每次课的成本">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="closeModal()">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                `;
+                showModal(modalBody);
+            });
+        }
+
+        function showEditTeacherCostModal(id) {
+            Promise.all([
+                fetch('/api/teacher-course-costs').then(r => r.json()),
+                fetch('/api/teachers?status=启用').then(r => r.json()),
+                fetch('/api/courses_manage').then(r => r.json())
+            ]).then(([costs, teachers, courses]) => {
+                const cost = costs.find(c => c.id === id);
+                if (!cost) return;
+                
+                const teacherOptions = teachers.map(t => 
+                    `<option value="${t.id}" data-name="${t.name}" ${t.id === cost.teacher_id ? 'selected' : ''}>${t.name} (${t.subject || ''})</option>`
+                ).join('');
+                const courseOptions = courses.filter(c => c.status === '启用').map(c => 
+                    `<option value="${c.id}" data-name="${c.name}" ${c.id === cost.course_id ? 'selected' : ''}>${c.name} (${c.subject})</option>`
+                ).join('');
+                
+                const modalBody = `
+                    <h2>编辑教师成本</h2>
+                    <form id="teacher-cost-form" onsubmit="saveTeacherCost(event, ${id})">
+                        <div class="form-group">
+                            <label>教师 *</label>
+                            <select name="teacher_id" id="teacher-cost-teacher-select" required onchange="updateTeacherName()">${teacherOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>课程 *</label>
+                            <select name="course_id" id="teacher-cost-course-select" required onchange="updateCourseName()">${courseOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>每次课成本 *</label>
+                            <input type="number" name="cost_per_class" step="0.01" value="${cost.cost_per_class}" required min="0">
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="closeModal()">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                `;
+                showModal(modalBody);
+            });
+        }
+
+        function saveTeacherCost(e, id) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const teacherSelect = document.getElementById('teacher-cost-teacher-select');
+            const courseSelect = document.getElementById('teacher-cost-course-select');
+            
+            const teacherOption = teacherSelect.options[teacherSelect.selectedIndex];
+            const courseOption = courseSelect.options[courseSelect.selectedIndex];
+            
+            const data = {
+                teacher_id: parseInt(formData.get('teacher_id')),
+                teacher_name: teacherOption.getAttribute('data-name'),
+                course_id: parseInt(formData.get('course_id')),
+                course_name: courseOption.getAttribute('data-name'),
+                cost_per_class: parseFloat(formData.get('cost_per_class'))
+            };
+            
+            
+            const url = id ? `/api/teacher-course-costs/${id}` : '/api/teacher-course-costs';
+            const method = id ? 'PUT' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(async res => {
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || '保存失败');
+                }
+                return result;
+            })
+            .then(() => {
+                closeModal();
+                loadTeacherCosts();
+            })
+            .catch(err => {
+                alert('保存失败：' + err.message);
+            });
+        }
+
+        function deleteTeacherCost(id) {
+            if (!confirm('确定要删除这条教师成本记录吗？')) return;
+            
+            fetch(`/api/teacher-course-costs/${id}`, { method: 'DELETE' })
+                .then(async res => {
+                    if (!res.ok) {
+                        const result = await res.json().catch(() => ({ error: '删除失败' }));
+                        throw new Error(result.error || '删除失败');
+                    }
+                    return res.json();
+                })
+                .then(() => {
+                    loadTeacherCosts();
+                })
+                .catch(err => {
+                    console.error('删除教师成本失败:', err);
+                    alert('删除失败：' + err.message);
+                });
+        }
+
+        function showTeacherCostHistory(costId) {
+            fetch(`/api/teacher-course-costs/${costId}/history`)
+                .then(res => res.json())
+                .then(histories => {
+                    if (histories.length === 0) {
+                        alert('暂无操作记录');
+                        return;
+                    }
+                    
+                    const historyHtml = histories.map(h => {
+                        // 如果是更新操作，显示变化信息
+                        let changeInfo = '';
+                        if (h.operation === '更新') {
+                            const changes = [];
+                            
+                            // 成本变化
+                            if (h.old_cost_per_class !== null && h.old_cost_per_class !== undefined && 
+                                h.old_cost_per_class !== h.cost_per_class) {
+                                changes.push(`成本: ${h.old_cost_per_class.toFixed(2)} → ${h.cost_per_class.toFixed(2)}`);
+                            }
+                            
+                            if (changes.length > 0) {
+                                changeInfo = `<br><small style="color: #666;">${changes.join('; ')}</small>`;
+                            }
+                        }
+                        
+                        const operationMap = {
+                            '创建': '创建',
+                            '更新': '更新',
+                            '删除': '删除'
+                        };
+                        
+                        return `
+                            <tr>
+                                <td>${operationMap[h.operation] || h.operation}</td>
+                                <td>${h.cost_per_class.toFixed(2)}${changeInfo}</td>
+                                <td>${h.created_at}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    
+                    const modalBody = `
+                        <h2>操作记录</h2>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="data-table" style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th>操作类型</th>
+                                        <th>每次课成本</th>
+                                        <th>操作时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${historyHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="form-actions" style="margin-top: 20px;">
+                            <button type="button" class="btn btn-primary" onclick="closeModal()">关闭</button>
+                        </div>
+                    `;
+                    showModal(modalBody);
+                })
+                .catch(err => {
+                    alert('获取操作记录失败：' + err.message);
+                });
+        }
+
+        function updateTeacherName() {
+            // 占位函数，保持兼容性
+        }
+
+        function updateCourseName() {
+            // 占位函数，保持兼容性
+        }
+
+        // ==================== 经验成本管理 ====================
+
+        function loadExperienceCosts() {
+            fetch('/api/teacher-experience-costs')
+                .then(res => res.json())
+                .then(data => {
+                    const tbody = document.getElementById('experience-costs-table-body');
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">暂无经验成本数据</td></tr>';
+                        return;
+                    }
+                    tbody.innerHTML = data.map(ec => {
+                        let timeRange = '';
+                        if (ec.start_date && ec.end_date) {
+                            // 显示年月格式（YYYY-MM）
+                            const startMonth = ec.start_date.substring(0, 7);
+                            const endMonth = ec.end_date.substring(0, 7);
+                            timeRange = `${startMonth} 至 ${endMonth}`;
+                        } else if (ec.start_date) {
+                            const startMonth = ec.start_date.substring(0, 7);
+                            timeRange = `${startMonth} 起`;
+                        } else if (ec.end_date) {
+                            const endMonth = ec.end_date.substring(0, 7);
+                            timeRange = `至 ${endMonth}`;
+                        } else {
+                            timeRange = '<span style="color: #999;">永久有效</span>';
+                        }
+                        return `
+                        <tr>
+                            <td>${ec.id}</td>
+                            <td>${ec.teacher_name}</td>
+                            <td>${ec.course_name}</td>
+                            <td>${ec.student_name || '<span style="color: #999;">所有学生</span>'}</td>
+                            <td>${ec.experience_cost.toFixed(2)}</td>
+                            <td>${timeRange}</td>
+                            <td>
+                                <button class="btn btn-warning" onclick="showEditExperienceCostModal(${ec.id})">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteExperienceCost(${ec.id})">删除</button>
+                                <button class="btn btn-info" onclick="showExperienceCostHistory(${ec.id})">操作记录</button>
+                            </td>
+                        </tr>
+                    `;
+                    }).join('');
+                });
+        }
+
+        function showAddExperienceCostModal() {
+            Promise.all([
+                fetch('/api/teachers?status=启用').then(r => r.json()),
+                fetch('/api/courses_manage').then(r => r.json()),
+                fetch('/api/students?status=在校').then(r => r.json())
+            ]).then(([teachers, courses, students]) => {
+                const teacherOptions = teachers.length > 0
+                    ? teachers.map(t => `<option value="${t.id}" data-name="${t.name}">${t.name} (${t.subject || ''})</option>`).join('')
+                    : '<option value="">暂无启用教师</option>';
+                const courseOptions = courses.filter(c => c.status === '启用').length > 0
+                    ? courses.filter(c => c.status === '启用').map(c => `<option value="${c.id}" data-name="${c.name}">${c.name} (${c.subject})</option>`).join('')
+                    : '<option value="">暂无启用课程</option>';
+                const studentOptions = '<option value="">所有学生（可选）</option>' + 
+                    (students.length > 0
+                        ? students.map(s => `<option value="${s.id}" data-name="${s.name}">${s.name}${s.grade ? ' (' + s.grade + ')' : ''}</option>`).join('')
+                        : '');
+                
+                const modalBody = `
+                    <h2>新增经验成本</h2>
+                    <form id="experience-cost-form" onsubmit="saveExperienceCost(event)">
+                        <div class="form-group">
+                            <label>教师 *</label>
+                            <select name="teacher_id" id="experience-cost-teacher-select" required onchange="updateExperienceCostTeacherName()">${teacherOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>课程 *</label>
+                            <select name="course_id" id="experience-cost-course-select" required onchange="updateExperienceCostCourseName()">${courseOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>学生（可选）</label>
+                            <select name="student_id" id="experience-cost-student-select" onchange="updateExperienceCostStudentName()">
+                                ${studentOptions}
+                            </select>
+                            <small style="color: #666;">不选择学生表示对所有学生生效</small>
+                        </div>
+                        <div class="form-group">
+                            <label>经验（每次课） *</label>
+                            <input type="number" name="experience_cost" step="0.01" value="0" required min="0" placeholder="默认为0">
+                        </div>
+                        <div class="form-group">
+                            <label>生效开始年月（可选）</label>
+                            <input type="month" name="start_date" id="experience-cost-start-date" onchange="checkExperienceCostTimeRange()">
+                            <small style="color: #666;">不填写表示从创建时生效</small>
+                            <div id="experience-cost-occupied-ranges" style="margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; display: none;">
+                                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">已占用的时间段：</div>
+                                <div id="experience-cost-occupied-list" style="font-size: 12px; color: #999;"></div>
+                            </div>
+                            <div id="experience-cost-range-warning" style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; display: none; color: #856404; font-size: 12px;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>生效结束年月（可选）</label>
+                            <input type="month" name="end_date" id="experience-cost-end-date" onchange="checkExperienceCostTimeRange()">
+                            <small style="color: #666;">不填写表示永久有效</small>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="closeModal()">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                `;
+                showModal(modalBody);
+            });
+        }
+
+        function showEditExperienceCostModal(id) {
+            Promise.all([
+                fetch('/api/teacher-experience-costs').then(r => r.json()),
+                fetch('/api/teachers?status=启用').then(r => r.json()),
+                fetch('/api/courses_manage').then(r => r.json()),
+                fetch('/api/students?status=在校').then(r => r.json())
+            ]).then(([costs, teachers, courses, students]) => {
+                const cost = costs.find(c => c.id === id);
+                if (!cost) return;
+                
+                const teacherOptions = teachers.map(t => 
+                    `<option value="${t.id}" data-name="${t.name}" ${t.id === cost.teacher_id ? 'selected' : ''}>${t.name} (${t.subject || ''})</option>`
+                ).join('');
+                const courseOptions = courses.filter(c => c.status === '启用').map(c => 
+                    `<option value="${c.id}" data-name="${c.name}" ${c.id === cost.course_id ? 'selected' : ''}>${c.name} (${c.subject})</option>`
+                ).join('');
+                const studentOptions = '<option value="">所有学生（可选）</option>' + 
+                    students.map(s => 
+                        `<option value="${s.id}" data-name="${s.name}" ${s.id === cost.student_id ? 'selected' : ''}>${s.name}${s.grade ? ' (' + s.grade + ')' : ''}</option>`
+                    ).join('');
+                
+                const modalBody = `
+                    <h2>编辑经验成本</h2>
+                    <form id="experience-cost-form" onsubmit="saveExperienceCost(event, ${id})">
+                        <div class="form-group">
+                            <label>教师 *</label>
+                            <select name="teacher_id" id="experience-cost-teacher-select" required onchange="updateExperienceCostTeacherName(); loadExperienceCostOccupiedRanges(${id});">${teacherOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>课程 *</label>
+                            <select name="course_id" id="experience-cost-course-select" required onchange="updateExperienceCostCourseName(); loadExperienceCostOccupiedRanges(${id});">${courseOptions}</select>
+                        </div>
+                        <div class="form-group">
+                            <label>学生（可选）</label>
+                            <select name="student_id" id="experience-cost-student-select" onchange="updateExperienceCostStudentName(); loadExperienceCostOccupiedRanges(${id});">
+                                ${studentOptions}
+                            </select>
+                            <small style="color: #666;">不选择学生表示对所有学生生效</small>
+                        </div>
+                        <div class="form-group">
+                            <label>经验（每次课） *</label>
+                            <input type="number" name="experience_cost" step="0.01" value="${cost.experience_cost}" required min="0">
+                        </div>
+                        <div class="form-group">
+                            <label>生效开始年月（可选）</label>
+                            <input type="month" name="start_date" id="experience-cost-start-date" value="${cost.start_date ? cost.start_date.substring(0, 7) : ''}" onchange="checkExperienceCostTimeRange(${id})">
+                            <small style="color: #666;">不填写表示从创建时生效</small>
+                            <div id="experience-cost-occupied-ranges" style="margin-top: 8px; padding: 8px; background: #f5f5f5; border-radius: 4px; display: none;">
+                                <div style="font-size: 12px; color: #666; margin-bottom: 4px;">已占用的时间段：</div>
+                                <div id="experience-cost-occupied-list" style="font-size: 12px; color: #999;"></div>
+                            </div>
+                            <div id="experience-cost-range-warning" style="margin-top: 8px; padding: 8px; background: #fff3cd; border-radius: 4px; display: none; color: #856404; font-size: 12px;"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>生效结束年月（可选）</label>
+                            <input type="month" name="end_date" id="experience-cost-end-date" value="${cost.end_date ? cost.end_date.substring(0, 7) : ''}" onchange="checkExperienceCostTimeRange(${id})">
+                            <small style="color: #666;">不填写表示永久有效</small>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn" onclick="closeModal()">取消</button>
+                            <button type="submit" class="btn btn-primary">保存</button>
+                        </div>
+                    </form>
+                `;
+                showModal(modalBody);
+                // 延迟加载已占用时间段，等待DOM渲染完成
+                setTimeout(() => {
+                    loadExperienceCostOccupiedRanges(id);
+                }, 100);
+            });
+        }
+
+        function saveExperienceCost(e, id) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const teacherSelect = document.getElementById('experience-cost-teacher-select');
+            const courseSelect = document.getElementById('experience-cost-course-select');
+            const studentSelect = document.getElementById('experience-cost-student-select');
+            
+            const teacherOption = teacherSelect.options[teacherSelect.selectedIndex];
+            const courseOption = courseSelect.options[courseSelect.selectedIndex];
+            const studentOption = studentSelect ? studentSelect.options[studentSelect.selectedIndex] : null;
+            
+            const data = {
+                teacher_id: parseInt(formData.get('teacher_id')),
+                teacher_name: teacherOption.getAttribute('data-name'),
+                course_id: parseInt(formData.get('course_id')),
+                course_name: courseOption.getAttribute('data-name'),
+                experience_cost: parseFloat(formData.get('experience_cost')) || 0
+            };
+            
+            // 如果选择了学生，添加学生信息
+            if (studentOption && studentOption.value) {
+                data.student_id = parseInt(studentOption.value);
+                data.student_name = studentOption.getAttribute('data-name');
+            }
+            
+            // 添加时间段信息
+            const startDateInput = document.getElementById('experience-cost-start-date');
+            const endDateInput = document.getElementById('experience-cost-end-date');
+            if (startDateInput && startDateInput.value) {
+                data.start_date = startDateInput.value;
+            }
+            if (endDateInput && endDateInput.value) {
+                data.end_date = endDateInput.value;
+            }
+            
+            const url = id ? `/api/teacher-experience-costs/${id}` : '/api/teacher-experience-costs';
+            const method = id ? 'PUT' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(async res => {
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await res.text();
+                    console.error('服务器返回非JSON响应:', text.substring(0, 200));
+                    throw new Error('服务器返回格式错误，请检查控制台');
+                }
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || '保存失败');
+                }
+                return result;
+            })
+            .then(() => {
+                closeModal();
+                loadExperienceCosts();
+            })
+            .catch(err => {
+                console.error('保存经验成本失败:', err);
+                alert('保存失败：' + err.message);
+            });
+        }
+
+        function deleteExperienceCost(id) {
+            if (!confirm('确定要删除这条经验成本记录吗？')) return;
+            
+            fetch(`/api/teacher-experience-costs/${id}`, { method: 'DELETE' })
+                .then(() => loadExperienceCosts());
+        }
+
+        function showExperienceCostHistory(costId) {
+            fetch(`/api/teacher-experience-costs/${costId}/history`)
+                .then(res => res.json())
+                .then(histories => {
+                    if (histories.length === 0) {
+                        alert('暂无操作记录');
+                        return;
+                    }
+                    
+                    const historyHtml = histories.map(h => {
+                        // 如果是更新操作，显示变化信息
+                        let changeInfo = '';
+                        if (h.operation === '更新') {
+                            const changes = [];
+                            if (h.old_experience_cost !== null && h.old_experience_cost !== undefined && 
+                                h.old_experience_cost !== h.experience_cost) {
+                                changes.push(`经验: ${h.old_experience_cost.toFixed(2)} → ${h.experience_cost.toFixed(2)}`);
+                            }
+                            if (h.old_start_date !== h.start_date || h.old_end_date !== h.end_date) {
+                                const oldStartMonth = h.old_start_date ? h.old_start_date.substring(0, 7) : null;
+                                const oldEndMonth = h.old_end_date ? h.old_end_date.substring(0, 7) : null;
+                                const newStartMonth = h.start_date ? h.start_date.substring(0, 7) : null;
+                                const newEndMonth = h.end_date ? h.end_date.substring(0, 7) : null;
+                                
+                                const oldRange = oldStartMonth && oldEndMonth ? `${oldStartMonth} 至 ${oldEndMonth}` :
+                                               oldStartMonth ? `${oldStartMonth} 起` :
+                                               oldEndMonth ? `至 ${oldEndMonth}` : '永久有效';
+                                const newRange = newStartMonth && newEndMonth ? `${newStartMonth} 至 ${newEndMonth}` :
+                                                newStartMonth ? `${newStartMonth} 起` :
+                                                newEndMonth ? `至 ${newEndMonth}` : '永久有效';
+                                changes.push(`时间段: ${oldRange} → ${newRange}`);
+                            }
+                            if (changes.length > 0) {
+                                changeInfo = '<br><small style="color: #666;">' + changes.join('; ') + '</small>';
+                            }
+                        }
+                        
+                        const startMonth = h.start_date ? h.start_date.substring(0, 7) : null;
+                        const endMonth = h.end_date ? h.end_date.substring(0, 7) : null;
+                        const timeRange = startMonth && endMonth ? `${startMonth} 至 ${endMonth}` :
+                                         startMonth ? `${startMonth} 起` :
+                                         endMonth ? `至 ${endMonth}` : '永久有效';
+                        
+                        const operationMap = {
+                            '创建': '创建',
+                            '更新': '更新',
+                            '删除': '删除'
+                        };
+                        
+                        return `
+                            <tr>
+                                <td>${operationMap[h.operation] || h.operation}</td>
+                                <td>${h.student_name || '<span style="color: #999;">所有学生</span>'}</td>
+                                <td>${h.experience_cost.toFixed(2)}${changeInfo}</td>
+                                <td>${timeRange}</td>
+                                <td>${h.created_at}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    
+                    const modalBody = `
+                        <h2>操作记录</h2>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="data-table" style="width: 100%;">
+                                <thead>
+                                    <tr>
+                                        <th>操作类型</th>
+                                        <th>学生</th>
+                                        <th>经验（每次课）</th>
+                                        <th>生效时间段</th>
+                                        <th>操作时间</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${historyHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="form-actions" style="margin-top: 20px;">
+                            <button type="button" class="btn btn-primary" onclick="closeModal()">关闭</button>
+                        </div>
+                    `;
+                    showModal(modalBody);
+                })
+                .catch(err => {
+                    alert('获取操作记录失败：' + err.message);
+                });
+        }
+
+        function updateExperienceCostTeacherName() {
+            // 占位函数，保持兼容性
+        }
+
+        function updateExperienceCostCourseName() {
+            // 占位函数，保持兼容性
+        }
+
+        function updateExperienceCostStudentName() {
+            // 占位函数，保持兼容性
+        }
+
+        // 加载已占用的时间段
+        function loadExperienceCostOccupiedRanges(excludeId) {
+            const teacherSelect = document.getElementById('experience-cost-teacher-select');
+            const courseSelect = document.getElementById('experience-cost-course-select');
+            const studentSelect = document.getElementById('experience-cost-student-select');
+            
+            if (!teacherSelect || !courseSelect) return;
+            
+            const teacherId = teacherSelect.value;
+            const courseId = courseSelect.value;
+            const studentId = studentSelect ? studentSelect.value : '';
+            
+            if (!teacherId || !courseId) {
+                document.getElementById('experience-cost-occupied-ranges').style.display = 'none';
+                return;
+            }
+            
+            // 构建查询URL
+            let url = `/api/teacher-experience-costs?teacher_id=${teacherId}&course_id=${courseId}`;
+            if (studentId) {
+                url += `&student_id=${studentId}`;
+            } else {
+                url += `&student_id=0`; // 查询所有学生的记录
+            }
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(costs => {
+                    // 排除当前编辑的记录
+                    if (excludeId) {
+                        costs = costs.filter(c => c.id !== excludeId);
+                    }
+                    
+                    const occupiedRangesDiv = document.getElementById('experience-cost-occupied-ranges');
+                    const occupiedListDiv = document.getElementById('experience-cost-occupied-list');
+                    
+                    if (costs.length === 0) {
+                        occupiedRangesDiv.style.display = 'none';
+                        return;
+                    }
+                    
+                    // 显示已占用的时间段
+                    const rangesHtml = costs.map(c => {
+                        let range = '';
+                        if (c.start_date && c.end_date) {
+                            const startMonth = c.start_date.substring(0, 7);
+                            const endMonth = c.end_date.substring(0, 7);
+                            range = `${startMonth} 至 ${endMonth}`;
+                        } else if (c.start_date) {
+                            const startMonth = c.start_date.substring(0, 7);
+                            range = `${startMonth} 起`;
+                        } else if (c.end_date) {
+                            const endMonth = c.end_date.substring(0, 7);
+                            range = `至 ${endMonth}`;
+                        } else {
+                            range = '永久有效';
+                        }
+                        const studentInfo = c.student_name ? ` (${c.student_name})` : ' (所有学生)';
+                        return `<div style="color: #999; text-decoration: line-through;">${range}${studentInfo}</div>`;
+                    }).join('');
+                    
+                    occupiedListDiv.innerHTML = rangesHtml;
+                    occupiedRangesDiv.style.display = 'block';
+                })
+                .catch(err => {
+                    console.error('加载已占用时间段失败:', err);
+                });
+        }
+
+        // 检查时间段是否重合
+        function checkExperienceCostTimeRange(excludeId) {
+            const startDateInput = document.getElementById('experience-cost-start-date');
+            const endDateInput = document.getElementById('experience-cost-end-date');
+            const warningDiv = document.getElementById('experience-cost-range-warning');
+            
+            if (!startDateInput || !endDateInput || !warningDiv) return;
+            
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+            
+            // 如果两个日期都为空，清除警告
+            if (!startDate && !endDate) {
+                warningDiv.style.display = 'none';
+                return;
+            }
+            
+            // 验证年月逻辑（比较年月字符串）
+            if (startDate && endDate && startDate > endDate) {
+                warningDiv.textContent = '开始年月不能晚于结束年月';
+                warningDiv.style.display = 'block';
+                return;
+            }
+            
+            const teacherSelect = document.getElementById('experience-cost-teacher-select');
+            const courseSelect = document.getElementById('experience-cost-course-select');
+            const studentSelect = document.getElementById('experience-cost-student-select');
+            
+            if (!teacherSelect || !courseSelect) return;
+            
+            const teacherId = teacherSelect.value;
+            const courseId = courseSelect.value;
+            const studentId = studentSelect ? studentSelect.value : '';
+            
+            if (!teacherId || !courseId) return;
+            
+            // 构建查询URL
+            let url = `/api/teacher-experience-costs?teacher_id=${teacherId}&course_id=${courseId}`;
+            if (studentId) {
+                url += `&student_id=${studentId}`;
+            } else {
+                url += `&student_id=0`; // 查询所有学生的记录
+            }
+            
+            fetch(url)
+                .then(res => res.json())
+                .then(costs => {
+                    // 排除当前编辑的记录
+                    if (excludeId) {
+                        costs = costs.filter(c => c.id !== excludeId);
+                    }
+                    
+                    // 检查时间段是否重合
+                    for (const cost of costs) {
+                        const existingStart = cost.start_date;
+                        const existingEnd = cost.end_date;
+                        
+                        // 如果现有记录没有时间段（永久有效）
+                        if (!existingStart && !existingEnd) {
+                            warningDiv.textContent = '已存在永久有效的记录，时间段不能重合';
+                            warningDiv.style.display = 'block';
+                            return;
+                        }
+                        
+                        // 如果新记录没有时间段（永久有效）
+                        if (!startDate && !endDate) {
+                            warningDiv.textContent = '已存在其他记录，不能设置永久有效';
+                            warningDiv.style.display = 'block';
+                            return;
+                        }
+                        
+                        // 检查时间段是否重合（按年月比较）
+                        let overlap = false;
+                        
+                        // 转换为年月字符串进行比较（YYYY-MM格式）
+                        const existingStartMonth = existingStart ? existingStart.substring(0, 7) : null;
+                        const existingEndMonth = existingEnd ? existingEnd.substring(0, 7) : null;
+                        const startMonth = startDate ? startDate.substring(0, 7) : null;
+                        const endMonth = endDate ? endDate.substring(0, 7) : null;
+                        
+                        if (existingStartMonth && existingEndMonth) {
+                            if (endMonth && startMonth) {
+                                // 两个时间段都有明确的开始和结束年月
+                                // 重合条件：新记录的开始年月 <= 现有记录的结束年月 且 新记录的结束年月 >= 现有记录的开始年月
+                                if (startMonth <= existingEndMonth && endMonth >= existingStartMonth) {
+                                    overlap = true;
+                                }
+                            } else if (startMonth) {
+                                // 新记录只有开始年月（从某月起永久有效）
+                                if (startMonth <= existingEndMonth) {
+                                    overlap = true;
+                                }
+                            } else if (endMonth) {
+                                // 新记录只有结束年月（到某月止）
+                                if (endMonth >= existingStartMonth) {
+                                    overlap = true;
+                                }
+                            }
+                        } else if (existingStartMonth) {
+                            // 现有记录只有开始年月（从某月起永久有效）
+                            if (endMonth && startMonth) {
+                                if (startMonth <= existingStartMonth || endMonth >= existingStartMonth) {
+                                    overlap = true;
+                                }
+                            } else if (startMonth) {
+                                if (startMonth <= existingStartMonth) {
+                                    overlap = true;
+                                }
+                            } else if (endMonth) {
+                                if (endMonth >= existingStartMonth) {
+                                    overlap = true;
+                                }
+                            }
+                        } else if (existingEndMonth) {
+                            // 现有记录只有结束年月（到某月止）
+                            if (endMonth && startMonth) {
+                                if (startMonth <= existingEndMonth) {
+                                    overlap = true;
+                                }
+                            } else if (startMonth) {
+                                if (startMonth <= existingEndMonth) {
+                                    overlap = true;
+                                }
+                            } else if (endMonth) {
+                                if (endMonth >= existingEndMonth) {
+                                    overlap = true;
+                                }
+                            }
+                        }
+                        
+                        if (overlap) {
+                            let existingRange = '';
+                            if (existingStart && existingEnd) {
+                                const startMonth = existingStart.substring(0, 7);
+                                const endMonth = existingEnd.substring(0, 7);
+                                existingRange = `${startMonth} 至 ${endMonth}`;
+                            } else if (existingStart) {
+                                const startMonth = existingStart.substring(0, 7);
+                                existingRange = `${startMonth} 起`;
+                            } else if (existingEnd) {
+                                const endMonth = existingEnd.substring(0, 7);
+                                existingRange = `至 ${endMonth}`;
+                            } else {
+                                existingRange = '永久有效';
+                            }
+                            
+                            warningDiv.textContent = `时间段与现有记录重合（现有记录时间段：${existingRange}），请调整时间段`;
+                            warningDiv.style.display = 'block';
+                            return;
+                        }
+                    }
+                    
+                    // 没有重合，隐藏警告
+                    warningDiv.style.display = 'none';
+                })
+                .catch(err => {
+                    console.error('检查时间段失败:', err);
+                });
+        }
+
+    </script>
+</body>
+</html>
+
