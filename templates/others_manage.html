@@ -161,51 +161,6 @@
 
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>
     <script>
-        // 全局API错误处理：检测会话失效
-        let sessionExpiredHandled = false; // 防止重复弹窗
-        
-        (function() {
-            // 保存原始的fetch函数
-            const originalFetch = window.fetch;
-            
-            // 重写fetch函数，添加全局错误处理
-            window.fetch = function(...args) {
-                return originalFetch.apply(this, args)
-                    .then(async response => {
-                        // 检查是否是401错误
-                        if (response.status === 401 && !sessionExpiredHandled) {
-                            try {
-                                const data = await response.json();
-                                if (data.session_expired) {
-                                    sessionExpiredHandled = true;
-                                    
-                                    // 显示确认弹窗
-                                    const confirmed = confirm('您的账号在其他地方登录，当前会话已失效。\n\n点击"确定"将跳转到登录页面重新登录。\n点击"取消"可以继续浏览（但操作可能失败）。');
-                                    
-                                    if (confirmed) {
-                                        // 用户确认，清除本地数据并跳转到登录页
-                                        console.warn('用户确认会话失效，跳转到登录页');
-                                        localStorage.clear();
-                                        sessionStorage.clear();
-                                        window.location.href = '/login';
-                                    } else {
-                                        // 用户取消，重置标志，允许继续操作（但可能会失败）
-                                        console.warn('用户取消跳转，继续当前会话（操作可能失败）');
-                                        sessionExpiredHandled = false;
-                                    }
-                                    
-                                    // 返回一个rejected promise，阻止后续处理
-                                    return Promise.reject(new Error('Session expired'));
-                                }
-                            } catch (e) {
-                                // 如果解析JSON失败，继续处理
-                            }
-                        }
-                        return Promise.resolve(response);
-                    });
-            };
-        })();
-        
         // 标签页切换
         function switchTab(tabName) {
             // 隐藏所有标签页内容

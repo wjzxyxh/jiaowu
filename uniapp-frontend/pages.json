@@ -1,0 +1,127 @@
+{
+    "easycom": {
+        "autoscan": true,
+        "custom": {
+            "^u-(.*)": "uview-ui/components/u-$1/u-$1.vue"
+        }
+    },
+    "pages": [
+        {
+            "path": "pages/login/login",
+            "style": {
+                "navigationBarTitleText": "登录",
+                "navigationStyle": "custom"
+            }
+        },
+        {
+            "path": "pages/index/index",
+            "style": {
+                "navigationBarTitleText": "教务管理系统",
+                "enablePullDownRefresh": false
+            }
+        },
+        {
+            "path": "pages/students/students",
+            "style": {
+                "navigationBarTitleText": "学生管理"
+            }
+        },
+        {
+            "path": "pages/teachers/teachers",
+            "style": {
+                "navigationBarTitleText": "教师管理"
+            }
+        },
+        {
+            "path": "pages/courses/courses",
+            "style": {
+                "navigationBarTitleText": "排课管理"
+            }
+        },
+        {
+            "path": "pages/courses-manage/courses-manage",
+            "style": {
+                "navigationBarTitleText": "课程管理"
+            }
+        },
+        {
+            "path": "pages/payments/payments",
+            "style": {
+                "navigationBarTitleText": "缴费管理"
+            }
+        },
+        {
+            "path": "pages/finance/finance",
+            "style": {
+                "navigationBarTitleText": "财务统计"
+            }
+        },
+        {
+            "path": "pages/stats/stats",
+            "style": {
+                "navigationBarTitleText": "学生课时"
+            }
+        },
+        {
+            "path": "pages/teacher-hours/teacher-hours",
+            "style": {
+                "navigationBarTitleText": "老师课时"
+            }
+        },
+        {
+            "path": "pages/calendar/calendar",
+            "style": {
+                "navigationBarTitleText": "课程表日历"
+            }
+        },
+        {
+            "path": "pages/others/others",
+            "style": {
+                "navigationBarTitleText": "其它管理"
+            }
+        },
+        {
+            "path": "pages/profile/profile",
+            "style": {
+                "navigationBarTitleText": "个人设置"
+            }
+        }
+    ],
+    "globalStyle": {
+        "navigationBarTextStyle": "black",
+        "navigationBarTitleText": "教务管理系统",
+        "navigationBarBackgroundColor": "#667eea",
+        "backgroundColor": "#f5f5f5",
+        "app-plus": {
+            "titleNView": {
+                "buttons": []
+            }
+        }
+    },
+    "tabBar": {
+        "color": "#7A7E83",
+        "selectedColor": "#667eea",
+        "borderStyle": "black",
+        "backgroundColor": "#ffffff",
+        "list": [
+            {
+                "pagePath": "pages/index/index",
+                "iconPath": "static/tabbar/home.png",
+                "selectedIconPath": "static/tabbar/home-active.png",
+                "text": "首页"
+            },
+            {
+                "pagePath": "pages/calendar/calendar",
+                "iconPath": "static/tabbar/calendar.png",
+                "selectedIconPath": "static/tabbar/calendar-active.png",
+                "text": "日历"
+            },
+            {
+                "pagePath": "pages/profile/profile",
+                "iconPath": "static/tabbar/profile.png",
+                "selectedIconPath": "static/tabbar/profile-active.png",
+                "text": "我的"
+            }
+        ]
+    }
+}

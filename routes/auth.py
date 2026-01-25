@@ -223,11 +223,16 @@ def login():
         db.session.rollback()
 
         import traceback
-        from flask import current_app
-        
         error_trace = traceback.format_exc()
-        current_app.logger.error(f"登录错误: {str(e)}")
-        current_app.logger.debug(f"错误堆栈: {error_trace}")
+        
+        # 安全地记录错误日志（如果应用上下文可用）
+        try:
+            current_app.logger.error(f"登录错误: {str(e)}")
+            current_app.logger.debug(f"错误堆栈: {error_trace}")
+        except RuntimeError:
+            # 如果应用上下文不可用，使用print作为后备
+            print(f"登录错误: {str(e)}")
+            print(f"错误堆栈: {error_trace}")
         
         return jsonify({'error': f'登录失败: {str(e)}'}), 500
 
