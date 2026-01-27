@@ -53,17 +53,16 @@ def get_stats():
 
     
 
-    # 构建查询
-
-    query = ClassHoursStats.query.filter_by(month=month)
+    # 构建查询（只查询存在学生的课时统计，过滤已删除的学生）
+    query = ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(ClassHoursStats.month == month)
 
     if student_id:
 
-        query = query.filter_by(student_id=student_id)
+        query = query.filter(ClassHoursStats.student_id == student_id)
 
     if course_id:
 
-        query = query.filter_by(course_id=course_id)
+        query = query.filter(ClassHoursStats.course_id == course_id)
 
     
 
@@ -92,8 +91,8 @@ def get_stats():
         # 查询该学生该课程当月的排课记录，并加载课程关联
 
         # 只查询已确认的课程，未确认的课程不显示在上课日期和时段中
-
-        courses = StudentCourse.query.options(
+        # 过滤已删除的学生（虽然stat已经过滤了，但这里再次确保）
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
             db.joinedload(StudentCourse.course)
 

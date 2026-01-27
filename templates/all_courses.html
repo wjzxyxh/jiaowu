@@ -467,8 +467,23 @@
         // 初始化筛选选项
         function initAllCoursesFilters() {
             // 获取所有排课数据来提取筛选选项
-            fetch('/api/all_courses?page=1&per_page=1000')
-                .then(res => res.json())
+                fetch('/api/all_courses?page=1&per_page=1000')
+                .then(res => {
+                    // 检查响应状态
+                    if (!res.ok) {
+                        return res.text().then(text => {
+                            throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                        });
+                    }
+                    // 检查 Content-Type
+                    const contentType = res.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        return res.text().then(text => {
+                            throw new Error('服务器返回的不是 JSON 格式');
+                        });
+                    }
+                    return res.json();
+                })
                 .then(data => {
                     const courses = data.courses || [];
                     
@@ -853,7 +868,7 @@
                     
                     // 尝试获取更多错误信息
                     if (error.name === 'TypeError' && error.message.includes('fetch')) {
-                        console.error('可能是网络问题或 CORS 问题');
+                        console.error('可能是网络连接问题');
                     }
                     
                     const tbody = document.getElementById('courses-table-body');
@@ -1394,7 +1409,22 @@
             if (!course) {
                 // 如果不在当前页，从API获取
                 fetch(`/api/all_courses?page=1&per_page=1000`)
-                    .then(res => res.json())
+                    .then(res => {
+                        // 检查响应状态
+                        if (!res.ok) {
+                            return res.text().then(text => {
+                                throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                            });
+                        }
+                        // 检查 Content-Type
+                        const contentType = res.headers.get('content-type');
+                        if (!contentType || !contentType.includes('application/json')) {
+                            return res.text().then(text => {
+                                throw new Error('服务器返回的不是 JSON 格式');
+                            });
+                        }
+                        return res.json();
+                    })
                     .then(data => {
                         const allCourses = data.courses || [];
                         const foundCourse = allCourses.find(c => c.id === courseId);
@@ -1403,6 +1433,10 @@
                         } else {
                             alert('未找到该排课记录');
                         }
+                    })
+                    .catch(err => {
+                        console.error('加载课程数据失败:', err);
+                        alert('加载课程数据失败：' + (err.message || '未知错误'));
                     })
                     .catch(err => {
                         console.error('获取排课数据失败:', err);
@@ -1775,7 +1809,22 @@
             if (!confirm(message)) return;
             
             fetch(`/api/courses/${courseId}/confirm`, { method: 'POST' })
-                .then(res => res.json())
+                .then(res => {
+                    // 检查响应状态
+                    if (!res.ok) {
+                        return res.text().then(text => {
+                            throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                        });
+                    }
+                    // 检查 Content-Type
+                    const contentType = res.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        return res.text().then(text => {
+                            throw new Error('服务器返回的不是 JSON 格式');
+                        });
+                    }
+                    return res.json();
+                })
                 .then((data) => {
                     if (data.error) {
                         alert('操作失败: ' + data.error);
@@ -2091,7 +2140,22 @@
             const url = '/api/all_courses?' + params.join('&');
             
             fetch(url)
-                .then(res => res.json())
+                .then(res => {
+                    // 检查响应状态
+                    if (!res.ok) {
+                        return res.text().then(text => {
+                            throw new Error(`HTTP ${res.status}: ${text.substring(0, 100)}`);
+                        });
+                    }
+                    // 检查 Content-Type
+                    const contentType = res.headers.get('content-type');
+                    if (!contentType || !contentType.includes('application/json')) {
+                        return res.text().then(text => {
+                            throw new Error('服务器返回的不是 JSON 格式');
+                        });
+                    }
+                    return res.json();
+                })
                 .then(data => {
                     const courses = data.courses || [];
                     const total = data.total || 0;

@@ -1,0 +1,207 @@
+.finance-page {
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.finance-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.finance-card {
+  background: #fff;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.finance-card h4 {
+  margin: 0 0 10px 0;
+  color: #666;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.finance-card .value {
+  font-size: 24px;
+  font-weight: bold;
+  color: #333;
+}
+
+.finance-card.income .value {
+  color: #28a745;
+}
+
+.finance-card.cost .value {
+  color: #dc3545;
+}
+
+.finance-card.profit .value {
+  color: #007bff;
+}
+
+.finance-section {
+  margin-bottom: 30px;
+}
+
+.finance-section h3 {
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #007bff;
+  color: #333;
+}
+
+.cost-table,
+.profit-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.cost-table th,
+.profit-table th {
+  background: #f8f9fa;
+  padding: 12px;
+  text-align: left;
+  border-bottom: 2px solid #dee2e6;
+  font-weight: 600;
+}
+
+.cost-table td,
+.profit-table td {
+  padding: 12px;
+  border-bottom: 1px solid #dee2e6;
+}
+
+.cost-table tr:hover,
+.profit-table tr:hover {
+  background: #f8f9fa;
+}
+
+.cost-table .amount,
+.profit-table .amount {
+  text-align: left;
+  font-weight: 500;
+}
+
+.cost-table .total-row {
+  background: #e9ecef;
+  font-weight: bold;
+}
+
+.profit-table .total-row {
+  background: #d4edda;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+.teacher-cost-detail {
+  margin-top: 15px;
+}
+
+.teacher-cost-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #eee;
+}
+
+.teacher-cost-item:last-child {
+  border-bottom: none;
+}
+
+.teacher-cost-item span {
+  display: inline-block;
+  margin-right: 15px;
+}
+
+/* 标签页样式 */
+.tab-container {
+  margin-bottom: 20px;
+}
+
+.tab-buttons {
+  display: flex;
+  border-bottom: 2px solid #dee2e6;
+  margin-bottom: 20px;
+}
+
+.tab-button {
+  padding: 12px 24px;
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  cursor: pointer;
+  font-size: 16px;
+  color: #666;
+  transition: all 0.3s;
+}
+
+.tab-button:hover {
+  color: #007bff;
+  background: #f8f9fa;
+}
+
+.tab-button.active {
+  color: #007bff;
+  border-bottom-color: #007bff;
+  font-weight: 600;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* 收入明细样式 */
+.revenue-detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+  background: #fff;
+}
+
+.revenue-detail-table th {
+  background: #e9ecef;
+  padding: 8px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #dee2e6;
+}
+
+.revenue-detail-table td {
+  padding: 8px;
+  border: 1px solid #dee2e6;
+  font-size: 13px;
+}
+
+.revenue-detail-table tr:hover {
+  background: #f8f9fa;
+}
+
+.revenue-detail-table .amount {
+  text-align: left;
+}
+
+.revenue-detail-table .total-row {
+  background: #d4edda;
+  font-weight: bold;
+}
+
+.revenue-detail-section {
+  margin-bottom: 15px;
+}
+
+.revenue-detail-section h4 {
+  margin: 0 0 10px 0;
+  color: #333;
+  font-size: 14px;
+}

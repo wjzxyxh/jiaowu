@@ -16,14 +16,20 @@ def get_finance_config(key, default_value):
 
 
 def calculate_remaining_hours_from_payments(student_id, course_id, month=None):
-    """从缴费记录计算剩余课时（只由缴费记录计算，按课程）"""
+    """从缴费记录计算剩余课时（只由缴费记录计算，按课程，过滤已删除的学生）"""
     if month is None:
         month = get_current_month()
     
+    # 检查学生是否存在
+    from models import Student
+    student = Student.query.get(student_id)
+    if not student:
+        return 0  # 如果学生已被删除，返回0
+    
     # 获取指定课程的所有缴费记录（按时间顺序，从早到晚）
-    all_payments = Payment.query.filter_by(
-        student_id=student_id,
-        course_id=course_id
+    all_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+        Payment.student_id == student_id,
+        Payment.course_id == course_id
     ).order_by(
         Payment.payment_date.asc(),
         Payment.id.asc()
@@ -80,8 +86,14 @@ def calculate_actual_unit_price(student_id, consumed_hours, month, course_id=Non
         ).first()
     remaining_hours_at_start = last_stats.current_month_total if last_stats else 0
     
-    # 获取学生的所有缴费和退费记录（按时间顺序，从早到晚，按课程）
-    payment_query = Payment.query.filter(
+    # 检查学生是否存在
+    from models import Student
+    student = Student.query.get(student_id)
+    if not student:
+        return (0.0, [])  # 如果学生已被删除，返回0
+    
+    # 获取学生的所有缴费和退费记录（按时间顺序，从早到晚，按课程，过滤已删除的学生）
+    payment_query = Payment.query.join(Student, Payment.student_id == Student.id).filter(
         Payment.student_id == student_id,
         Payment.payment_date <= month_end
     )
@@ -179,11 +191,15 @@ def calculate_actual_unit_price(student_id, consumed_hours, month, course_id=Non
             remaining_consumed -= hours_from_this_payment
             stack['remaining_hours'] = remaining_hours - hours_from_this_payment
     
-    # 如果还有未消耗完的课时，使用最近一次缴费的单价
+    # 如果还有未消耗完的课时，使用最近一次缴费的单价（过滤已删除的学生）
     if remaining_consumed > 0:
-        latest_payment_query = Payment.query.filter_by(student_id=student_id, type='缴费')
+        from models import Student
+        latest_payment_query = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+            Payment.student_id == student_id,
+            Payment.type == '缴费'
+        )
         if course_id:
-            latest_payment_query = latest_payment_query.filter_by(course_id=course_id)
+            latest_payment_query = latest_payment_query.filter(Payment.course_id == course_id)
         latest_payment = latest_payment_query.order_by(
             Payment.payment_date.desc()
         ).first()
@@ -228,8 +244,9 @@ def update_finance_record(month=None):
     monthly_revenue = 0
     
     if finance.revenue_mode == '缴费模式':
-        # 缴费模式：收入 = 当月缴费总额 - 当月退费总额
-        payments = Payment.query.filter(
+        # 缴费模式：收入 = 当月缴费总额 - 当月退费总额（过滤已删除的学生）
+        from models import Student
+        payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
             Payment.payment_date >= start_date,
             Payment.payment_date <= end_date
         ).all()
@@ -240,8 +257,9 @@ def update_finance_record(month=None):
             elif payment.type == '退费':
                 monthly_revenue -= payment.paid_amount
     else:
-        # 课耗模式：收入 = 当月课耗 * 实际单价（按缴费顺序消耗课时，按课程）
-        stats_list = ClassHoursStats.query.filter_by(month=month).all()
+        # 课耗模式：收入 = 当月课耗 * 实际单价（按缴费顺序消耗课时，按课程，过滤已删除的学生）
+        from models import Student
+        stats_list = ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(ClassHoursStats.month == month).all()
         
         for stats in stats_list:
             if stats.actual_hours > 0:
@@ -422,7 +440,7 @@ def update_finance_record(month=None):
     
     finance.teacher_cost = teacher_cost
     
-    # 营销成本 = 传单 + 人工
+    # 营销成本 = 营销 + 教务
     finance.marketing_cost = finance.marketing_flyer + finance.marketing_labor
     
     # 房租水电 = 房租 + 水电

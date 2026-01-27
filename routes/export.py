@@ -85,7 +85,7 @@ def export_students():
 
     # 设置表头
 
-    headers = ['ID', '姓名', '年级', '状态', '联系电话', '家长姓名', '家长电话', '地址', '邮箱', '创建时间']
+    headers = ['ID', '姓名', '年级', '入学日期', '状态', '联系电话', '家长姓名', '家长电话', '地址', '邮箱', '创建时间']
 
     ws.append(headers)
 
@@ -135,6 +135,8 @@ def export_students():
 
             student.grade or '',
 
+            student.enrollment_date.strftime('%Y-%m-%d') if student.enrollment_date else '',
+
             student.status or '',
 
             student.phone or '',
@@ -155,7 +157,7 @@ def export_students():
 
     # 设置列宽
 
-    column_widths = [8, 15, 10, 10, 15, 15, 15, 30, 25, 20]
+    column_widths = [8, 15, 10, 12, 10, 15, 15, 15, 30, 25, 20]
 
     for i, width in enumerate(column_widths, 1):
 
@@ -493,7 +495,7 @@ def export_finance():
 
     
 
-    headers = ['月份', '收入模式', '当月收入', '老师成本', '营销成本', '传单', '人工', '房租水电', '房租', '水电', '其它成本', '打印纸', '打印粉', '当月利润', '更新时间']
+    headers = ['月份', '收入模式', '当月收入', '老师成本', '营销成本', '营销', '教务', '房租水电', '房租', '水电', '其它成本', '打印纸', '打印粉', '当月利润', '更新时间']
 
     ws.append(headers)
 

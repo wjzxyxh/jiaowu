@@ -133,7 +133,9 @@ def get_teacher_hours():
 
             # 只查询已确认的课程，未确认的课程不显示在上课时间、课时费和总工资中
 
-            courses = StudentCourse.query.options(
+            # 过滤已删除的学生
+            from models import Student
+            courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
                 joinedload(StudentCourse.course)
 
@@ -1051,9 +1053,9 @@ def recalculate_teacher_hours():
 
         
 
-        # 获取所有在该月份有排课的教师-课程组合（只统计已确认的课程）
-
-        courses = StudentCourse.query.filter(
+        # 获取所有在该月份有排课的教师-课程组合（只统计已确认的课程，过滤已删除的学生）
+        from models import Student
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(
 
             StudentCourse.course_date >= start_date,
 
@@ -1093,9 +1095,8 @@ def recalculate_teacher_hours():
 
         # 对于没有已确认课程的教师-课程组合，将课时设为0
 
-        # 获取该月份所有有排课记录的教师-课程组合（包括未确认的）
-
-        all_courses = StudentCourse.query.filter(
+        # 获取该月份所有有排课记录的教师-课程组合（包括未确认的，过滤已删除的学生）
+        all_courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(
 
             StudentCourse.course_date >= start_date,
 

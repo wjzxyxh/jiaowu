@@ -28,6 +28,7 @@ class Student(db.Model):
     notes = db.Column(db.Text, comment='备注/学习记录')
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
+    enrollment_date = db.Column(db.Date, comment='入学日期')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     def to_dict(self):
@@ -43,6 +44,7 @@ class Student(db.Model):
             'notes': self.notes,
             'default_time_slot': self.default_time_slot,
             'default_weekday': self.default_weekday,
+            'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
         }
 
@@ -262,7 +264,7 @@ class Payment(db.Model):
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=True, comment='课程ID')
     course_name = db.Column(db.String(50), comment='课程名称')
     original_amount = db.Column(db.Float, nullable=False, comment='原始费用')
-    discount_rate = db.Column(db.Float, default=0, comment='优惠力度（百分比）')
+    discount_rate = db.Column(db.Float, default=0, comment='优惠力度（金额，可为负数，负数表示加价）')
     paid_amount = db.Column(db.Float, nullable=False, comment='缴纳费用')
     class_count = db.Column(db.Integer, nullable=False, comment='报课节数（补充到剩余课时）')
     unit_price = db.Column(db.Float, comment='学生单价（当次缴费/报课次数）')
@@ -344,8 +346,8 @@ class FinanceRecord(db.Model):
     # 成本
     teacher_cost = db.Column(db.Float, default=0, comment='老师成本')
     marketing_cost = db.Column(db.Float, default=0, comment='营销成本')
-    marketing_flyer = db.Column(db.Float, default=0, comment='传单')
-    marketing_labor = db.Column(db.Float, default=0, comment='人工')
+    marketing_flyer = db.Column(db.Float, default=0, comment='营销')
+    marketing_labor = db.Column(db.Float, default=0, comment='教务')
     rent_utilities = db.Column(db.Float, default=0, comment='房租水电')
     rent = db.Column(db.Float, default=0, comment='房租')
     utilities = db.Column(db.Float, default=0, comment='水电')

@@ -91,9 +91,9 @@ def get_finance():
 
     
 
-    # 计算总课耗（所有学生的当月课时总和）
-
-    stats_list = ClassHoursStats.query.filter_by(month=month).all()
+    # 计算总课耗（所有学生的当月课时总和，过滤已删除的学生）
+    from models import Student
+    stats_list = ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(ClassHoursStats.month == month).all()
 
     total_class_hours = sum(stats.actual_hours for stats in stats_list)
 
@@ -212,8 +212,9 @@ def get_finance():
         
 
         # 获取该老师当月的所有课程（只统计已确认的课程，不限制course_id）
-
-        courses = StudentCourse.query.options(
+        # 过滤已删除的学生
+        from models import Student
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
             joinedload(StudentCourse.course)
 
@@ -569,7 +570,9 @@ def get_finance():
 
     
 
-    payments = Payment.query.filter(
+    # 只查询存在学生的缴费记录（过滤已删除的学生）
+    from models import Student
+    payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
 
         Payment.payment_date >= start_date,
 

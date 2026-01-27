@@ -11,14 +11,6 @@ from database import run_migrations, init_default_data
 from utils.logging_config import setup_logging
 from utils.error_handlers import handle_api_errors
 
-# 尝试导入 CORS（可选依赖）
-try:
-    from flask_cors import CORS
-    CORS_AVAILABLE = True
-except ImportError:
-    CORS_AVAILABLE = False
-    print("警告: flask-cors 未安装，跨域请求可能失败。运行 'pip install flask-cors' 安装。")
-
 
 def create_app(config_name='default'):
     """
@@ -44,21 +36,6 @@ def create_app(config_name='default'):
     
     # 初始化扩展
     init_extensions(app)
-    
-    # 启用 CORS 支持（开发环境，用于 UniApp 前端）
-    if CORS_AVAILABLE:
-        if config_name == 'default' or app.config.get('DEBUG'):
-            CORS(app, resources={
-                r"/api/*": {
-                    "origins": "*",  # 开发环境允许所有来源
-                    "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-                    "allow_headers": ["Content-Type", "Authorization"],
-                    "supports_credentials": True
-                }
-            })
-            app.logger.info('CORS 已启用（开发环境）')
-    else:
-        app.logger.warning('CORS 未启用，UniApp 前端可能无法访问 API')
     
     # 注册全局错误处理器
     handle_api_errors(app)
@@ -130,14 +107,15 @@ if __name__ == '__main__':
     # 确保debug模式启用
     app.config['DEBUG'] = True
     
-    # 优先使用环境变量指定的端口，否则使用默认端口80
+    # 优先使用环境变量指定的端口，否则使用默认端口5000（前后端分离）
     if 'PORT' in os.environ:
         port = int(os.environ.get('PORT'))
     else:
-        port = 80
+        port = 5000  # 前后端分离，后端使用5000端口
         print(f'使用端口: {port}')
     
-    print(f'教务管理系统启动成功！')
+    print(f'教务管理系统后端API启动成功！')
     print(f'Debug模式: 已启用')
-    print(f'访问地址: http://localhost:{port}')
+    print(f'API地址: http://localhost:{port}')
+    print(f'前端开发服务器: http://localhost:3000')
     app.run(debug=True, host='0.0.0.0', port=port, use_reloader=True)

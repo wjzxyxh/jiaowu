@@ -107,6 +107,17 @@ def import_students():
 
                 
 
+                # 处理入学日期
+                enrollment_date = None
+                if '入学日期' in row and pd.notna(row['入学日期']):
+                    try:
+                        if isinstance(row['入学日期'], str):
+                            enrollment_date = datetime.strptime(row['入学日期'], '%Y-%m-%d').date()
+                        else:
+                            enrollment_date = pd.to_datetime(row['入学日期']).date()
+                    except (ValueError, TypeError):
+                        pass  # 如果日期格式不正确，跳过
+                
                 student = Student(
 
                     name=str(row['姓名']).strip(),
@@ -125,7 +136,9 @@ def import_students():
 
                     email=str(row['邮箱']).strip() if '邮箱' in row and pd.notna(row['邮箱']) else None,
 
-                    notes=str(row['备注']).strip() if '备注' in row and pd.notna(row['备注']) else None
+                    notes=str(row['备注']).strip() if '备注' in row and pd.notna(row['备注']) else None,
+
+                    enrollment_date=enrollment_date
 
                 )
 

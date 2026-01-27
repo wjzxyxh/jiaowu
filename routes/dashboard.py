@@ -75,7 +75,7 @@ def get_dashboard_stats():
 
             'monthly_profit': finance_record.monthly_profit if finance_record else 0,
 
-            'unconfirmed_courses': StudentCourse.query.filter(
+            'unconfirmed_courses': StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(
 
                 StudentCourse.is_confirmed == False,
 
@@ -85,7 +85,7 @@ def get_dashboard_stats():
 
             ).count(),
 
-            'low_hours_students': ClassHoursStats.query.join(Student).filter(
+            'low_hours_students': ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(
 
                 ClassHoursStats.remaining_hours < FinanceConfig.query.filter_by(key='min_hours_for_reminder').first().value if FinanceConfig.query.filter_by(key='min_hours_for_reminder').first() else 0,
 
@@ -95,19 +95,19 @@ def get_dashboard_stats():
 
             ).count() if FinanceConfig.query.filter_by(key='min_hours_for_reminder').first() else 0,
 
-            'today_courses': StudentCourse.query.filter_by(
+            'today_courses': StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(
 
-                course_date=today,
+                StudentCourse.course_date == today,
 
-                status='正常'
+                StudentCourse.status == '正常'
 
             ).count(),
 
-            'tomorrow_courses': StudentCourse.query.filter_by(
+            'tomorrow_courses': StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(
 
-                course_date=today + timedelta(days=1),
+                StudentCourse.course_date == today + timedelta(days=1),
 
-                status='正常'
+                StudentCourse.status == '正常'
 
             ).count(),
 

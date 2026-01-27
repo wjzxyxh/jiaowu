@@ -60,6 +60,7 @@ function loadStudents() {
                 <tr>
                     <td>${s.name}</td>
                     <td>${s.grade || '-'}</td>
+                    <td>${s.enrollment_date || '-'}</td>
                     <td><span class="status-badge status-${s.status === '在校' ? 'normal' : 'deleted'}">${s.status}</span></td>
                     <td>${s.phone || '-'}</td>
                     <td>${s.parent_name || '-'}</td>
@@ -85,6 +86,10 @@ window.showAddStudentModal = function() {
             <div class="form-group">
                 <label>年级</label>
                 <input type="text" name="grade">
+            </div>
+            <div class="form-group">
+                <label>入学日期</label>
+                <input type="date" name="enrollment_date">
             </div>
             <div class="form-group">
                 <label>状态</label>
@@ -123,9 +128,11 @@ window.showAddStudentModal = function() {
 }
 
 window.showEditStudentModal = function(id) {
-    fetch(`/api/students`)
+    fetch(`/api/students?per_page=1000`)
         .then(res => res.json())
-        .then(students => {
+        .then(data => {
+            // 处理新的API响应格式（支持分页）
+            const students = data.students || data;
             const student = students.find(s => s.id === id);
             if (!student) return;
             
@@ -139,6 +146,10 @@ window.showEditStudentModal = function(id) {
                     <div class="form-group">
                         <label>年级</label>
                         <input type="text" name="grade" value="${student.grade || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label>入学日期</label>
+                        <input type="date" name="enrollment_date" value="${student.enrollment_date || ''}">
                     </div>
                     <div class="form-group">
                         <label>状态</label>
@@ -4007,13 +4018,13 @@ function showPaymentModal(type) {
                     <small style="color: #666;">选择课程后将自动计算，也可手动输入</small>
                 </div>
                 <div class="form-group">
-                    <label>优惠</label>
-                    <input type="number" name="discount_rate" id="payment-discount-rate" class="no-spinner" step="0.01" value="0" min="0" onchange="calculatePaymentAmount()">
+                    <label>优惠（可为负数，负数表示加价）</label>
+                    <input type="number" name="discount_rate" id="payment-discount-rate" class="no-spinner" step="0.01" value="0" onchange="calculatePaymentAmount()">
                 </div>
                 <div class="form-group">
                     <label>${type === '退费' ? '退费' : '缴费'}金额</label>
                     <input type="number" name="paid_amount" id="payment-paid-amount" step="0.01" readonly style="background-color: #f5f5f5;">
-                    <small style="color: #666;">自动计算：原始费用 - 优惠</small>
+                    <small style="color: #666;">自动计算：原始费用 - 优惠（优惠为负数时表示加价）</small>
                 </div>
                 <div class="form-group">
                     <label>备注</label>
@@ -4063,7 +4074,7 @@ function calculatePaymentAmount() {
         const originalAmount = parseFloat(originalAmountInput.value) || 0;
         const discountRate = parseFloat(discountRateInput.value) || 0;
         
-        // 计算缴费金额：原始费用 - 优惠（优惠是金额）
+        // 计算缴费金额：原始费用 - 优惠（优惠可为负数，负数表示加价）
         const paidAmount = originalAmount - discountRate;
         
         paidAmountInput.value = paidAmount.toFixed(2);
@@ -4150,14 +4161,24 @@ function deletePayment(id) {
     fetch(`/api/payments/${id}`, { method: 'DELETE' })
         .then(() => {
             loadPayments();
-            loadStats();
+            // 如果stats页面存在，也刷新
+            if (typeof loadStats === 'function' && document.getElementById('stats-month')) {
+                loadStats();
+            }
         });
 }
 
 // ==================== 课时统计 ====================
 
 function loadStats() {
-    const month = document.getElementById('stats-month').value || currentMonth;
+    // 检查stats页面是否存在，如果不存在则直接返回
+    const statsMonthElement = document.getElementById('stats-month');
+    if (!statsMonthElement) {
+        // stats页面不存在，不需要加载
+        return;
+    }
+    
+    const month = statsMonthElement.value || currentMonth;
     const studentFilter = document.getElementById('stats-student-filter');
     const selectedStudentId = studentFilter ? studentFilter.value : '';
     

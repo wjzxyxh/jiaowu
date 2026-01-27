@@ -80,9 +80,9 @@ def get_all_courses():
 
         
 
-        # 构建基础查询
-
-        query = StudentCourse.query.options(
+        # 构建基础查询（只查询存在学生的排课记录，过滤已删除的学生）
+        from models import Student
+        query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
             joinedload(StudentCourse.course)
 
@@ -186,7 +186,65 @@ def get_all_courses():
         return jsonify({'error': str(e)}), 500
 
 
-
+@bp.route('/api/cleanup/orphaned-courses', methods=['POST'])
+@csrf.exempt  # JSON API 端点豁免 CSRF 检查
+@login_required
+@require_permission('admin')
+def cleanup_orphaned_courses():
+    """清理孤立排课记录（学生已被删除但排课记录还在）"""
+    try:
+        from models import Student, StudentCourse
+        
+        # 获取所有存在的学生ID
+        existing_student_ids = set(s.id for s in Student.query.all())
+        
+        # 查找孤立排课记录（student_id不在现有学生列表中）
+        orphaned_courses = StudentCourse.query.filter(
+            ~StudentCourse.student_id.in_(existing_student_ids) if existing_student_ids else False
+        ).all()
+        
+        if not existing_student_ids:
+            # 如果没有学生，查找所有排课记录
+            orphaned_courses = StudentCourse.query.all()
+        
+        orphaned_count = len(orphaned_courses)
+        
+        if orphaned_count > 0:
+            # 收集受影响的信息
+            affected_teacher_courses = set()
+            for sc in orphaned_courses:
+                if sc.teacher_id and sc.course_id and sc.course_date:
+                    month = sc.course_date.strftime('%Y-%m')
+                    affected_teacher_courses.add((sc.teacher_id, sc.course_id, month))
+                db.session.delete(sc)
+            
+            db.session.commit()
+            
+            # 重新计算受影响老师的课时
+            from services import update_teacher_hours
+            for teacher_id, course_id, month in affected_teacher_courses:
+                try:
+                    update_teacher_hours(teacher_id, month=month, course_id=course_id)
+                except Exception as e:
+                    from flask import current_app
+                    current_app.logger.warning(f'更新老师课时失败 (teacher_id={teacher_id}, course_id={course_id}, month={month}): {e}')
+            
+            return jsonify({
+                'message': f'成功清理 {orphaned_count} 条孤立排课记录',
+                'cleaned_count': orphaned_count
+            }), 200
+        else:
+            return jsonify({
+                'message': '没有发现孤立排课记录',
+                'cleaned_count': 0
+            }), 200
+    
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_msg = f'清理孤立记录失败: {str(e)}\n{traceback.format_exc()}'
+        print(error_msg)
+        return jsonify({'error': f'清理失败: {str(e)}'}), 500
 
 
 

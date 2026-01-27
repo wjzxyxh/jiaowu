@@ -1,0 +1,20 @@
+import api from './api'
+
+export const studentCoursesService = {
+  // 获取已缴费需要排课的学生课程列表
+  getPaidCoursesNeedScheduling: async () => {
+    const response = await api.get('/students/paid-courses-need-scheduling')
+    // 返回格式：{ courses: [...], total: ... }
+    return response.courses || []
+  },
+
+  // 获取学生-课程的默认排课设置
+  getDefaultSchedule: async (studentId, courseId) => {
+    return api.get(`/students/${studentId}/courses/${courseId}/default-schedule`)
+  },
+
+  // 更新学生-课程的默认排课设置
+  updateDefaultSchedule: async (studentId, courseId, data) => {
+    return api.put(`/students/${studentId}/courses/${courseId}/default-schedule`, data)
+  },
+}

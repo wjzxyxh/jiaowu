@@ -50,18 +50,20 @@ def get_calendar_courses():
         student_id = request.args.get('student_id', type=int)
         classroom = request.args.get('classroom')
 
-        query = StudentCourse.query
+        # 只查询存在学生的排课记录（过滤已删除的学生）
+        from models import Student
+        query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id)
 
         if start_date:
             query = query.filter(StudentCourse.course_date >= datetime.strptime(start_date, '%Y-%m-%d').date())
         if end_date:
             query = query.filter(StudentCourse.course_date <= datetime.strptime(end_date, '%Y-%m-%d').date())
         if teacher_id:
-            query = query.filter_by(teacher_id=teacher_id)
+            query = query.filter(StudentCourse.teacher_id == teacher_id)
         if student_id:
-            query = query.filter_by(student_id=student_id)
+            query = query.filter(StudentCourse.student_id == student_id)
         if classroom:
-            query = query.filter_by(classroom=classroom)
+            query = query.filter(StudentCourse.classroom == classroom)
 
         # 过滤掉已删除的排课记录
         query = query.filter(StudentCourse.status != '删除')

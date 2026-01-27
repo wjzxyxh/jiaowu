@@ -7,12 +7,14 @@ from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_cors import CORS
 
 # 初始化扩展
 db = SQLAlchemy()
 login_manager = LoginManager()
 csrf = CSRFProtect()
 limiter = Limiter(key_func=get_remote_address)
+cors = CORS()
 
 
 def init_extensions(app):
@@ -20,6 +22,16 @@ def init_extensions(app):
     db.init_app(app)
     csrf.init_app(app)
     login_manager.init_app(app)
+    
+    # 配置CORS - 支持前后端分离
+    cors.init_app(app, resources={
+        r"/api/*": {
+            "origins": "*",  # 开发环境允许所有来源，生产环境应限制为前端域名
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"],
+            "supports_credentials": True  # 允许携带cookie
+        }
+    })
     
     # 配置LoginManager
     from config import Config

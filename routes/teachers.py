@@ -120,6 +120,10 @@ def create_teacher():
         data = request.json
         if not data:
             return jsonify({'error': '请求数据为空'}), 400
+        
+        # 初始化变量（JSON请求不包含文件）
+        resume_data = None
+        resume_filename = None
     
     name = data.get('name', '').strip()
     
@@ -550,7 +554,7 @@ def get_teacher_resume(teacher_id):
 @require_permission('edit')
 @handle_db_errors
 def delete_teacher(teacher_id):
-    """删除教师（级联删除相关数据）"""
+    """删除教师（彻底删除，不是隐藏，级联删除相关数据）"""
     teacher = Teacher.query.get(teacher_id)
     
     if not teacher:

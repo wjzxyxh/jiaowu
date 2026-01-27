@@ -44,16 +44,95 @@ bp = Blueprint('students', __name__)
 @bp.route('/api/students', methods=['GET'])
 @login_required
 def get_students():
-    """获取所有学生"""
-    status = request.args.get('status', '')
-    
-    # 优化：在数据库层面过滤而不是在内存中
-    query = Student.query
-    if status:
-        query = query.filter_by(status=status)
-    
-    students = query.all()
-    return jsonify([s.to_dict() for s in students])
+    """获取所有学生（支持筛选和分页）"""
+    try:
+        # 获取筛选参数
+        status = request.args.get('status', '')
+        grade = request.args.get('grade', '')
+        enrollment_date_start = request.args.get('enrollment_date_start', '')
+        enrollment_date_end = request.args.get('enrollment_date_end', '')
+        search_keyword = request.args.get('search', '').strip()
+        
+        # 获取分页参数
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
+        # 确保分页参数有效
+        if page < 1:
+            page = 1
+        if per_page < 1:
+            per_page = 20
+        if per_page > 100:  # 限制每页最大数量
+            per_page = 100
+        
+        # 构建查询
+        query = Student.query
+        
+        # 状态筛选
+        if status:
+            query = query.filter_by(status=status)
+        
+        # 年级筛选
+        if grade:
+            query = query.filter_by(grade=grade)
+        
+        # 入学日期范围筛选
+        if enrollment_date_start:
+            try:
+                start_date = datetime.strptime(enrollment_date_start, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date >= start_date)
+            except ValueError:
+                pass  # 忽略无效的日期格式
+        
+        if enrollment_date_end:
+            try:
+                end_date = datetime.strptime(enrollment_date_end, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date <= end_date)
+            except ValueError:
+                pass  # 忽略无效的日期格式
+        
+        # 搜索关键词（姓名、电话、家长姓名）
+        if search_keyword:
+            search_pattern = f'%{search_keyword}%'
+            query = query.filter(
+                db.or_(
+                    Student.name.like(search_pattern),
+                    Student.phone.like(search_pattern),
+                    Student.parent_name.like(search_pattern)
+                )
+            )
+        
+        # 按创建时间倒序排列
+        query = query.order_by(Student.created_at.desc())
+        
+        # 获取总数
+        total = query.count()
+        
+        # 分页查询
+        pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+        students = pagination.items
+        
+        # 计算分页信息
+        total_pages = pagination.pages
+        has_prev = pagination.has_prev
+        has_next = pagination.has_next
+        
+        return jsonify({
+            'students': [s.to_dict() for s in students],
+            'pagination': {
+                'page': page,
+                'per_page': per_page,
+                'total': total,
+                'total_pages': total_pages,
+                'has_prev': has_prev,
+                'has_next': has_next
+            }
+        })
+    except Exception as e:
+        import traceback
+        error_msg = f"获取学生列表失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': f'获取学生列表失败: {str(e)}'}), 500
 
 
 
@@ -83,6 +162,15 @@ def create_student():
     if len(name) > 50:
         return jsonify({'error': '姓名长度不能超过50个字符'}), 400
     
+    # 处理入学日期
+    enrollment_date_str = data.get('enrollment_date', '').strip()
+    enrollment_date = None
+    if enrollment_date_str:
+        try:
+            enrollment_date = datetime.strptime(enrollment_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': '入学日期格式不正确，应为YYYY-MM-DD格式'}), 400
+    
     student = Student(
         name=name,
         grade=data.get('grade', '').strip(),
@@ -91,7 +179,8 @@ def create_student():
         parent_name=data.get('parent_name', '').strip(),
         parent_phone=data.get('parent_phone', '').strip(),
         address=data.get('address', '').strip(),
-        notes=data.get('notes', '').strip()
+        notes=data.get('notes', '').strip(),
+        enrollment_date=enrollment_date
     )
     
     db.session.add(student)
@@ -137,6 +226,17 @@ def update_student(student_id):
     student.address = data.get('address', student.address).strip() if data.get('address') else student.address
     student.notes = data.get('notes', student.notes).strip() if data.get('notes') else student.notes
     
+    # 处理入学日期
+    enrollment_date_str = data.get('enrollment_date', '').strip()
+    if enrollment_date_str:
+        try:
+            student.enrollment_date = datetime.strptime(enrollment_date_str, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': '入学日期格式不正确，应为YYYY-MM-DD格式'}), 400
+    elif 'enrollment_date' in data and data.get('enrollment_date') == '':
+        # 如果传入空字符串，表示要清空入学日期
+        student.enrollment_date = None
+    
     db.session.commit()
     log_operation('students', 'update', 'Student', student.id, student.name, old_data, student.to_dict())
     return jsonify(student.to_dict())
@@ -154,7 +254,7 @@ def update_student(student_id):
 @require_permission('edit')
 @handle_db_errors
 def delete_student(student_id):
-    """删除学生（级联删除相关数据）"""
+    """删除学生（彻底删除，不是隐藏，级联删除相关数据）"""
     student = Student.query.get(student_id)
     
     if not student:
@@ -162,42 +262,89 @@ def delete_student(student_id):
     
     student_name = student.name
     
-    from models import StudentCourse, ClassHoursStats, Payment, TeacherExperienceCost
+    from models import StudentCourse, ClassHoursStats, Payment, TeacherExperienceCost, StudentCourseDefaultSchedule, TeacherExperienceCostHistory
     
     # 收集需要重新计算老师课时的信息（teacher_id, course_id, month）
     affected_teacher_courses = set()
+    # 收集所有受影响的月份（用于重新计算财务记录）
+    affected_months = set()
     
-    # 1. 删除该学生的所有排课记录（包括已删除状态的）
-    student_courses = StudentCourse.query.filter_by(student_id=student_id).all()
-    for sc in student_courses:
-        # 记录受影响的老师和课程，用于后续重新计算老师课时
-        if sc.teacher_id and sc.course_id and sc.course_date:
-            month = sc.course_date.strftime('%Y-%m')
-            affected_teacher_courses.add((sc.teacher_id, sc.course_id, month))
-        db.session.delete(sc)
+    try:
+        # 1. 删除该学生的所有默认排课设置记录
+        default_schedules = StudentCourseDefaultSchedule.query.filter_by(student_id=student_id).all()
+        schedule_count = len(default_schedules)
+        for schedule in default_schedules:
+            db.session.delete(schedule)
+        if schedule_count > 0:
+            print(f'已删除 {schedule_count} 条默认排课设置记录（学生ID: {student_id}）')
+        
+        # 2. 删除该学生的所有排课记录（彻底删除，不是隐藏）
+        student_courses = StudentCourse.query.filter_by(student_id=student_id).all()
+        course_count = len(student_courses)
+        deleted_course_ids = []
+        for sc in student_courses:
+            # 记录受影响的老师和课程，用于后续重新计算老师课时
+            if sc.teacher_id and sc.course_id and sc.course_date:
+                month = sc.course_date.strftime('%Y-%m')
+                affected_teacher_courses.add((sc.teacher_id, sc.course_id, month))
+                affected_months.add(month)
+            deleted_course_ids.append(sc.id)
+            db.session.delete(sc)
+        if course_count > 0:
+            print(f'已删除 {course_count} 条排课记录（学生ID: {student_id}，排课ID: {deleted_course_ids[:10]}）')
+        
+        # 3. 删除该学生的课时统计记录（收集月份信息）
+        stats_records = ClassHoursStats.query.filter_by(student_id=student_id).all()
+        stats_count = len(stats_records)
+        for stat in stats_records:
+            if stat.month:
+                affected_months.add(stat.month)
+            db.session.delete(stat)
+        if stats_count > 0:
+            print(f'已删除 {stats_count} 条课时统计记录（学生ID: {student_id}）')
+        
+        # 4. 删除该学生的缴费记录（收集月份信息）
+        payment_records = Payment.query.filter_by(student_id=student_id).all()
+        payment_count = len(payment_records)
+        for payment in payment_records:
+            if payment.payment_date:
+                month = payment.payment_date.strftime('%Y-%m')
+                affected_months.add(month)
+            db.session.delete(payment)
+        if payment_count > 0:
+            print(f'已删除 {payment_count} 条缴费记录（学生ID: {student_id}）')
+        
+        # 5. 删除该学生的经验成本记录
+        exp_cost_records = TeacherExperienceCost.query.filter_by(student_id=student_id).all()
+        exp_cost_count = len(exp_cost_records)
+        for exp_cost in exp_cost_records:
+            db.session.delete(exp_cost)
+        if exp_cost_count > 0:
+            print(f'已删除 {exp_cost_count} 条经验成本记录（学生ID: {student_id}）')
+        
+        # 5.1. 删除该学生的经验成本历史记录
+        exp_cost_history_records = TeacherExperienceCostHistory.query.filter_by(student_id=student_id).all()
+        exp_cost_history_count = len(exp_cost_history_records)
+        for exp_cost_history in exp_cost_history_records:
+            db.session.delete(exp_cost_history)
+        if exp_cost_history_count > 0:
+            print(f'已删除 {exp_cost_history_count} 条经验成本历史记录（学生ID: {student_id}）')
+        
+        # 6. 删除学生本身
+        db.session.delete(student)
+        
+        # 提交所有删除操作
+        db.session.commit()
+        print(f'成功删除学生 {student_name} (ID: {student_id}) 及其所有相关数据')
     
-    # 2. 删除该学生的课时统计记录
-    stats_records = ClassHoursStats.query.filter_by(student_id=student_id).all()
-    for stat in stats_records:
-        db.session.delete(stat)
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_msg = f'删除学生失败: {str(e)}\n{traceback.format_exc()}'
+        print(error_msg)
+        return jsonify({'error': f'删除学生失败: {str(e)}'}), 500
     
-    # 3. 删除该学生的缴费记录
-    payment_records = Payment.query.filter_by(student_id=student_id).all()
-    for payment in payment_records:
-        db.session.delete(payment)
-    
-    # 4. 删除该学生的经验成本记录
-    exp_cost_records = TeacherExperienceCost.query.filter_by(student_id=student_id).all()
-    for exp_cost in exp_cost_records:
-        db.session.delete(exp_cost)
-    
-    # 5. 删除学生本身
-    db.session.delete(student)
-    
-    # 提交所有删除操作
-    db.session.commit()
-    
-    # 6. 重新计算受影响老师的课时（删除排课记录后，需要更新老师课时统计）
+    # 7. 重新计算受影响老师的课时（删除排课记录后，需要更新老师课时统计）
     for teacher_id, course_id, month in affected_teacher_courses:
         try:
             update_teacher_hours(teacher_id, month=month, course_id=course_id)
@@ -206,9 +353,29 @@ def delete_student(student_id):
             from flask import current_app
             current_app.logger.warning(f'更新老师课时失败 (teacher_id={teacher_id}, course_id={course_id}, month={month}): {e}')
     
+    # 8. 重新计算受影响月份的财务记录（删除学生后，需要更新财务统计）
+    # 确保所有受影响的月份都被重新计算（包括排课记录、缴费记录、课时统计的月份）
+    from services.finance_service import update_finance_record
+    from utils import get_current_month
+    current_month = get_current_month()
+    
+    # 添加当前月份（如果还没有包含），确保当前月份也被重新计算
+    if current_month:
+        affected_months.add(current_month)
+    
+    # 重新计算所有受影响的月份
+    for month in affected_months:
+        try:
+            update_finance_record(month)
+            print(f'已重新计算财务记录（月份: {month}）')
+        except Exception as e:
+            from flask import current_app
+            current_app.logger.warning(f'更新财务记录失败 (month={month}): {e}')
+            print(f'重新计算财务记录失败（月份: {month}）: {e}')
+    
     log_operation('students', 'delete', 'Student', student_id, student_name)
     return jsonify({
-        'message': f'删除成功！已删除学生及其所有相关数据（排课记录、课时统计、缴费记录等）'
+        'message': f'删除成功！已删除学生及其所有相关数据（排课记录、课时统计、缴费记录等），并已重新计算财务记录'
     })
 
 
@@ -455,8 +622,9 @@ def get_paid_courses_need_scheduling():
         from datetime import date
         from services.finance_service import calculate_remaining_hours_from_payments
         
-        # 获取所有有缴费记录的学生和课程组合
-        payments = Payment.query.filter_by(type='缴费').all()
+        # 获取所有有缴费记录的学生和课程组合（过滤已删除的学生）
+        from models import Student
+        payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(Payment.type == '缴费').all()
         
         # 收集学生-课程组合及其缴费信息
         student_course_map = {}  # {(student_id, course_id): {student_name, course_name, subject, total_paid_hours}}
@@ -488,13 +656,35 @@ def get_paid_courses_need_scheduling():
             # 累计缴费课时
             student_course_map[key]['total_paid_hours'] += payment.class_count
         
+        # 如果没有任何缴费记录，直接返回空列表
+        if not student_course_map:
+            return jsonify({
+                'courses': [],
+                'total': 0
+            })
+        
         # 计算每个学生-课程组合的剩余课时和已消耗课时
         result_list = []
         for key, info in student_course_map.items():
             student_id, course_id = key
             
+            # 再次验证：检查该学生-课程组合是否还有有效的缴费记录
+            # 如果所有缴费记录都被删除了，不应该显示在列表中
+            remaining_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+                Payment.student_id == student_id,
+                Payment.course_id == course_id
+            ).all()
+            
+            # 如果没有缴费记录，跳过该学生-课程组合
+            if not remaining_payments:
+                continue
+            
             # 计算总缴费课时（包括退费）
             total_paid_hours = calculate_remaining_hours_from_payments(student_id, course_id)
+            
+            # 如果总缴费课时 <= 0，跳过该学生-课程组合
+            if total_paid_hours <= 0:
+                continue
             
             # 计算已消耗课时（已确认的排课）
             consumed_courses = StudentCourse.query.filter(

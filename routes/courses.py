@@ -124,9 +124,9 @@ def get_courses():
 
             if filter_student_id:
 
-                # 查询整个月的记录
-
-                query = StudentCourse.query.options(
+                # 查询整个月的记录（过滤已删除的学生）
+                from models import Student
+                query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
                     joinedload(StudentCourse.course)
 
@@ -238,9 +238,9 @@ def get_courses():
 
             
 
-            # 只查询该月内的数据，并加载课程关联
-
-            query = StudentCourse.query.options(
+            # 只查询该月内的数据，并加载课程关联（过滤已删除的学生）
+            from models import Student
+            query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
                 joinedload(StudentCourse.course)
 
@@ -364,7 +364,9 @@ def get_courses():
 
             
 
-            query = StudentCourse.query.options(
+            # 过滤已删除的学生
+            from models import Student
+            query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
                 joinedload(StudentCourse.course)
 
@@ -398,7 +400,9 @@ def get_courses():
 
         
 
-        query = StudentCourse.query.options(
+        # 过滤已删除的学生
+        from models import Student
+        query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
             joinedload(StudentCourse.course)
 
@@ -514,7 +518,9 @@ def get_courses():
 
         
 
-        query = StudentCourse.query.options(
+        # 过滤已删除的学生
+        from models import Student
+        query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
             joinedload(StudentCourse.course)
 
@@ -1145,35 +1151,45 @@ def confirm_course(course_id):
 
     """确认/取消确认上课（切换状态）"""
 
-    course = StudentCourse.query.get_or_404(course_id)
+    try:
+        course = StudentCourse.query.get(course_id)
+        
+        if not course:
+            return jsonify({'error': f'排课记录 ID {course_id} 不存在或已被删除'}), 404
 
+        # 切换确认状态
+
+        course.is_confirmed = not course.is_confirmed
+
+        db.session.commit()
+
+        
+
+        # 更新课时统计（按课程）
+
+        month = course.course_date.strftime('%Y-%m')
+
+        if course.course_id:
+
+            update_class_hours_stats(course.student_id, month, course.course_id)
+
+            update_teacher_hours(course.teacher_id, month, course.course_id)
+
+            # 更新财务记录（成本、工资、利润）
+
+            update_finance_record(month)
+
+        
+
+        return jsonify(course.to_dict())
     
-
-    # 切换确认状态
-
-    course.is_confirmed = not course.is_confirmed
-
-    db.session.commit()
-
-    
-
-    # 更新课时统计（按课程）
-
-    month = course.course_date.strftime('%Y-%m')
-
-    if course.course_id:
-
-        update_class_hours_stats(course.student_id, month, course.course_id)
-
-        update_teacher_hours(course.teacher_id, month, course.course_id)
-
-        # 更新财务记录（成本、工资、利润）
-
-        update_finance_record(month)
-
-    
-
-    return jsonify(course.to_dict())
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"[ERROR] 确认课程失败: {str(e)}")
+        print(f"[ERROR] 错误堆栈: {error_trace}")
+        return jsonify({'error': f'确认课程失败: {str(e)}'}), 500
 
 
 
@@ -1224,8 +1240,9 @@ def batch_confirm_courses():
         except (ValueError, TypeError) as e:
             return jsonify({'error': f'course_ids 必须包含有效的整数ID: {str(e)}'}), 400
 
-        # 获取所有课程
-        courses = StudentCourse.query.filter(StudentCourse.id.in_(course_ids)).all()
+        # 获取所有课程（过滤已删除的学生）
+        from models import Student
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(StudentCourse.id.in_(course_ids)).all()
 
         if not courses:
             return jsonify({'error': '未找到要确认的课程'}), 404
@@ -1356,8 +1373,9 @@ def batch_cancel_confirm_courses():
         except (ValueError, TypeError) as e:
             return jsonify({'error': f'course_ids 必须包含有效的整数ID: {str(e)}'}), 400
 
-        # 获取所有课程
-        courses = StudentCourse.query.filter(StudentCourse.id.in_(course_ids)).all()
+        # 获取所有课程（过滤已删除的学生）
+        from models import Student
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).filter(StudentCourse.id.in_(course_ids)).all()
 
         if not courses:
             return jsonify({'error': '未找到要取消确认的课程'}), 404
@@ -1432,7 +1450,10 @@ def delete_course(course_id):
     """删除排课（彻底删除）"""
 
     try:
-        course = StudentCourse.query.get_or_404(course_id)
+        course = StudentCourse.query.get(course_id)
+        
+        if not course:
+            return jsonify({'error': f'排课记录 ID {course_id} 不存在或已被删除'}), 404
 
         # 权限检查：除管理员外，子管理员无权限删除已经确认上课的排课
         if course.is_confirmed and not current_user.is_admin():

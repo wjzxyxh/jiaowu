@@ -132,6 +132,11 @@ def upgrade_student_table():
                 with db.engine.begin() as conn:
                     conn.execute(text('ALTER TABLE students ADD COLUMN notes TEXT'))
                 print('已为学生表添加notes字段')
+            
+            if 'enrollment_date' not in columns:
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE students ADD COLUMN enrollment_date DATE'))
+                print('已为学生表添加enrollment_date字段')
     except Exception as e:
         print(f'升级学生表时出错: {e}')
         import traceback

@@ -1,0 +1,1991 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../contexts/AuthContext'
+import { courseService } from '../services/courseService'
+import { studentService } from '../services/studentService'
+import { teacherService } from '../services/teacherService'
+import { courseManageService } from '../services/courseManageService'
+import { othersService } from '../services/othersService'
+import { studentCoursesService } from '../services/studentCoursesService'
+import { statsService } from '../services/statsService'
+import Modal from '../components/Modal'
+import './Courses.css'
+
+const Courses = () => {
+  const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+
+  // 计算当前日期所在的周数
+  const getWeekInMonth = (date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const dayOfMonth = date.getDate()
+
+    // 获取该月1号
+    const firstDay = new Date(year, month, 1)
+    const firstDayWeekday = firstDay.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
+
+    if (firstDayWeekday === 0) {
+      // 1号是周日，第1周只有1号
+      if (dayOfMonth === 1) {
+        return 1
+      } else {
+        // 从第2周开始
+        const firstMonday = new Date(year, month, 2)
+        const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
+        const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
+        return Math.min(weekNum, 5)
+      }
+    } else {
+      // 找到第一个周日
+      // 计算到周日需要多少天：7 - firstDayWeekday
+      // 例如：周一(1)->6天到周日, 周二(2)->5天, ..., 周六(6)->1天
+      const daysToSunday = 7 - firstDayWeekday
+      const firstSunday = new Date(year, month, 1 + daysToSunday)
+
+      if (dayOfMonth <= firstSunday.getDate()) {
+        // 在第1周内（1号到第一个周日）
+        return 1
+      } else {
+        // 在第2周及以后
+        // 找到第一个周一
+        const daysToMonday = 7 - firstDayWeekday // 1=周二->6天, 2=周三->5天, ..., 6=周日->1天
+        const firstMonday = new Date(year, month, 1 + daysToMonday)
+        const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
+        const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
+        return Math.min(weekNum, 5)
+      }
+    }
+  }
+
+  // 初始化当前日期所在的月份和周数（只在组件首次加载时计算一次）
+  const initialWeekState = useMemo(() => {
+    const today = new Date()
+    const currentMonth = today.toISOString().slice(0, 7)
+    const currentWeek = getWeekInMonth(today)
+    return { currentMonth, currentWeek: currentWeek.toString() }
+  }, [])
+
+  // 视图模式：'list' 或 'week'
+  const [viewMode, setViewMode] = useState('list')
+  const [weekFilter, setWeekFilter] = useState(initialWeekState.currentWeek)
+  const [monthFilter, setMonthFilter] = useState(initialWeekState.currentMonth)
+  const [teacherFilter, setTeacherFilter] = useState('')
+  const [classroomFilter, setClassroomFilter] = useState('')
+  const [subjectFilter, setSubjectFilter] = useState('')
+  const [gradeFilter, setGradeFilter] = useState('')
+  const [showModal, setShowModal] = useState(false)
+  const [showCopyModal, setShowCopyModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingCourse, setEditingCourse] = useState(null)
+  const [selectedIds, setSelectedIds] = useState([])
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 10
+
+  // 计算当前月的周数范围（与原 Flask 逻辑一致）
+  const getWeekRange = (month) => {
+    const [year, monthNum] = month.split('-').map(Number)
+    const firstDay = new Date(year, monthNum - 1, 1)
+    const firstDayWeekday = firstDay.getDay()
+    const lastDay = new Date(year, monthNum, 0)
+    const daysInMonth = lastDay.getDate()
+
+    let maxWeeks = 1
+
+    if (firstDayWeekday === 0) {
+      // 1号是周日，第1周只有1号
+      const firstMonday = new Date(year, monthNum - 1, 2)
+      let currentMonday = new Date(firstMonday)
+      let weekNum = 2
+
+      while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+        maxWeeks = weekNum
+        currentMonday = new Date(currentMonday)
+        currentMonday.setDate(currentMonday.getDate() + 7)
+        weekNum++
+      }
+    } else {
+      // 第1周：1号到第一个周日
+      maxWeeks = 1
+
+      const daysToMonday = 7 - firstDayWeekday
+      const firstMonday = new Date(year, monthNum - 1, 1 + daysToMonday)
+      let currentMonday = new Date(firstMonday)
+      let weekNum = 2
+
+      while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+        maxWeeks = weekNum
+        currentMonday = new Date(currentMonday)
+        currentMonday.setDate(currentMonday.getDate() + 7)
+        weekNum++
+      }
+    }
+
+    return Array.from({ length: maxWeeks }, (_, i) => (i + 1).toString())
+  }
+
+  const weekOptions = getWeekRange(monthFilter)
+
+  // 计算当前周的日期范围（用于显示周信息）
+  const getCurrentWeekDateRange = () => {
+    if (!monthFilter || !weekFilter) return null
+
+    const [year, month] = monthFilter.split('-').map(Number)
+    const weekNum = parseInt(weekFilter)
+    const firstDay = new Date(year, month - 1, 1)
+    const firstDayWeekday = firstDay.getDay()
+    const lastDay = new Date(year, month, 0)
+    const monthEnd = lastDay.getDate()
+
+    let startDate, endDate
+
+    if (weekNum === 1) {
+      if (firstDayWeekday === 0) {
+        startDate = new Date(year, month - 1, 1)
+        endDate = new Date(year, month - 1, 1)
+      } else {
+        const daysToSunday = 7 - firstDayWeekday
+        const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
+        startDate = new Date(year, month - 1, 1)
+        endDate = new Date(year, month - 1, firstSundayDate)
+      }
+    } else {
+      let daysToMonday
+      if (firstDayWeekday === 0) {
+        daysToMonday = 1
+      } else if (firstDayWeekday === 1) {
+        daysToMonday = 0
+      } else {
+        daysToMonday = 8 - firstDayWeekday
+      }
+
+      const firstMondayDate = 1 + daysToMonday
+      const startDateNum = firstMondayDate + (weekNum - 2) * 7
+
+      if (startDateNum > monthEnd) {
+        return null
+      }
+
+      startDate = new Date(year, month - 1, startDateNum)
+      const endDateNum = Math.min(startDateNum + 6, monthEnd)
+      endDate = new Date(year, month - 1, endDateNum)
+    }
+
+    return { startDate, endDate, year, month }
+  }
+
+  const weekDateRange = getCurrentWeekDateRange()
+  const weekInfoLabel = weekDateRange
+    ? `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${weekFilter}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
+    : ''
+
+  // 获取排课数据
+  const { data: courses = [], isLoading, error } = useQuery({
+    queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter],
+    queryFn: () =>
+      courseService.getCourses({
+        month: monthFilter,
+        week: weekFilter,
+        teacher: teacherFilter || undefined,
+        classroom: classroomFilter || undefined,
+        subject: subjectFilter || undefined,
+        grade: gradeFilter || undefined,
+      }),
+  })
+
+  // 过滤掉已删除的课程
+  const validCourses = useMemo(() => {
+    return courses.filter((c) => c.status !== '删除')
+  }, [courses])
+
+  // 分页数据
+  const paginatedCourses = useMemo(() => {
+    if (viewMode === 'week') return validCourses
+    const start = (currentPage - 1) * pageSize
+    const end = start + pageSize
+    return validCourses.slice(start, end)
+  }, [validCourses, currentPage, viewMode])
+
+  const totalPages = Math.ceil(validCourses.length / pageSize)
+
+  // 获取筛选选项
+  const { data: teachers = [] } = useQuery({
+    queryKey: ['teachers-for-course'],
+    queryFn: () => teacherService.getTeachers({ status: '启用' }),
+  })
+
+  const { data: timeSlots = [] } = useQuery({
+    queryKey: ['time-slots'],
+    queryFn: () => othersService.getTimeSlots({ status: '启用' }),
+  })
+
+  const { data: classrooms = [] } = useQuery({
+    queryKey: ['classrooms'],
+    queryFn: () => othersService.getClassrooms({ status: '启用' }),
+  })
+
+  // 从课程数据中提取唯一的筛选选项
+  const filterOptions = useMemo(() => {
+    const teachers = new Set()
+    const classrooms = new Set()
+    const subjects = new Set()
+    const grades = new Set()
+
+    validCourses.forEach((c) => {
+      if (c.teacher_name) teachers.add(c.teacher_name)
+      if (c.classroom) classrooms.add(c.classroom)
+      if (c.subject) subjects.add(c.subject)
+      if (c.grade) grades.add(c.grade)
+    })
+
+    return {
+      teachers: Array.from(teachers).sort(),
+      classrooms: Array.from(classrooms).sort(),
+      subjects: Array.from(subjects).sort(),
+      grades: Array.from(grades).sort(),
+    }
+  }, [validCourses])
+
+  // 使用统一的学生查询key，共享缓存
+  const { data: students = [] } = useQuery({
+    queryKey: ['students', '在校'],
+    queryFn: () => studentService.getStudents({ status: '在校', per_page: 1000 }),
+    staleTime: 10 * 60 * 1000,
+    cacheTime: 30 * 60 * 1000,
+    retry: false,
+    placeholderData: (previousData) => previousData,
+  })
+
+  const { data: courseList = [] } = useQuery({
+    queryKey: ['courses-list'],
+    queryFn: () => courseManageService.getCourses({ status: '启用' }),
+  })
+
+  // Mutations
+  const createMutation = useMutation({
+    mutationFn: courseService.createCourse,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['courses'])
+      setShowModal(false)
+      alert('排课创建成功')
+    },
+    onError: (error) => {
+      alert('创建失败: ' + (error?.response?.data?.error || error?.message))
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: courseService.deleteCourse,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['courses'])
+      setSelectedIds([])
+      alert('删除成功')
+    },
+  })
+
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (ids) => {
+      const results = await Promise.allSettled(ids.map((id) => courseService.deleteCourse(id)))
+      const successCount = results.filter((r) => r.status === 'fulfilled').length
+      const failCount = results.filter((r) => r.status === 'rejected').length
+      return { successCount, failCount }
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries(['courses'])
+      setSelectedIds([])
+      alert(`批量删除完成！成功：${result.successCount}条，失败：${result.failCount}条`)
+    },
+  })
+
+  const confirmMutation = useMutation({
+    mutationFn: courseService.confirmCourse,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['courses'])
+      queryClient.invalidateQueries(['dashboard-stats'])
+      alert('确认成功')
+    },
+  })
+
+  const batchConfirmMutation = useMutation({
+    mutationFn: (ids) => courseService.batchConfirm(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['courses'])
+      setSelectedIds([])
+      let message = `成功确认 ${data.confirmed_count} 个排课`
+      if (data.already_confirmed_count > 0) {
+        message += `，${data.already_confirmed_count} 个已确认`
+      }
+      alert(message)
+    },
+  })
+
+  const batchCancelConfirmMutation = useMutation({
+    mutationFn: (ids) => courseService.batchCancelConfirm(ids),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['courses'])
+      setSelectedIds([])
+      let message = `成功取消确认 ${data.cancelled_count} 个排课`
+      if (data.already_cancelled_count > 0) {
+        message += `，${data.already_cancelled_count} 个未确认`
+      }
+      alert(message)
+    },
+  })
+
+  const updateCourseMutation = useMutation({
+    mutationFn: ({ id, data }) => courseService.updateCourse(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['courses'])
+      alert('更新成功')
+    },
+  })
+
+  // 处理函数
+  const handleDelete = (id) => {
+    if (window.confirm('确定要删除这个排课吗？')) {
+      deleteMutation.mutate(id)
+    }
+  }
+
+  const handleConfirm = (id) => {
+    if (window.confirm('确定要确认这节课已上吗？')) {
+      confirmMutation.mutate(id)
+    }
+  }
+
+  const handleBatchDelete = () => {
+    if (selectedIds.length === 0) {
+      alert('请先选择要删除的排课')
+      return
+    }
+    if (window.confirm(`确定要删除选中的 ${selectedIds.length} 条排课吗？`)) {
+      batchDeleteMutation.mutate(selectedIds)
+    }
+  }
+
+  const handleBatchConfirm = () => {
+    const unconfirmedIds = validCourses
+      .filter((c) => selectedIds.includes(c.id) && !c.is_confirmed)
+      .map((c) => c.id)
+    if (unconfirmedIds.length === 0) {
+      alert('请先选择要确认的排课')
+      return
+    }
+    if (window.confirm(`确定要批量确认 ${unconfirmedIds.length} 个排课吗？确认后将扣除剩余课时。`)) {
+      batchConfirmMutation.mutate(unconfirmedIds)
+    }
+  }
+
+  const handleBatchCancelConfirm = () => {
+    const confirmedIds = validCourses
+      .filter((c) => selectedIds.includes(c.id) && c.is_confirmed)
+      .map((c) => c.id)
+    if (confirmedIds.length === 0) {
+      alert('请先选择要取消确认的排课')
+      return
+    }
+    if (window.confirm(`确定要批量取消确认 ${confirmedIds.length} 个排课吗？取消后将恢复剩余课时。`)) {
+      batchCancelConfirmMutation.mutate(confirmedIds)
+    }
+  }
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      const selectableIds = paginatedCourses
+        .filter((c) => !c.is_confirmed || isAdmin)
+        .map((c) => c.id)
+      setSelectedIds(selectableIds)
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectCourse = (id) => {
+    setSelectedIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((i) => i !== id)
+      } else {
+        return [...prev, id]
+      }
+    })
+  }
+
+  const handlePreviousWeek = () => {
+    const weekNum = parseInt(weekFilter)
+    if (weekNum > 1) {
+      setWeekFilter((weekNum - 1).toString())
+    } else {
+      // 切换到上一月
+      const [year, month] = monthFilter.split('-').map(Number)
+      let prevMonth, prevYear
+      if (month === 1) {
+        prevMonth = 12
+        prevYear = year - 1
+      } else {
+        prevMonth = month - 1
+        prevYear = year
+      }
+      const prevMonthStr = `${prevYear}-${String(prevMonth).padStart(2, '0')}`
+      setMonthFilter(prevMonthStr)
+      const prevWeekOptions = getWeekRange(prevMonthStr)
+      setWeekFilter(prevWeekOptions[prevWeekOptions.length - 1])
+    }
+  }
+
+  const handleNextWeek = () => {
+    const weekNum = parseInt(weekFilter)
+    if (weekNum < weekOptions.length) {
+      setWeekFilter((weekNum + 1).toString())
+    } else {
+      // 切换到下一月
+      const [year, month] = monthFilter.split('-').map(Number)
+      let nextMonth, nextYear
+      if (month === 12) {
+        nextMonth = 1
+        nextYear = year + 1
+      } else {
+        nextMonth = month + 1
+        nextYear = year
+      }
+      const nextMonthStr = `${nextYear}-${String(nextMonth).padStart(2, '0')}`
+      setMonthFilter(nextMonthStr)
+      setWeekFilter('1')
+    }
+  }
+
+  const handleToggleViewMode = () => {
+    setViewMode((prev) => (prev === 'list' ? 'week' : 'list'))
+  }
+
+  const handleClearFilters = () => {
+    setTeacherFilter('')
+    setClassroomFilter('')
+    setSubjectFilter('')
+    setGradeFilter('')
+  }
+
+  const handleCreateCourse = (data) => {
+    createMutation.mutate(data)
+  }
+
+  const handleEditCourse = (course) => {
+    setEditingCourse(course)
+    setShowEditModal(true)
+  }
+
+  const handleUpdateCourse = (data) => {
+    if (!editingCourse) return
+    updateCourseMutation.mutate({ id: editingCourse.id, data })
+    setShowEditModal(false)
+    setEditingCourse(null)
+  }
+
+  // 当月份改变时，重置周数为1
+  useEffect(() => {
+    if (weekFilter && parseInt(weekFilter) > weekOptions.length) {
+      setWeekFilter('1')
+    }
+  }, [monthFilter, weekOptions.length])
+
+  // 当视图模式或筛选条件改变时，重置到第一页
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [viewMode, teacherFilter, classroomFilter, subjectFilter, gradeFilter])
+
+  if (isLoading) return <div className="loading">加载中...</div>
+  if (error) return <div className="error">加载失败: {error?.response?.data?.error || error?.message}</div>
+
+  return (
+    <div className="courses-page" style={{ width: '100%' }}>
+      <div className="page-header">
+        <h1>排课管理</h1>
+      </div>
+
+      {/* 工具栏 */}
+      <div className="toolbar" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-start', marginBottom: '15px' }}>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+          新增排课
+        </button>
+        <button className="btn btn-secondary" onClick={handlePreviousWeek} title="上一周">
+          ← 上一周
+        </button>
+        <input
+          type="month"
+          value={monthFilter}
+          onChange={(e) => {
+            setMonthFilter(e.target.value)
+            setWeekFilter('1')
+          }}
+          style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px' }}
+        />
+        <select
+          value={weekFilter}
+          onChange={(e) => setWeekFilter(e.target.value)}
+          style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px' }}
+        >
+          {weekOptions.map((week) => (
+            <option key={week} value={week}>
+              第{week}周
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-secondary" onClick={handleNextWeek} title="下一周">
+          下一周 →
+        </button>
+        <button className="btn btn-secondary" onClick={handleToggleViewMode}>
+          {viewMode === 'list' ? '切换到星期模式' : '切换到列表模式'}
+        </button>
+        {weekInfoLabel && <span className="week-info-label" style={{ marginLeft: '10px' }}>{weekInfoLabel}</span>}
+        <button className="btn btn-secondary" onClick={() => setShowCopyModal(true)}>
+          复制到指定周
+        </button>
+        <CopyToNextWeekButton courses={validCourses} selectedIds={selectedIds} monthFilter={monthFilter} weekFilter={weekFilter} onSuccess={() => queryClient.invalidateQueries(['courses'])} />
+      </div>
+
+      {/* 筛选栏 */}
+      <div className="filter-bar" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
+        <label style={{ display: 'inline-block', margin: 0, fontWeight: 'bold' }}>筛选：</label>
+        <select
+          value={teacherFilter}
+          onChange={(e) => setTeacherFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部老师</option>
+          {filterOptions.teachers.map((teacher) => (
+            <option key={teacher} value={teacher}>
+              {teacher}
+            </option>
+          ))}
+        </select>
+        <select
+          value={classroomFilter}
+          onChange={(e) => setClassroomFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部教室</option>
+          {filterOptions.classrooms.map((classroom) => (
+            <option key={classroom} value={classroom}>
+              {classroom}
+            </option>
+          ))}
+        </select>
+        <select
+          value={subjectFilter}
+          onChange={(e) => setSubjectFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部科目</option>
+          {filterOptions.subjects.map((subject) => (
+            <option key={subject} value={subject}>
+              {subject}
+            </option>
+          ))}
+        </select>
+        <select
+          value={gradeFilter}
+          onChange={(e) => setGradeFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部年级</option>
+          {filterOptions.grades.map((grade) => (
+            <option key={grade} value={grade}>
+              {grade}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-secondary" onClick={handleClearFilters} style={{ display: 'inline-block', padding: '6px 12px', width: 'auto' }}>
+          清除筛选
+        </button>
+        <button className="btn btn-success" onClick={handleBatchConfirm} style={{ display: 'inline-block', padding: '6px 12px', width: 'auto', background: '#28a745', color: 'white' }}>
+          批量确认
+        </button>
+        <button className="btn btn-secondary" onClick={handleBatchCancelConfirm} style={{ display: 'inline-block', padding: '6px 12px', width: 'auto', background: '#6c757d', color: 'white' }}>
+          批量取消
+        </button>
+        <button className="btn btn-danger" onClick={handleBatchDelete} style={{ display: 'inline-block', padding: '6px 12px', width: 'auto' }}>
+          批量删除
+        </button>
+      </div>
+
+      {/* 列表视图 */}
+      {viewMode === 'list' && (
+        <>
+          <table className="data-table">
+            <thead>
+              <tr>
+                <th>
+                  <input type="checkbox" checked={selectedIds.length > 0 && paginatedCourses.filter((c) => !c.is_confirmed || isAdmin).every((c) => selectedIds.includes(c.id))} onChange={handleSelectAll} />
+                </th>
+                <th>序号</th>
+                <th>学生</th>
+                <th>年级</th>
+                <th>科目</th>
+                <th>课程</th>
+                <th>老师</th>
+                <th>日期</th>
+                <th>星期</th>
+                <th>时段</th>
+                <th>教室</th>
+                <th>状态</th>
+                <th>确认</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedCourses.length > 0 ? (
+                paginatedCourses.map((course, index) => {
+                  const canEdit = !course.is_confirmed || isAdmin
+                  return (
+                    <tr key={course.id}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(course.id)}
+                          onChange={() => handleSelectCourse(course.id)}
+                          disabled={!canEdit}
+                        />
+                      </td>
+                      <td>{(currentPage - 1) * pageSize + index + 1}</td>
+                      <td>{course.student_name || '-'}</td>
+                      <td>{course.grade || '-'}</td>
+                      <td>{course.subject || '-'}</td>
+                      <td>{course.course_name || '-'}</td>
+                      <td>{course.teacher_name || '-'}</td>
+                      <td>{course.course_date || '-'}</td>
+                      <td>{course.weekday || '-'}</td>
+                      <td>{course.time_slot || '-'}</td>
+                      <td>{course.classroom || '-'}</td>
+                      <td>
+                        <span className={`status-badge status-${course.status === '正常' ? 'normal' : course.status === '请假' ? 'leave' : course.status === '跑空' ? 'empty' : 'deleted'}`}>
+                          {course.status}
+                        </span>
+                      </td>
+                      <td>
+                        {course.is_confirmed ? (
+                          <span className="status-badge status-normal">已确认</span>
+                        ) : (
+                          <span className="status-badge" style={{ background: '#fff3cd', color: '#856404' }}>
+                            未确认
+                          </span>
+                        )}
+                      </td>
+                      <td>
+                        {course.is_confirmed ? (
+                          <button className="btn btn-secondary" onClick={() => handleConfirm(course.id)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                            取消确认
+                          </button>
+                        ) : (
+                          <button className="btn btn-success" onClick={() => handleConfirm(course.id)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                            确认
+                          </button>
+                        )}
+                        {canEdit ? (
+                          <>
+                            <button className="btn btn-warning" onClick={() => handleEditCourse(course)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                              编辑
+                            </button>
+                            <button className="btn btn-danger" onClick={() => handleDelete(course.id)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                              删除
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button className="btn btn-warning" disabled title="无权限编辑已确认上课的排课，只有管理员可以编辑" style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px', opacity: 0.5, cursor: 'not-allowed' }}>
+                              编辑
+                            </button>
+                            <button className="btn btn-danger" disabled title="无权限删除已确认上课的排课，只有管理员可以删除" style={{ padding: '4px 8px', fontSize: '12px', opacity: 0.5, cursor: 'not-allowed' }}>
+                              删除
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              ) : (
+                <tr>
+                  <td colSpan="14" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                    {weekInfoLabel ? `暂无排课数据（${weekInfoLabel}）` : '暂无排课数据'}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          {/* 分页控件 */}
+          {totalPages > 1 && (
+            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
+              <button className="btn btn-secondary" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>
+                上一页
+              </button>
+              <span style={{ padding: '0 15px' }}>
+                第 {currentPage} 页，共 {totalPages} 页
+              </span>
+              <button className="btn btn-secondary" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages}>
+                下一页
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 星期视图 */}
+      {viewMode === 'week' && (
+        <WeekView
+          courses={validCourses}
+          timeSlots={timeSlots}
+          monthFilter={monthFilter}
+          weekFilter={weekFilter}
+          onConfirm={handleConfirm}
+          onDelete={handleDelete}
+          onEdit={handleEditCourse}
+          onSelect={handleSelectCourse}
+          selectedIds={selectedIds}
+          isAdmin={isAdmin}
+        />
+      )}
+
+      {/* 新增排课模态框 */}
+      {showModal && (
+        <AddCourseModal
+          isOpen={showModal}
+          onClose={() => setShowModal(false)}
+          students={students}
+          teachers={teachers}
+          courses={courseList}
+          timeSlots={timeSlots}
+          classrooms={classrooms}
+          monthFilter={monthFilter}
+          weekFilter={weekFilter}
+          onSubmit={handleCreateCourse}
+        />
+      )}
+
+      {/* 复制到指定周模态框 */}
+      {showCopyModal && (
+        <CopyToSpecifiedWeekModal
+          isOpen={showCopyModal}
+          onClose={() => setShowCopyModal(false)}
+          courses={validCourses}
+          selectedIds={selectedIds}
+          currentMonth={monthFilter}
+          currentWeek={weekFilter}
+          onSuccess={(targetMonth, targetWeek) => {
+            queryClient.invalidateQueries(['courses'])
+            setShowCopyModal(false)
+            // 跳转到目标周
+            if (targetMonth && targetWeek) {
+              setMonthFilter(targetMonth)
+              setWeekFilter(targetWeek)
+            }
+          }}
+        />
+      )}
+
+      {/* 编辑排课模态框 */}
+      {showEditModal && editingCourse && (
+        <EditCourseModal
+          isOpen={showEditModal}
+          onClose={() => {
+            setShowEditModal(false)
+            setEditingCourse(null)
+          }}
+          course={editingCourse}
+          onSubmit={handleUpdateCourse}
+        />
+      )}
+    </div>
+  )
+}
+
+// 星期视图组件
+const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDelete, onEdit, onSelect, selectedIds, isAdmin }) => {
+  // 计算当前周的日期映射
+  const dateMap = useMemo(() => {
+    if (!monthFilter || !weekFilter) return {}
+
+    const [year, month] = monthFilter.split('-').map(Number)
+    const weekNum = parseInt(weekFilter)
+    const firstDay = new Date(year, month - 1, 1)
+    const firstDayWeekday = firstDay.getDay()
+    const lastDay = new Date(year, month, 0)
+    const monthEnd = lastDay.getDate()
+
+    let weekStart, weekEnd
+
+    if (weekNum === 1) {
+      if (firstDayWeekday === 0) {
+        weekStart = new Date(year, month - 1, 1)
+        weekEnd = new Date(year, month - 1, 1)
+      } else {
+        const daysToSunday = 7 - firstDayWeekday
+        const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
+        weekStart = new Date(year, month - 1, 1)
+        weekEnd = new Date(year, month - 1, firstSundayDate)
+      }
+    } else {
+      let daysToMonday
+      if (firstDayWeekday === 0) {
+        daysToMonday = 1
+      } else if (firstDayWeekday === 1) {
+        daysToMonday = 0
+      } else {
+        daysToMonday = 8 - firstDayWeekday
+      }
+
+      const firstMondayDate = 1 + daysToMonday
+      const startDateNum = firstMondayDate + (weekNum - 2) * 7
+
+      if (startDateNum <= monthEnd) {
+        weekStart = new Date(year, month - 1, startDateNum)
+        const calculatedEndDateNum = startDateNum + 6
+        const endDateNum = Math.min(calculatedEndDateNum, monthEnd)
+        weekEnd = new Date(year, month - 1, endDateNum)
+      }
+    }
+
+    const weekdayMap = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六' }
+    const map = {}
+
+    if (weekStart && weekEnd) {
+      let currentDate = new Date(weekStart)
+      const endTime = weekEnd.getTime()
+
+      while (currentDate.getTime() <= endTime) {
+        const weekday = weekdayMap[currentDate.getDay()]
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
+        map[weekday] = dateStr
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+    }
+
+    return map
+  }, [monthFilter, weekFilter])
+
+  const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+  // 按时段排序
+  const sortedTimeSlots = useMemo(() => {
+    return [...timeSlots].sort((a, b) => {
+      const orderA = a.sort_order !== null && a.sort_order !== undefined ? a.sort_order : 999
+      const orderB = b.sort_order !== null && b.sort_order !== undefined ? b.sort_order : 999
+      if (orderA !== orderB) {
+        return orderA - orderB
+      }
+      return (a.name || '').localeCompare(b.name || '')
+    })
+  }, [timeSlots])
+
+  return (
+    <table className="data-table" id="week-view-table">
+      <thead>
+        <tr>
+          <th style={{ minWidth: '120px' }}>时段</th>
+          {weekdays.map((weekday) => {
+            const dateStr = dateMap[weekday] || ''
+            const dateDisplay = dateStr ? (
+              <span style={{ fontSize: '11px', fontWeight: 'normal', color: '#666' }}>
+                {dateStr.split('-')[1]}-{dateStr.split('-')[2]}
+              </span>
+            ) : null
+            return (
+              <th key={weekday} style={{ minWidth: '150px' }}>
+                {weekday}
+                {dateDisplay && <br />}
+                {dateDisplay}
+              </th>
+            )
+          })}
+        </tr>
+      </thead>
+      <tbody>
+        {sortedTimeSlots.length === 0 && courses.length === 0 ? (
+          <tr>
+            <td colSpan="8" style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
+              <div style={{ fontSize: '14px' }}>暂无排课数据</div>
+              <div style={{ fontSize: '12px', marginTop: '8px', color: '#999' }}>提示：请检查筛选条件，或尝试切换到其他周查看</div>
+            </td>
+          </tr>
+        ) : sortedTimeSlots.length === 0 ? (
+          <tr>
+            <td colSpan="8" style={{ textAlign: 'center' }}>请先设置时段信息</td>
+          </tr>
+        ) : (
+          sortedTimeSlots.map((timeSlot) => {
+            const timeSlotName = timeSlot.name || timeSlot
+            return (
+              <tr key={timeSlotName}>
+                <td style={{ fontWeight: 'bold', background: '#f5f5f5' }}>{timeSlotName}</td>
+                {weekdays.map((weekday) => {
+                  const matchedCourses = courses.filter((c) => {
+                    const cTimeSlot = (c.time_slot || '').trim()
+                    const cWeekday = (c.weekday || '').trim()
+                    return cTimeSlot === timeSlotName.trim() && cWeekday === weekday
+                  })
+
+                  if (matchedCourses.length === 0) {
+                    return <td key={weekday} style={{ padding: '4px', verticalAlign: 'top' }}></td>
+                  }
+
+                  return (
+                    <td key={weekday} style={{ padding: '4px', verticalAlign: 'top' }}>
+                      {matchedCourses.map((course, index) => {
+                        const statusClass = course.status === '正常' ? 'normal' : course.status === '请假' ? 'leave' : course.status === '跑空' ? 'empty' : 'deleted'
+                        const marginBottom = index < matchedCourses.length - 1 ? '3px' : '0'
+                        const confirmedStyle = course.is_confirmed
+                          ? { background: '#f5f5f5', opacity: 0.8, color: '#666' }
+                          : { background: 'white' }
+                        const canEdit = !course.is_confirmed || isAdmin
+
+                        const courseName = course.course_name || course.subject || ''
+                        const studentName = course.student_name || ''
+                        const teacherName = course.teacher_name || ''
+                        const timeSlot = course.time_slot || ''
+                        const classroom = course.classroom || ''
+
+                        const displayText = [courseName, studentName, teacherName, timeSlot, classroom].filter((item) => item).join(' ')
+
+                        return (
+                          <div
+                            key={course.id}
+                            style={{
+                              border: '1px solid #ddd',
+                              borderRadius: '3px',
+                              padding: '3px 4px',
+                              marginBottom,
+                              ...confirmedStyle,
+                            }}
+                          >
+                            <div style={{ fontSize: '11px', lineHeight: 1.3, marginBottom: '2px' }}>{displayText}</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                              <span className={`status-badge status-${statusClass}`} style={{ fontSize: '9px', padding: '1px 3px' }}>
+                                {course.status}
+                              </span>
+                              {course.is_confirmed ? (
+                                <button
+                                  className="btn btn-secondary"
+                                  onClick={() => onConfirm(course.id)}
+                                  style={{ padding: '1px 4px', fontSize: '10px', background: '#6c757d', color: 'white' }}
+                                >
+                                  取消确认
+                                </button>
+                              ) : (
+                                <button
+                                  className="btn btn-success"
+                                  onClick={() => onConfirm(course.id)}
+                                  style={{ padding: '1px 4px', fontSize: '10px', background: '#28a745', color: 'white' }}
+                                >
+                                  确认
+                                </button>
+                              )}
+                              <input
+                                type="checkbox"
+                                className="course-checkbox"
+                                checked={selectedIds.includes(course.id)}
+                                onChange={() => onSelect(course.id)}
+                                disabled={!canEdit}
+                                style={{ margin: 0 }}
+                              />
+                              {canEdit ? (
+                                <>
+                                  <button
+                                    className="btn btn-warning"
+                                    onClick={() => onEdit(course)}
+                                    style={{ padding: '1px 4px', fontSize: '10px' }}
+                                  >
+                                    编辑
+                                  </button>
+                                  <button className="btn btn-danger" onClick={() => onDelete(course.id)} style={{ padding: '1px 4px', fontSize: '10px' }}>
+                                    删除
+                                  </button>
+                                </>
+                              ) : (
+                                <>
+                                  <button
+                                    className="btn btn-warning"
+                                    disabled
+                                    title="无权限编辑已确认上课的排课，只有管理员可以编辑"
+                                    style={{ padding: '1px 4px', fontSize: '10px', opacity: 0.5, cursor: 'not-allowed' }}
+                                  >
+                                    编辑
+                                  </button>
+                                  <button
+                                    className="btn btn-danger"
+                                    disabled
+                                    title="无权限删除已确认上课的排课，只有管理员可以删除"
+                                    style={{ padding: '1px 4px', fontSize: '10px', opacity: 0.5, cursor: 'not-allowed' }}
+                                  >
+                                    删除
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </td>
+                  )
+                })}
+              </tr>
+            )
+          })
+        )}
+      </tbody>
+    </table>
+  )
+}
+
+// 复制到下一周按钮组件
+const CopyToNextWeekButton = ({ courses, selectedIds, monthFilter, weekFilter, onSuccess }) => {
+  const [isLoading, setIsLoading] = useState(false)
+
+  const handleCopy = async () => {
+    if (courses.length === 0) {
+      alert('当前周没有排课数据')
+      return
+    }
+
+    // 计算下一周的日期范围
+    const [year, month] = monthFilter.split('-').map(Number)
+    const weekNum = parseInt(weekFilter)
+    const firstDay = new Date(year, month - 1, 1)
+    const firstDayWeekday = firstDay.getDay()
+    const lastDay = new Date(year, month, 0)
+    const monthEnd = lastDay.getDate()
+
+    let nextWeekMonth, nextWeekNum
+    if (weekNum < getWeekRange(monthFilter).length) {
+      nextWeekMonth = monthFilter
+      nextWeekNum = weekNum + 1
+    } else {
+      // 下一周在下一个月
+      if (month === 12) {
+        nextWeekMonth = `${year + 1}-01`
+      } else {
+        nextWeekMonth = `${year}-${String(month + 1).padStart(2, '0')}`
+      }
+      nextWeekNum = 1
+    }
+
+    // 获取当前周和目标周的日期范围
+    const currentWeekRange = getCurrentWeekDateRange(monthFilter, weekNum)
+    const nextWeekRange = getCurrentWeekDateRange(nextWeekMonth, nextWeekNum)
+
+    if (!currentWeekRange || !nextWeekRange) {
+      alert('无法计算下一周的日期范围')
+      return
+    }
+
+    // 创建日期映射（按星期匹配）
+    const dateMap = new Map()
+    const formatDate = (date) => {
+      const y = date.getFullYear()
+      const m = String(date.getMonth() + 1).padStart(2, '0')
+      const d = String(date.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+
+    let currentDate = new Date(currentWeekRange.startDate)
+    const currentEndTime = currentWeekRange.endDate.getTime()
+    const nextStartTime = nextWeekRange.startDate.getTime()
+    const nextEndTime = nextWeekRange.endDate.getTime()
+
+    while (currentDate.getTime() <= currentEndTime) {
+      const currentWeekday = currentDate.getDay()
+      const currentDateStr = formatDate(currentDate)
+
+      let targetDate = null
+      let checkDate = new Date(nextWeekRange.startDate)
+
+      while (checkDate.getTime() <= nextEndTime) {
+        if (checkDate.getDay() === currentWeekday) {
+          targetDate = new Date(checkDate)
+          break
+        }
+        checkDate.setDate(checkDate.getDate() + 1)
+      }
+
+      if (targetDate) {
+        const targetDateStr = formatDate(targetDate)
+        dateMap.set(currentDateStr, targetDateStr)
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+
+    // 过滤要复制的课程
+    let coursesToCopy = courses
+    if (selectedIds.length > 0) {
+      coursesToCopy = courses.filter((c) => selectedIds.includes(c.id))
+    }
+
+    // 检查重复
+    const targetWeekCourses = await courseService.getCourses({
+      month: nextWeekMonth,
+      week: nextWeekNum.toString(),
+    })
+
+    const targetWeekCourseKeys = new Set()
+    targetWeekCourses.forEach((course) => {
+      const dateStr = course.course_date
+      const key = `${dateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`
+      targetWeekCourseKeys.add(key)
+    })
+
+    const processedKeys = new Set()
+    coursesToCopy = coursesToCopy.filter((course) => {
+      const currentDateStr = course.course_date
+      const targetDateStr = dateMap.get(currentDateStr)
+
+      if (!targetDateStr) return false
+
+      const key = `${targetDateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`
+
+      if (targetWeekCourseKeys.has(key) || processedKeys.has(key)) {
+        return false
+      }
+
+      processedKeys.add(key)
+      return true
+    })
+
+    if (coursesToCopy.length === 0) {
+      alert('没有可复制的排课记录。\n\n所有排课记录都已存在于下一周，或没有匹配的日期。')
+      return
+    }
+
+    if (!window.confirm(`确定要将 ${coursesToCopy.length} 条排课复制到下一周吗？`)) {
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      let successCount = 0
+      let failCount = 0
+      const failMessages = []
+
+      const promises = coursesToCopy.map((course) => {
+        const currentDateStr = course.course_date
+        const targetDateStr = dateMap.get(currentDateStr)
+
+        if (!targetDateStr) {
+          failMessages.push(`课程日期 ${currentDateStr} 没有找到对应的下一周日期`)
+          failCount++
+          return Promise.resolve()
+        }
+
+        const newCourseData = {
+          student_id: course.student_id,
+          teacher_id: course.teacher_id,
+          course_date: targetDateStr,
+          subject: course.subject,
+          time_slot: course.time_slot || '',
+          classroom: course.classroom || '',
+          course_id: course.course_id || null,
+        }
+
+        return courseService
+          .createCourse(newCourseData)
+          .then((result) => {
+            if (result.id) {
+              successCount++
+            } else {
+              failMessages.push(`${currentDateStr} -> ${targetDateStr}: 返回结果异常`)
+              failCount++
+            }
+          })
+          .catch((err) => {
+            const errorMsg = err?.response?.data?.error || err?.message || '未知错误'
+            failMessages.push(`${currentDateStr} -> ${targetDateStr}: ${errorMsg}`)
+            failCount++
+          })
+      })
+
+      await Promise.all(promises)
+
+      let message = `复制完成！成功：${successCount}条，失败：${failCount}条`
+      if (failMessages.length > 0) {
+        message += '\n\n失败详情：\n' + failMessages.slice(0, 5).join('\n')
+        if (failMessages.length > 5) {
+          message += `\n... 还有 ${failMessages.length - 5} 条错误`
+        }
+      }
+      alert(message)
+
+      onSuccess()
+    } catch (err) {
+      console.error('复制失败:', err)
+      alert('复制失败：' + (err?.message || '未知错误'))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <button className="btn btn-secondary" onClick={handleCopy} disabled={isLoading} style={{ marginLeft: 0, marginRight: 0 }}>
+      {isLoading ? '复制中...' : '复制到下一周'}
+    </button>
+  )
+}
+
+// 辅助函数：计算指定月份和周数的日期范围
+function getCurrentWeekDateRange(monthFilter, weekFilter) {
+  if (!monthFilter || !weekFilter) return null
+
+  const [year, month] = monthFilter.split('-').map(Number)
+  const weekNum = parseInt(weekFilter)
+  const firstDay = new Date(year, month - 1, 1)
+  const firstDayWeekday = firstDay.getDay()
+  const lastDay = new Date(year, month, 0)
+  const monthEnd = lastDay.getDate()
+
+  let startDate, endDate
+
+  if (weekNum === 1) {
+    if (firstDayWeekday === 0) {
+      startDate = new Date(year, month - 1, 1)
+      endDate = new Date(year, month - 1, 1)
+    } else {
+      const daysToSunday = 7 - firstDayWeekday
+      const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
+      startDate = new Date(year, month - 1, 1)
+      endDate = new Date(year, month - 1, firstSundayDate)
+    }
+  } else {
+    let daysToMonday
+    if (firstDayWeekday === 0) {
+      daysToMonday = 1
+    } else if (firstDayWeekday === 1) {
+      daysToMonday = 0
+    } else {
+      daysToMonday = 8 - firstDayWeekday
+    }
+
+    const firstMondayDate = 1 + daysToMonday
+    const startDateNum = firstMondayDate + (weekNum - 2) * 7
+
+    if (startDateNum > monthEnd) {
+      return null
+    }
+
+    startDate = new Date(year, month - 1, startDateNum)
+    const endDateNum = Math.min(startDateNum + 6, monthEnd)
+    endDate = new Date(year, month - 1, endDateNum)
+  }
+
+  return { startDate, endDate, year, month }
+}
+
+// 辅助函数：计算月份周数范围
+function getWeekRange(month) {
+  const [year, monthNum] = month.split('-').map(Number)
+  const firstDay = new Date(year, monthNum - 1, 1)
+  const firstDayWeekday = firstDay.getDay()
+  const lastDay = new Date(year, monthNum, 0)
+  const daysInMonth = lastDay.getDate()
+
+  let maxWeeks = 1
+
+  if (firstDayWeekday === 0) {
+    const firstMonday = new Date(year, monthNum - 1, 2)
+    let currentMonday = new Date(firstMonday)
+    let weekNum = 2
+
+    while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+      maxWeeks = weekNum
+      currentMonday = new Date(currentMonday)
+      currentMonday.setDate(currentMonday.getDate() + 7)
+      weekNum++
+    }
+  } else {
+    const daysToMonday = 7 - firstDayWeekday
+    const firstMonday = new Date(year, monthNum - 1, 1 + daysToMonday)
+    let currentMonday = new Date(firstMonday)
+    let weekNum = 2
+
+    while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
+      maxWeeks = weekNum
+      currentMonday = new Date(currentMonday)
+      currentMonday.setDate(currentMonday.getDate() + 7)
+      weekNum++
+    }
+  }
+
+  return Array.from({ length: maxWeeks }, (_, i) => (i + 1).toString())
+}
+
+// 复制到指定周模态框组件
+const CopyToSpecifiedWeekModal = ({ isOpen, onClose, courses, selectedIds, currentMonth, currentWeek, onSuccess }) => {
+  const [targetMonth, setTargetMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [targetWeek, setTargetWeek] = useState('1')
+  const [isLoading, setIsLoading] = useState(false)
+
+  const targetWeekOptions = getWeekRange(targetMonth)
+
+  useEffect(() => {
+    if (targetWeek && parseInt(targetWeek) > targetWeekOptions.length) {
+      setTargetWeek('1')
+    }
+  }, [targetMonth, targetWeekOptions.length])
+
+  const handleCopy = async () => {
+    if (courses.length === 0) {
+      alert('当前周没有排课数据')
+      return
+    }
+
+    const currentWeekRange = getCurrentWeekDateRange(currentMonth, currentWeek)
+    const targetWeekRange = getCurrentWeekDateRange(targetMonth, targetWeek)
+
+    if (!currentWeekRange || !targetWeekRange) {
+      alert(`目标月份 ${targetMonth} 的第${targetWeek}周不存在，请重新选择`)
+      return
+    }
+
+    // 创建日期映射
+    const dateMap = new Map()
+    const formatDate = (date) => {
+      const y = date.getFullYear()
+      const m = String(date.getMonth() + 1).padStart(2, '0')
+      const d = String(date.getDate()).padStart(2, '0')
+      return `${y}-${m}-${d}`
+    }
+
+    let currentDate = new Date(currentWeekRange.startDate)
+    const currentEndTime = currentWeekRange.endDate.getTime()
+    const targetStartTime = targetWeekRange.startDate.getTime()
+    const targetEndTime = targetWeekRange.endDate.getTime()
+
+    while (currentDate.getTime() <= currentEndTime) {
+      const currentWeekday = currentDate.getDay()
+      const currentDateStr = formatDate(currentDate)
+
+      let targetDate = null
+      let checkDate = new Date(targetWeekRange.startDate)
+
+      while (checkDate.getTime() <= targetEndTime) {
+        if (checkDate.getDay() === currentWeekday) {
+          targetDate = new Date(checkDate)
+          break
+        }
+        checkDate.setDate(checkDate.getDate() + 1)
+      }
+
+      if (targetDate) {
+        const targetDateStr = formatDate(targetDate)
+        dateMap.set(currentDateStr, targetDateStr)
+      }
+
+      currentDate.setDate(currentDate.getDate() + 1)
+    }
+
+    // 过滤要复制的课程
+    let coursesToCopy = courses
+    if (selectedIds.length > 0) {
+      coursesToCopy = courses.filter((c) => selectedIds.includes(c.id))
+    }
+
+    // 检查重复
+    const targetWeekCourses = await courseService.getCourses({
+      month: targetMonth,
+      week: targetWeek,
+    })
+
+    const targetWeekCourseKeys = new Set()
+    targetWeekCourses.forEach((course) => {
+      const dateStr = course.course_date
+      const key = `${dateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`
+      targetWeekCourseKeys.add(key)
+    })
+
+    const processedKeys = new Set()
+    coursesToCopy = coursesToCopy.filter((course) => {
+      const currentDateStr = course.course_date
+      const targetDateStr = dateMap.get(currentDateStr)
+
+      if (!targetDateStr) return false
+
+      const key = `${targetDateStr}|${course.student_name}|${course.subject}|${course.time_slot || ''}`
+
+      if (targetWeekCourseKeys.has(key) || processedKeys.has(key)) {
+        return false
+      }
+
+      processedKeys.add(key)
+      return true
+    })
+
+    if (coursesToCopy.length === 0) {
+      alert('没有可复制的排课记录。\n\n所有排课记录都已存在于目标周，或没有匹配的日期。')
+      return
+    }
+
+    if (!window.confirm(`确定要将 ${coursesToCopy.length} 条排课复制到${targetWeekRange.year}年${targetWeekRange.month}月第${targetWeek}周吗？`)) {
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      let successCount = 0
+      let failCount = 0
+      const failMessages = []
+
+      const promises = coursesToCopy.map((course) => {
+        const currentDateStr = course.course_date
+        const targetDateStr = dateMap.get(currentDateStr)
+
+        if (!targetDateStr) {
+          failMessages.push(`课程日期 ${currentDateStr} 没有找到对应的目标周日期`)
+          failCount++
+          return Promise.resolve()
+        }
+
+        const newCourseData = {
+          student_id: course.student_id,
+          teacher_id: course.teacher_id,
+          course_date: targetDateStr,
+          subject: course.subject,
+          time_slot: course.time_slot || '',
+          classroom: course.classroom || '',
+          course_id: course.course_id || null,
+        }
+
+        return courseService
+          .createCourse(newCourseData)
+          .then((result) => {
+            if (result.id) {
+              successCount++
+            } else {
+              failMessages.push(`${currentDateStr} -> ${targetDateStr}: 返回结果异常`)
+              failCount++
+            }
+          })
+          .catch((err) => {
+            const errorMsg = err?.response?.data?.error || err?.message || '未知错误'
+            failMessages.push(`${currentDateStr} -> ${targetDateStr}: ${errorMsg}`)
+            failCount++
+          })
+      })
+
+      await Promise.all(promises)
+
+      let message = `复制完成！成功：${successCount}条，失败：${failCount}条`
+      if (failMessages.length > 0) {
+        message += '\n\n失败详情：\n' + failMessages.slice(0, 5).join('\n')
+        if (failMessages.length > 5) {
+          message += `\n... 还有 ${failMessages.length - 5} 条错误`
+        }
+      }
+      alert(message)
+
+      onSuccess(targetMonth, targetWeek)
+    } catch (err) {
+      console.error('复制失败:', err)
+      alert('复制失败：' + (err?.message || '未知错误'))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="复制到指定周">
+      <div style={{ marginTop: '20px' }}>
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>目标月份：</label>
+          <input
+            type="month"
+            value={targetMonth}
+            onChange={(e) => {
+              setTargetMonth(e.target.value)
+              setTargetWeek('1')
+            }}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+          />
+        </div>
+        <div style={{ marginBottom: '15px' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>目标周数：</label>
+          <select
+            value={targetWeek}
+            onChange={(e) => setTargetWeek(e.target.value)}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ddd', borderRadius: '4px' }}
+          >
+            {targetWeekOptions.map((week) => (
+              <option key={week} value={week}>
+                第{week}周
+              </option>
+            ))}
+          </select>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            取消
+          </button>
+          <button type="button" className="btn btn-primary" onClick={handleCopy} disabled={isLoading}>
+            {isLoading ? '复制中...' : '确定'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
+// 新增排课模态框组件（包含冲突检测、剩余课时显示等功能）
+const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlots, classrooms, monthFilter, weekFilter, onSubmit }) => {
+  const [formData, setFormData] = useState({
+    student_id: '',
+    course_id: '',
+    subject: '',
+    teacher_id: '',
+    weekday: '',
+    course_date: '',
+    time_slot: '',
+    classroom: '',
+  })
+  const [conflicts, setConflicts] = useState([])
+  const [remainingHours, setRemainingHours] = useState(0)
+
+  // 获取已缴费需要排课的学生课程列表
+  const { data: paidCoursesData } = useQuery({
+    queryKey: ['paid-courses-need-scheduling'],
+    queryFn: () => studentCoursesService.getPaidCoursesNeedScheduling(),
+    enabled: isOpen,
+  })
+
+  const paidCourses = paidCoursesData || []
+
+  // 从已缴费课程中提取唯一的学生
+  const availableStudents = useMemo(() => {
+    const studentMap = {}
+    paidCourses.forEach((course) => {
+      const studentId = course.student_id
+      if (!studentMap[studentId]) {
+        studentMap[studentId] = {
+          id: studentId,
+          name: course.student_name,
+          grade: course.grade || '',
+        }
+      }
+    })
+    return Object.values(studentMap).sort((a, b) => a.name.localeCompare(b.name))
+  }, [paidCourses])
+
+  // 获取当前学生已缴费的课程列表
+  const studentPaidCourses = useMemo(() => {
+    if (!formData.student_id) return []
+    return paidCourses.filter((c) => c.student_id === parseInt(formData.student_id))
+  }, [paidCourses, formData.student_id])
+
+  // 根据科目过滤课程
+  const filteredCourses = useMemo(() => {
+    if (!formData.subject) return studentPaidCourses
+    return studentPaidCourses.filter((c) => c.subject === formData.subject)
+  }, [studentPaidCourses, formData.subject])
+
+  // 获取科目列表
+  const subjects = useMemo(() => {
+    const subjectSet = new Set()
+    studentPaidCourses.forEach((c) => {
+      if (c.subject) subjectSet.add(c.subject)
+    })
+    return Array.from(subjectSet).sort()
+  }, [studentPaidCourses])
+
+  // 计算当前周的日期范围，用于限制日期选择器
+  const weekDateRange = useMemo(() => {
+    return getCurrentWeekDateRange(monthFilter, weekFilter)
+  }, [monthFilter, weekFilter])
+
+  const dateMin = weekDateRange ? formatDate(weekDateRange.startDate) : ''
+  const dateMax = weekDateRange ? formatDate(weekDateRange.endDate) : ''
+
+  // 更新剩余课时显示
+  useEffect(() => {
+    if (!formData.student_id) {
+      setRemainingHours(0)
+      return
+    }
+
+    let hours = 0
+    if (formData.course_id) {
+      const course = studentPaidCourses.find((c) => c.course_id === parseInt(formData.course_id))
+      hours = course ? course.remaining_hours || 0 : 0
+    } else {
+      studentPaidCourses.forEach((c) => {
+        hours += c.remaining_hours || 0
+      })
+    }
+    setRemainingHours(hours)
+  }, [formData.student_id, formData.course_id, studentPaidCourses])
+
+  // 检查课程冲突
+  useEffect(() => {
+    if (!formData.course_date || !formData.time_slot || !formData.teacher_id || !formData.student_id) {
+      setConflicts([])
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      courseService
+        .checkConflicts({
+          course_date: formData.course_date,
+          time_slot: formData.time_slot,
+          teacher_id: formData.teacher_id,
+          classroom: formData.classroom || '',
+          student_id: formData.student_id,
+        })
+        .then((data) => {
+          if (data.has_conflict && data.conflicts) {
+            setConflicts(data.conflicts)
+          } else {
+            setConflicts([])
+          }
+        })
+        .catch((err) => {
+          console.error('检查冲突失败:', err)
+          setConflicts([])
+        })
+    }, 500) // 防抖
+
+    return () => clearTimeout(timeoutId)
+  }, [formData.course_date, formData.time_slot, formData.teacher_id, formData.classroom, formData.student_id])
+
+  // 学生选择变化时，更新科目和课程
+  const handleStudentChange = (studentId) => {
+    setFormData({
+      ...formData,
+      student_id: studentId,
+      course_id: '',
+      subject: '',
+    })
+  }
+
+  // 科目选择变化时，更新课程列表
+  const handleSubjectChange = (subject) => {
+    setFormData({
+      ...formData,
+      subject,
+      course_id: '',
+    })
+  }
+
+  // 课程选择变化时，更新科目和默认设置
+  const handleCourseChange = async (courseId) => {
+    const course = filteredCourses.find((c) => c.course_id === parseInt(courseId))
+    if (course) {
+      setFormData({
+        ...formData,
+        course_id: courseId,
+        subject: course.subject,
+      })
+
+      // 加载默认排课设置
+      if (courseId && formData.student_id) {
+        try {
+          const defaultSchedule = await studentCoursesService.getDefaultSchedule(
+            parseInt(formData.student_id),
+            parseInt(courseId)
+          )
+          if (defaultSchedule.default_time_slot) {
+            setFormData((prev) => ({
+              ...prev,
+              time_slot: defaultSchedule.default_time_slot,
+            }))
+          }
+          if (defaultSchedule.default_weekday) {
+            setFormData((prev) => ({
+              ...prev,
+              weekday: defaultSchedule.default_weekday,
+            }))
+          }
+        } catch (err) {
+          console.error('加载默认设置失败:', err)
+        }
+      }
+    } else {
+      setFormData({
+        ...formData,
+        course_id: courseId,
+      })
+    }
+  }
+
+  // 日期变化时，更新星期
+  const handleDateChange = (date) => {
+    if (date) {
+      const d = new Date(date + 'T00:00:00')
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+      setFormData({
+        ...formData,
+        course_date: date,
+        weekday: weekdays[d.getDay()],
+      })
+    } else {
+      setFormData({
+        ...formData,
+        course_date: date,
+      })
+    }
+  }
+
+  // 星期变化时，更新日期（如果日期已设置，调整到该星期）
+  const handleWeekdayChange = (weekday) => {
+    setFormData({
+      ...formData,
+      weekday,
+    })
+
+    // 根据星期更新日期（找到当前周内对应的日期）
+    if (weekDateRange && weekday) {
+      const weekdayMap = { 周日: 0, 周一: 1, 周二: 2, 周三: 3, 周四: 4, 周五: 5, 周六: 6 }
+      const targetDay = weekdayMap[weekday]
+      let currentDate = new Date(weekDateRange.startDate)
+      const endTime = weekDateRange.endDate.getTime()
+
+      while (currentDate.getTime() <= endTime) {
+        if (currentDate.getDay() === targetDay) {
+          setFormData((prev) => ({
+            ...prev,
+            course_date: formatDate(currentDate),
+          }))
+          break
+        }
+        currentDate.setDate(currentDate.getDate() + 1)
+      }
+    }
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+
+    // 检查冲突
+    if (conflicts.length > 0) {
+      alert('存在课程冲突，无法保存。请修改排课信息后再试。')
+      return
+    }
+
+    const data = {
+      student_id: parseInt(formData.student_id),
+      teacher_id: parseInt(formData.teacher_id),
+      course_id: formData.course_id ? parseInt(formData.course_id) : null,
+      subject: formData.subject,
+      weekday: formData.weekday || null,
+      course_date: formData.course_date,
+      time_slot: formData.time_slot || null,
+      classroom: formData.classroom || null,
+    }
+
+    onSubmit(data)
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="新增排课">
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>学生 *</label>
+          <select
+            name="student_id"
+            value={formData.student_id}
+            onChange={(e) => handleStudentChange(e.target.value)}
+            required
+          >
+            <option value="">-- 请选择学生 --</option>
+            {availableStudents.map((student) => (
+              <option key={student.id} value={student.id}>
+                {student.name} {student.grade ? `(${student.grade})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div id="remaining-hours-display" style={{ margin: '-10px 0 15px 0', padding: '8px', background: '#f5f5f5', borderRadius: '4px', fontSize: '14px' }}>
+          {formData.student_id ? (
+            <span>
+              剩余课时：<strong>{remainingHours.toFixed(1)}</strong> 小时
+            </span>
+          ) : (
+            <span>请选择学生查看剩余课时</span>
+          )}
+        </div>
+        <div className="form-group">
+          <label>课程（已报名课程）</label>
+          <select
+            name="course_id"
+            value={formData.course_id}
+            onChange={(e) => handleCourseChange(e.target.value)}
+          >
+            <option value="">-- 请选择课程（可选）--</option>
+            {filteredCourses.map((c) => (
+              <option key={c.course_id} value={c.course_id}>
+                {c.course_name} ({c.subject}) - 剩余 {c.remaining_hours.toFixed(1)} 小时
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>科目（已报名科目）*</label>
+          <select
+            name="subject"
+            value={formData.subject}
+            onChange={(e) => handleSubjectChange(e.target.value)}
+            required
+          >
+            <option value="">-- 请选择科目 --</option>
+            {subjects.map((subj) => (
+              <option key={subj} value={subj}>
+                {subj}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>老师 *</label>
+          <select
+            name="teacher_id"
+            value={formData.teacher_id}
+            onChange={(e) => setFormData({ ...formData, teacher_id: e.target.value })}
+            required
+          >
+            <option value="">-- 请选择老师 --</option>
+            {teachers.map((teacher) => (
+              <option key={teacher.id} value={teacher.id}>
+                {teacher.name} {teacher.subject ? `(${teacher.subject})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>星期</label>
+          <select
+            name="weekday"
+            value={formData.weekday}
+            onChange={(e) => handleWeekdayChange(e.target.value)}
+          >
+            <option value="">-- 请选择星期 --</option>
+            <option value="周一">周一</option>
+            <option value="周二">周二</option>
+            <option value="周三">周三</option>
+            <option value="周四">周四</option>
+            <option value="周五">周五</option>
+            <option value="周六">周六</option>
+            <option value="周日">周日</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>日期 *</label>
+          <input
+            type="date"
+            name="course_date"
+            value={formData.course_date}
+            onChange={(e) => handleDateChange(e.target.value)}
+            min={dateMin}
+            max={dateMax}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>时段</label>
+          <select
+            name="time_slot"
+            value={formData.time_slot}
+            onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
+          >
+            <option value="">-- 请选择时段 --</option>
+            {timeSlots.map((slot) => (
+              <option key={slot.id} value={slot.name}>
+                {slot.name} {slot.start_time && slot.end_time ? `(${slot.start_time}-${slot.end_time})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>教室</label>
+          <select
+            name="classroom"
+            value={formData.classroom}
+            onChange={(e) => setFormData({ ...formData, classroom: e.target.value })}
+          >
+            <option value="">-- 请选择教室 --</option>
+            {classrooms.map((classroom) => (
+              <option key={classroom.id} value={classroom.name}>
+                {classroom.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        {conflicts.length > 0 && (
+          <div id="conflict-warning" style={{ display: 'block', margin: '15px 0', padding: '12px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', color: '#856404' }}>
+            <strong>⚠️ 检测到课程冲突：</strong>
+            <ul id="conflict-list" style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+              {conflicts.map((conflict, index) => (
+                <li key={index}>{conflict.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" className="btn btn-primary" disabled={conflicts.length > 0}>
+            保存
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function formatDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+// 编辑排课模态框组件（与 Flask 实现一致：只允许编辑状态）
+const EditCourseModal = ({ isOpen, onClose, course, onSubmit }) => {
+  const [status, setStatus] = useState(course?.status || '正常')
+
+  // 当模态框打开或课程数据变化时，重置状态
+  useEffect(() => {
+    if (isOpen && course) {
+      setStatus(course.status || '正常')
+    }
+  }, [isOpen, course])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit({ status })
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="编辑排课">
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>状态 *</label>
+          <select
+            name="status"
+            value={status}
+            onChange={(e) => setStatus(e.target.value)}
+            required
+          >
+            <option value="正常">正常</option>
+            <option value="请假">请假</option>
+            <option value="跑空">跑空</option>
+          </select>
+        </div>
+        <div className="form-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button type="submit" className="btn btn-primary">
+            保存
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+export default Courses
