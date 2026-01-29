@@ -51,6 +51,9 @@ def get_stats():
 
     course_id = request.args.get('course_id')  # 可选：按课程筛选
 
+    # 调试信息
+    print(f"Stats request: month={month}, student_id={student_id}, course_id={course_id}")
+
     
 
     # 构建查询（只查询存在学生的课时统计，过滤已删除的学生）
@@ -86,6 +89,10 @@ def get_stats():
 
         stat_dict = stat.to_dict()
 
+        # 调试信息：记录每个学生的统计数据
+        if student_id and stat.student_id == int(student_id):
+            print(f"统计数据 - 学生 {stat.student_name}: 原始课时={stat.original_hours}, 实际课时={stat.actual_hours}, 剩余课时={stat.remaining_hours}")
+
         
 
         # 查询该学生该课程当月的排课记录，并加载课程关联
@@ -112,6 +119,15 @@ def get_stats():
 
         ).order_by(StudentCourse.course_date, StudentCourse.time_slot).all()
 
+        # 调试信息：记录查询到的课程数量和状态
+        if student_id and stat.student_id == int(student_id):
+            print(f"查询到 {len(courses)} 个已确认课程记录")
+            status_counts = {}
+            for course in courses:
+                status = course.status
+                status_counts[status] = status_counts.get(status, 0) + 1
+            print(f"课程状态统计: {status_counts}")
+
         
 
         # 构建上课日期和时段的列表，按老师分组
@@ -126,9 +142,9 @@ def get_stats():
 
         for course in courses:
 
-            if course.status == '正常':  # 只显示正常状态的课程
+            if course.status in ['正常', '跑空']:  # 显示正常和跑空状态的课程
 
-                date_str = course.course_date.strftime('%Y-%m-%d')
+                date_str = course.course_date.strftime('%m-%d')
 
                 weekday_str = course.weekday or ''
 
@@ -149,6 +165,10 @@ def get_stats():
                 if time_slot_str:
 
                     detail += f" {time_slot_str}"
+
+                # 如果是跑空课程，添加标识
+                if course.status == '跑空':
+                    detail += "(跑空)"
 
                 detail += ";"  # 添加分号分隔符
 
@@ -179,6 +199,89 @@ def get_stats():
     
 
     return jsonify(result)
+
+
+@bp.route('/api/stats/debug/<int:student_id>', methods=['GET'])
+@login_required
+def debug_student_stats(student_id):
+    """调试特定学生的课时统计"""
+
+    month = request.args.get('month', get_current_month())
+
+    try:
+        # 获取学生的所有课程统计
+        stats_list = ClassHoursStats.query.filter_by(
+            student_id=student_id,
+            month=month
+        ).all()
+
+        year, month_num = map(int, month.split('-'))
+        start_date = date(year, month_num, 1)
+        end_date = date(year, month_num, calendar.monthrange(year, month_num)[1])
+
+        debug_info = {
+            'student_id': student_id,
+            'month': month,
+            'date_range': f'{start_date} 到 {end_date}',
+            'stats': []
+        }
+
+        for stat in stats_list:
+            # 查询该学生该课程当月的排课记录
+            courses = StudentCourse.query.filter(
+                StudentCourse.student_id == student_id,
+                StudentCourse.course_id == stat.course_id,
+                StudentCourse.course_date >= start_date,
+                StudentCourse.course_date <= end_date,
+                StudentCourse.status != '删除',
+                StudentCourse.is_confirmed == True
+            ).all()
+
+            # 手动计算实际课时（按新规则）
+            # 正常上课：+1课时，请假：+0课时，跑空：+0.5课时
+            manual_actual_hours = 0
+            status_breakdown = {'正常': 0, '请假': 0, '跑空': 0, '其他': 0}
+
+            for course in courses:
+                if course.status == '正常':
+                    manual_actual_hours += 1
+                    status_breakdown['正常'] += 1
+                elif course.status == '请假':
+                    manual_actual_hours += 0  # 请假不计入实际课时
+                    status_breakdown['请假'] += 1
+                elif course.status == '跑空':
+                    manual_actual_hours += 0.5
+                    status_breakdown['跑空'] += 1
+                else:
+                    status_breakdown['其他'] += 1
+
+            stat_info = {
+                'course_name': stat.course_name,
+                'original_hours': stat.original_hours,
+                'actual_hours': stat.actual_hours,
+                'manual_calculation': manual_actual_hours,
+                'remaining_hours': stat.remaining_hours,
+                'total_courses': len(courses),
+                'status_breakdown': status_breakdown,
+                'courses': [
+                    {
+                        'date': course.course_date.strftime('%Y-%m-%d'),
+                        'status': course.status,
+                        'is_confirmed': course.is_confirmed
+                    } for course in courses[:10]  # 只显示前10个
+                ]
+            }
+
+            debug_info['stats'].append(stat_info)
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
 
 
 

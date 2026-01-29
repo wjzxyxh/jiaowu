@@ -29,6 +29,7 @@ class Student(db.Model):
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
     enrollment_date = db.Column(db.Date, comment='入学日期')
+    excluded_from_scheduling = db.Column(db.Boolean, default=False, comment='是否排除在排课下拉列表中')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     def to_dict(self):
@@ -45,6 +46,7 @@ class Student(db.Model):
             'default_time_slot': self.default_time_slot,
             'default_weekday': self.default_weekday,
             'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
+            'excluded_from_scheduling': self.excluded_from_scheduling,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
         }
 

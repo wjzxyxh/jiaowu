@@ -1951,11 +1951,15 @@ function showAddCourseModal() {
             }
         });
         
-        // 从已缴费需要排课的学生课程列表中提取唯一的学生
+        // 从已缴费需要排课的学生课程列表中提取唯一的学生（过滤掉被标记的学生）
         const paidCourses = paidCoursesData.courses || [];
         const studentMap = {}; // {student_id: {student_name, grade, total_remaining_hours}}
         
         paidCourses.forEach(course => {
+            // 如果学生被标记为排除在排课下拉列表中，跳过
+            if (course.excluded_from_scheduling) {
+                return;
+            }
             const studentId = course.student_id;
             if (!studentMap[studentId]) {
                 studentMap[studentId] = {

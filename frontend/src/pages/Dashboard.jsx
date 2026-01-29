@@ -43,7 +43,35 @@ const Dashboard = () => {
     : MODULE_CONFIG.filter((m) => grantedModules.includes(m.code))
 
   if (statsLoading || permsLoading) return <div className="loading">加载中...</div>
-  if (statsError) return <div className="error">加载失败: {statsError.error || statsError.message}</div>
+  if (statsError) {
+    const isRateLimitError = statsError.status === 429 || statsError.isRateLimitError
+    return (
+      <div className="error">
+        {isRateLimitError ? (
+          <div>
+            <p>⚠️ 请求过于频繁</p>
+            <p>为了保护服务器性能，请稍等片刻后再刷新页面。</p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                marginTop: '10px',
+                padding: '8px 16px',
+                background: '#007bff',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                cursor: 'pointer'
+              }}
+            >
+              刷新页面
+            </button>
+          </div>
+        ) : (
+          <div>加载失败: {statsError.error || statsError.message}</div>
+        )}
+      </div>
+    )
+  }
 
   return (
     <div className="dashboard" style={{ width: '100%' }}>

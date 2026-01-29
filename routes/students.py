@@ -616,6 +616,7 @@ def get_student_paid_courses(student_id):
 
 @bp.route('/api/students/paid-courses-need-scheduling', methods=['GET'])
 @login_required
+@limiter.limit("200 per minute")  # 允许更频繁的请求，因为页面会自动刷新
 def get_paid_courses_need_scheduling():
     """获取所有已缴费但需要排课的学生课程列表"""
     try:
@@ -708,6 +709,9 @@ def get_paid_courses_need_scheduling():
             
             # 只返回剩余课时大于0的（需要排课的）
             if remaining_hours > 0:
+                # 获取学生信息（包括标记状态）
+                student = Student.query.get(student_id)
+                
                 # 获取学生-课程的默认排课设置
                 default_schedule = StudentCourseDefaultSchedule.query.filter_by(
                     student_id=student_id,
@@ -725,7 +729,8 @@ def get_paid_courses_need_scheduling():
                     'consumed_hours': consumed_hours,
                     'remaining_hours': remaining_hours,
                     'default_time_slot': default_schedule.default_time_slot if default_schedule else '',
-                    'default_weekday': default_schedule.default_weekday if default_schedule else ''
+                    'default_weekday': default_schedule.default_weekday if default_schedule else '',
+                    'excluded_from_scheduling': student.excluded_from_scheduling if student else False
                 })
         
         # 按学生姓名和科目排序
@@ -805,6 +810,37 @@ def student_course_default_schedule(student_id, course_id):
         except Exception as e:
             db.session.rollback()
             return jsonify({'error': f'更新失败: {str(e)}'}), 500
+
+
+@bp.route('/api/students/<int:student_id>/exclude-from-scheduling', methods=['PUT'])
+@login_required
+@csrf.exempt  # JSON API 端点豁免 CSRF 检查
+def update_student_exclude_from_scheduling(student_id):
+    """更新学生是否排除在排课下拉列表中的标记"""
+    try:
+        student = Student.query.get_or_404(student_id)
+        data = request.get_json()
+        excluded = data.get('excluded_from_scheduling', False)
+        
+        student.excluded_from_scheduling = bool(excluded)
+        db.session.commit()
+        
+        log_operation('students', 'update', 'Student', student.id, student.name, 
+                     {'excluded_from_scheduling': not excluded}, 
+                     {'excluded_from_scheduling': excluded})
+        
+        return jsonify({
+            'message': '更新成功',
+            'student_id': student.id,
+            'student_name': student.name,
+            'excluded_from_scheduling': student.excluded_from_scheduling
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_msg = f"更新学生标记状态失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': error_msg}), 500
 
 
 

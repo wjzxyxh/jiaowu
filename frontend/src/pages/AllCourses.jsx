@@ -12,10 +12,11 @@ import { studentCoursesService } from '../services/studentCoursesService'
 import Modal from '../components/Modal'
 import './AllCourses.css'
 
-const AllCourses = () => {
+const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const hasOpenedGoToScheduleRef = React.useRef(false)
 
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({
@@ -38,6 +39,13 @@ const AllCourses = () => {
   const [remainingHoursMap, setRemainingHoursMap] = useState({})
 
   const pageSize = 20
+
+  // 从「去排课」进入时自动打开新增排课
+  React.useEffect(() => {
+    if (!openAddModalOnMount || !initialStudentId || !initialCourseId || hasOpenedGoToScheduleRef.current) return
+    hasOpenedGoToScheduleRef.current = true
+    setShowAddModal(true)
+  }, [openAddModalOnMount, initialStudentId, initialCourseId])
 
   // 获取排课数据
   const { data, isLoading, error } = useQuery({
@@ -113,6 +121,7 @@ const AllCourses = () => {
     mutationFn: courseService.deleteCourse,
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
       alert('删除成功')
     },
   })
@@ -126,6 +135,7 @@ const AllCourses = () => {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
       setSelectedIds([])
       alert(`批量删除完成！成功：${result.successCount}条，失败：${result.failCount}条`)
     },
@@ -161,6 +171,7 @@ const AllCourses = () => {
     mutationFn: courseService.confirmCourse,
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
     },
   })
 
@@ -168,6 +179,7 @@ const AllCourses = () => {
     mutationFn: ({ id, status }) => courseService.updateCourse(id, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
     },
   })
 
@@ -175,6 +187,7 @@ const AllCourses = () => {
     mutationFn: ({ id, data }) => courseService.updateCourse(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
       setShowEditModal(false)
       setEditingCourse(null)
       alert('更新成功')
@@ -185,6 +198,7 @@ const AllCourses = () => {
     mutationFn: (data) => courseService.createCourse(data),
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['courses'])
       setShowAddModal(false)
       alert('新增排课成功')
     },
@@ -675,6 +689,8 @@ const AllCourses = () => {
           onSave={(data) => createCourseMutation.mutate(data)}
           minHoursForScheduling={minHoursForScheduling}
           remainingHoursMap={remainingHoursMap}
+          initialStudentId={initialStudentId}
+          initialCourseId={initialCourseId}
         />
       )}
 
@@ -995,7 +1011,7 @@ const StatisticsModal = ({ stats, onClose }) => {
 }
 
 // 新增排课模态框组件
-const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHoursMap }) => {
+const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHoursMap, initialStudentId, initialCourseId }) => {
   const [formData, setFormData] = useState({
     student_id: '',
     course_id: '',
@@ -1018,10 +1034,41 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
 
   const paidCourses = paidCoursesData || []
 
-  // 从已缴费课程中提取唯一的学生
+  // 去排课进入时预填学生、课程、科目，并加载默认时段/星期
+  useEffect(() => {
+    if (!initialStudentId || !initialCourseId || paidCourses.length === 0) return
+    const course = paidCourses.find(
+      (c) => String(c.student_id) === String(initialStudentId) && String(c.course_id) === String(initialCourseId)
+    )
+    if (!course) return
+    setFormData((prev) => ({
+      ...prev,
+      student_id: String(initialStudentId),
+      course_id: String(initialCourseId),
+      subject: course.subject || prev.subject,
+    }))
+    studentCoursesService
+      .getDefaultSchedule(parseInt(initialStudentId, 10), parseInt(initialCourseId, 10))
+      .then((defaultSchedule) => {
+        setFormData((prev) => ({
+          ...prev,
+          student_id: String(initialStudentId),
+          course_id: String(initialCourseId),
+          subject: course.subject || prev.subject,
+          time_slot: defaultSchedule.default_time_slot || prev.time_slot,
+          weekday: defaultSchedule.default_weekday || prev.weekday,
+        }))
+      })
+      .catch(() => {})
+  }, [initialStudentId, initialCourseId, paidCourses])
+
+  // 从已缴费课程中提取唯一的学生：去排课进入时仅显示该学生；否则仅显示未被勾选的学生
   const students = useMemo(() => {
     const studentMap = {}
     paidCourses.forEach((course) => {
+      if (initialStudentId) {
+        if (String(course.student_id) !== String(initialStudentId)) return
+      } else if (course.excluded_from_scheduling === true) return
       const studentId = course.student_id
       if (!studentMap[studentId]) {
         studentMap[studentId] = {
@@ -1031,10 +1078,10 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
           total_remaining_hours: 0,
         }
       }
-      studentMap[studentId].total_remaining_hours += course.remaining_hours || 0
+      studentMap[studentId].total_remaining_hours += (course.remaining_hours || 0)
     })
     return Object.values(studentMap).sort((a, b) => a.name.localeCompare(b.name))
-  }, [paidCourses])
+  }, [paidCourses, initialStudentId])
 
   // 获取当前学生已缴费的课程列表
   const studentPaidCourses = useMemo(() => {
@@ -1260,6 +1307,7 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
             value={formData.student_id}
             onChange={(e) => handleStudentChange(e.target.value)}
             required
+            disabled={!!initialStudentId && students.length <= 1}
           >
             <option value="">-- 请选择学生 --</option>
             {students.map((s) => {

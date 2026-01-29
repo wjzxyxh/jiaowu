@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
 import { courseService } from '../services/courseService'
@@ -15,6 +16,11 @@ const Courses = () => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const [searchParams] = useSearchParams()
+  const studentIdFromUrl = searchParams.get('student_id')
+  const courseIdFromUrl = searchParams.get('course_id')
+  const copyCoursesFromUrl = searchParams.get('copy_courses') === 'true'
+  const fromGoToSchedule = !!(studentIdFromUrl && courseIdFromUrl && !copyCoursesFromUrl)
 
   // 计算当前日期所在的周数
   const getWeekInMonth = (date) => {
@@ -67,8 +73,8 @@ const Courses = () => {
     return { currentMonth, currentWeek: currentWeek.toString() }
   }, [])
 
-  // 视图模式：'list' 或 'week'
-  const [viewMode, setViewMode] = useState('list')
+  // 视图模式：'list' 或 'week'，默认星期模式
+  const [viewMode, setViewMode] = useState('week')
   const [weekFilter, setWeekFilter] = useState(initialWeekState.currentWeek)
   const [monthFilter, setMonthFilter] = useState(initialWeekState.currentMonth)
   const [teacherFilter, setTeacherFilter] = useState('')
@@ -76,6 +82,7 @@ const Courses = () => {
   const [subjectFilter, setSubjectFilter] = useState('')
   const [gradeFilter, setGradeFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
+  const [restrictStudentsToInitialStudent, setRestrictStudentsToInitialStudent] = useState(false)
   const [showCopyModal, setShowCopyModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingCourse, setEditingCourse] = useState(null)
@@ -493,6 +500,23 @@ const Courses = () => {
     setCurrentPage(1)
   }, [viewMode, teacherFilter, classroomFilter, subjectFilter, gradeFilter])
 
+  // 去排课：从 student-courses 点击「去排课」进入时，先预取学生课程数据再打开弹窗，避免弹窗内学生字段显示「加载中」
+  const hasOpenedGoToScheduleRef = useRef(false)
+  useEffect(() => {
+    if (!fromGoToSchedule || hasOpenedGoToScheduleRef.current) return
+    hasOpenedGoToScheduleRef.current = true
+    queryClient
+      .prefetchQuery(['paid-courses-need-scheduling'], () => studentCoursesService.getPaidCoursesNeedScheduling())
+      .then(() => {
+        setRestrictStudentsToInitialStudent(true)
+        setShowModal(true)
+      })
+      .catch(() => {
+        setRestrictStudentsToInitialStudent(true)
+        setShowModal(true)
+      })
+  }, [fromGoToSchedule, queryClient])
+
   if (isLoading) return <div className="loading">加载中...</div>
   if (error) return <div className="error">加载失败: {error?.response?.data?.error || error?.message}</div>
 
@@ -504,7 +528,7 @@ const Courses = () => {
 
       {/* 工具栏 */}
       <div className="toolbar" style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-start', marginBottom: '15px' }}>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+        <button className="btn btn-primary" onClick={() => { setRestrictStudentsToInitialStudent(false); setShowModal(true) }}>
           新增排课
         </button>
         <button className="btn btn-secondary" onClick={handlePreviousWeek} title="上一周">
@@ -758,6 +782,9 @@ const Courses = () => {
           monthFilter={monthFilter}
           weekFilter={weekFilter}
           onSubmit={handleCreateCourse}
+          initialStudentId={fromGoToSchedule ? studentIdFromUrl : undefined}
+          initialCourseId={fromGoToSchedule ? courseIdFromUrl : undefined}
+          restrictStudentsToInitialStudent={restrictStudentsToInitialStudent}
         />
       )}
 
@@ -1532,7 +1559,7 @@ const CopyToSpecifiedWeekModal = ({ isOpen, onClose, courses, selectedIds, curre
 }
 
 // 新增排课模态框组件（包含冲突检测、剩余课时显示等功能）
-const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlots, classrooms, monthFilter, weekFilter, onSubmit }) => {
+const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlots, classrooms, monthFilter, weekFilter, onSubmit, initialStudentId, initialCourseId, restrictStudentsToInitialStudent }) => {
   const [formData, setFormData] = useState({
     student_id: '',
     course_id: '',
@@ -1555,10 +1582,41 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
 
   const paidCourses = paidCoursesData || []
 
-  // 从已缴费课程中提取唯一的学生
+  // 去排课进入时预填学生、课程，并加载默认时段/星期
+  useEffect(() => {
+    if (!isOpen || !initialStudentId || !initialCourseId || paidCourses.length === 0) return
+    const course = paidCourses.find(
+      (c) => String(c.student_id) === String(initialStudentId) && String(c.course_id) === String(initialCourseId)
+    )
+    if (!course) return
+    setFormData((prev) => ({
+      ...prev,
+      student_id: String(initialStudentId),
+      course_id: String(initialCourseId),
+      subject: course.subject || prev.subject,
+    }))
+    studentCoursesService
+      .getDefaultSchedule(parseInt(initialStudentId, 10), parseInt(initialCourseId, 10))
+      .then((defaultSchedule) => {
+        setFormData((prev) => ({
+          ...prev,
+          student_id: String(initialStudentId),
+          course_id: String(initialCourseId),
+          subject: course.subject || prev.subject,
+          time_slot: defaultSchedule.default_time_slot || prev.time_slot,
+          weekday: defaultSchedule.default_weekday || prev.weekday,
+        }))
+      })
+      .catch(() => {})
+  }, [isOpen, initialStudentId, initialCourseId, paidCourses])
+
+  // 从已缴费课程中提取唯一的学生：去排课进入时只显示对应学生（不受标记影响）；否则只显示未标记学生
   const availableStudents = useMemo(() => {
     const studentMap = {}
     paidCourses.forEach((course) => {
+      if (restrictStudentsToInitialStudent && initialStudentId) {
+        if (String(course.student_id) !== String(initialStudentId)) return
+      } else if (course.excluded_from_scheduling === true) return
       const studentId = course.student_id
       if (!studentMap[studentId]) {
         studentMap[studentId] = {
@@ -1569,7 +1627,7 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       }
     })
     return Object.values(studentMap).sort((a, b) => a.name.localeCompare(b.name))
-  }, [paidCourses])
+  }, [paidCourses, restrictStudentsToInitialStudent, initialStudentId])
 
   // 获取当前学生已缴费的课程列表
   const studentPaidCourses = useMemo(() => {
@@ -1784,19 +1842,35 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>学生 *</label>
-          <select
-            name="student_id"
-            value={formData.student_id}
-            onChange={(e) => handleStudentChange(e.target.value)}
-            required
-          >
-            <option value="">-- 请选择学生 --</option>
-            {availableStudents.map((student) => (
-              <option key={student.id} value={student.id}>
-                {student.name} {student.grade ? `(${student.grade})` : ''}
-              </option>
-            ))}
-          </select>
+          {restrictStudentsToInitialStudent ? (
+            <>
+              <div style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px', marginBottom: '4px' }}>
+                {(() => {
+                  const student = availableStudents.find((s) => String(s.id) === String(formData.student_id))
+                  return student ? (
+                    <span>{student.name} {student.grade ? `（${student.grade}）` : ''} <span style={{ color: '#666', fontSize: '12px' }}>（学生课程页所选学生）</span></span>
+                  ) : (
+                    <span style={{ color: '#999' }}>{formData.student_id ? '加载中...' : '--'}</span>
+                  )
+                })()}
+              </div>
+              <input type="hidden" name="student_id" value={formData.student_id} />
+            </>
+          ) : (
+            <select
+              name="student_id"
+              value={formData.student_id}
+              onChange={(e) => handleStudentChange(e.target.value)}
+              required
+            >
+              <option value="">-- 请选择学生 --</option>
+              {availableStudents.map((student) => (
+                <option key={student.id} value={String(student.id)}>
+                  {student.name} {student.grade ? `(${student.grade})` : ''}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div id="remaining-hours-display" style={{ margin: '-10px 0 15px 0', padding: '8px', background: '#f5f5f5', borderRadius: '4px', fontSize: '14px' }}>
           {formData.student_id ? (

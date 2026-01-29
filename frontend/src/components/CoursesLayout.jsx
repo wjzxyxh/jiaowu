@@ -1,26 +1,27 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React from 'react'
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { studentCoursesService } from '../services/studentCoursesService'
 import './Layout.css'
+import './CoursesLayout.css'
 
-const Layout = () => {
+const CoursesLayout = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const isFetching = useIsFetching() // 全局查询状态
-  const [showUserMenu, setShowUserMenu] = useState(false)
-  const [showNotifications, setShowNotifications] = useState(false)
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const isFetching = useIsFetching()
+  const [showUserMenu, setShowUserMenu] = React.useState(false)
+  const [showNotifications, setShowNotifications] = React.useState(false)
+  const [isRefreshing, setIsRefreshing] = React.useState(false)
 
   // 用于防抖的引用，防止快速连续的路由变化导致过于频繁的刷新
-  const lastRefreshTime = useRef(0)
-  const refreshTimeoutRef = useRef(null)
+  const lastRefreshTime = React.useRef(0)
+  const refreshTimeoutRef = React.useRef(null)
 
   // 点击外部关闭菜单
-  useEffect(() => {
+  React.useEffect(() => {
     const handleClickOutside = (e) => {
       if (!e.target.closest('.user-menu') && !e.target.closest('.notification-btn')) {
         setShowUserMenu(false)
@@ -50,30 +51,18 @@ const Layout = () => {
 
   // 判断是否在首页
   const isHomePage = location.pathname === '/'
-  
+
   // 检查是否从student-courses页面进入（通过URL参数或sessionStorage）
-  const [fromStudentCourses, setFromStudentCourses] = useState(false)
+  const [fromStudentCourses, setFromStudentCourses] = React.useState(false)
 
   // 路由变化时自动刷新页面数据（每次进入都刷新）
-  useEffect(() => {
+  React.useEffect(() => {
     const currentPath = location.pathname
     const now = Date.now()
 
     // 定义需要自动刷新的主要页面查询键
-    // 注意：time-slots 不在自动刷新列表中，避免频繁请求导致429错误
     const refreshRoutes = {
-      '/': ['dashboard-stats'], // 首页
-      '/students': ['students'],
-      '/teachers': ['teachers'],
-      '/courses': ['courses'], // 不刷新time-slots，避免429错误
-      '/all-courses': ['all-courses'],
-      '/payments': ['payments'],
-      '/finance': ['finance-config'],
-      '/teacher-hours': ['teacher-hours'],
-      '/courses-manage': ['courses-list'],
-      '/others-manage': ['classrooms'], // 只刷新classrooms，不刷新time-slots
-      '/student-courses': ['paid-courses-need-scheduling'],
-      '/permissions': ['users', 'permission-modules'],
+      '/courses': ['courses'], // 排课管理页面
     }
 
     const queryKeys = refreshRoutes[currentPath]
@@ -125,7 +114,7 @@ const Layout = () => {
     }
   }, [location.pathname, queryClient])
 
-  useEffect(() => {
+  React.useEffect(() => {
     // 检查URL参数中是否有student_id（从student-courses页面进入时会带这个参数）
     const params = new URLSearchParams(window.location.search)
     const hasStudentId = params.has('student_id')
@@ -154,13 +143,13 @@ const Layout = () => {
   }, [location.pathname, location.search])
 
   return (
-    <div className="layout">
-      {/* 全局加载指示器 */}
+    <div className="courses-layout">
+      {/* 全局加载指示器 - 调整位置以适应课程页面布局 */}
       {isFetching > 0 && (
         <div
           style={{
             position: 'fixed',
-            top: '60px',
+            top: '80px', // 与导航栏高度保持一致
             right: '20px',
             background: 'rgba(0, 123, 255, 0.9)',
             color: 'white',
@@ -196,6 +185,7 @@ const Layout = () => {
         </div>
       )}
 
+      {/* 课程页面专用导航栏 */}
       <header className="layout-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1 }}>
           <h1 style={{ margin: 0 }}>教务管理系统</h1>
@@ -222,14 +212,14 @@ const Layout = () => {
                 zIndex: 1,
               }}
               onMouseEnter={(e) => {
-                e.target.style.background = 'rgba(255, 255, 255, 0.25)';
-                e.target.style.transform = 'translateY(-1px)';
-                e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)';
+                e.target.style.background = 'rgba(255, 255, 255, 0.25)'
+                e.target.style.transform = 'translateY(-1px)'
+                e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
               }}
               onMouseLeave={(e) => {
-                e.target.style.background = 'rgba(255, 255, 255, 0.15)';
-                e.target.style.transform = 'translateY(0)';
-                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)';
+                e.target.style.background = 'rgba(255, 255, 255, 0.15)'
+                e.target.style.transform = 'translateY(0)'
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)'
               }}
               onClick={async (e) => {
                 // 如果是从student-courses页面进入的，点击返回时自动标记该学生
@@ -242,16 +232,14 @@ const Layout = () => {
                         parseInt(studentIdToMark),
                         true
                       )
-                      console.log(`已自动标记学生ID ${studentIdToMark}`)
+                      queryClient.invalidateQueries(['paid-courses-need-scheduling'])
                     } catch (error) {
                       console.error('自动标记学生失败:', error)
                       // 即使标记失败，也继续跳转
                     }
-                    // 清除保存的学生ID
                     sessionStorage.removeItem('studentIdToMark')
                   }
                 }
-                // 点击返回后清除标记
                 if (fromStudentCourses) {
                   sessionStorage.removeItem('fromStudentCourses')
                 }
@@ -271,18 +259,7 @@ const Layout = () => {
               // 获取当前页面的查询键
               const currentPath = location.pathname
               const refreshRoutes = {
-                '/': ['dashboard-stats'],
-                '/students': ['students'],
-                '/teachers': ['teachers'],
-                '/courses': ['courses'], // 不刷新time-slots，避免429错误
-                '/all-courses': ['all-courses'],
-                '/payments': ['payments'],
-                '/finance': ['finance-config'],
-                '/teacher-hours': ['teacher-hours'],
-                '/courses-manage': ['courses-list'],
-                '/others-manage': ['classrooms'], // 只刷新classrooms，不刷新time-slots
-                '/student-courses': ['paid-courses-need-scheduling'],
-                '/permissions': ['users', 'permission-modules'],
+                '/courses': ['courses'],
               }
 
               const queryKeys = refreshRoutes[currentPath]
@@ -360,11 +337,12 @@ const Layout = () => {
         </div>
       </header>
 
-      <main className="layout-main">
+      {/* 课程页面专用内容区域 */}
+      <main className="courses-layout-main">
         <Outlet />
       </main>
     </div>
   )
 }
 
-export default Layout
+export default CoursesLayout

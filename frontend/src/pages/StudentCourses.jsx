@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { studentCoursesService } from '../services/studentCoursesService'
 import { othersService } from '../services/othersService'
 import Modal from '../components/Modal'
@@ -7,26 +8,38 @@ import './StudentCourses.css'
 
 const StudentCourses = () => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const location = useLocation()
   const [showModal, setShowModal] = useState(false)
   const [editingCourse, setEditingCourse] = useState(null)
   const [defaultTimeSlot, setDefaultTimeSlot] = useState('')
   const [defaultWeekday, setDefaultWeekday] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const pageSize = 20
 
   // 获取已缴费需要排课的学生课程列表
   const { data: courses = [], isLoading, error } = useQuery({
-    queryKey: ['student-courses'],
+    queryKey: ['paid-courses-need-scheduling'],
     queryFn: () => studentCoursesService.getPaidCoursesNeedScheduling(),
-    staleTime: 0, // 不缓存，每次都获取最新数据
-    refetchInterval: 30000, // 每30秒自动刷新
+    staleTime: 5 * 60 * 1000, // 5分钟内使用缓存数据
+    refetchInterval: 2 * 60 * 1000, // 每2分钟自动刷新
     refetchIntervalInBackground: false, // 只在页面可见时刷新
   })
+
+  // 分页数据计算
+  const paginatedCourses = useMemo(() => {
+    const start = (currentPage - 1) * pageSize
+    const end = start + pageSize
+    return courses.slice(start, end)
+  }, [courses, currentPage])
+
+  const totalPages = Math.ceil(courses.length / pageSize)
 
   // 获取时段列表（用于编辑默认排课）
   const { data: timeSlots = [] } = useQuery({
     queryKey: ['time-slots', '启用'],
     queryFn: () => othersService.getTimeSlots({ status: '启用' }),
     staleTime: 10 * 60 * 1000,
-    cacheTime: 30 * 60 * 1000,
   })
 
   // 获取默认排课设置
@@ -44,7 +57,7 @@ const StudentCourses = () => {
     mutationFn: ({ studentId, courseId, data }) =>
       studentCoursesService.updateDefaultSchedule(studentId, courseId, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['student-courses'])
+      queryClient.invalidateQueries(['paid-courses-need-scheduling'])
       alert('保存成功！')
       setShowModal(false)
       setEditingCourse(null)
@@ -53,6 +66,25 @@ const StudentCourses = () => {
       alert('保存失败：' + (error.error || error.message))
     },
   })
+
+  // 标记：勾选后该学生不出现在新增排课的学生下拉中
+  const markMutation = useMutation({
+    mutationFn: ({ studentId, excluded }) =>
+      studentCoursesService.updateExcludeFromScheduling(studentId, excluded),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['paid-courses-need-scheduling'])
+    },
+    onError: (error) => {
+      alert('标记失败：' + (error.error || error.message))
+    },
+  })
+
+  const handleToggleMark = (course) => {
+    markMutation.mutate({
+      studentId: course.student_id,
+      excluded: !course.excluded_from_scheduling,
+    })
+  }
 
   // 当模态框打开时，加载默认设置
   useEffect(() => {
@@ -96,8 +128,41 @@ const StudentCourses = () => {
 
   // 去排课
   const handleGoToSchedule = (studentId, courseId) => {
-    window.open(`/courses?student_id=${studentId}&course_id=${courseId}`, '_blank')
+    // 设置标记，表示从student-courses页面进入
+    sessionStorage.setItem('fromStudentCourses', 'true')
+    // 保存学生ID，用于返回时自动标记
+    sessionStorage.setItem('studentIdToMark', studentId.toString())
+    // 导航到courses页面
+    navigate(`/courses?student_id=${studentId}&course_id=${courseId}`)
   }
+
+  // 复制课程（文本格式）
+  const handleCopyCourses = (studentId) => {
+    // 设置标记，表示要复制课程文本
+    sessionStorage.setItem('copyCoursesText', 'true')
+    sessionStorage.setItem('copyStudentId', studentId.toString())
+    // 设置标记，表示从student-courses页面进入
+    sessionStorage.setItem('fromStudentCourses', 'true')
+    // 导航到courses页面
+    navigate(`/courses?student_id=${studentId}&copy_courses=true`)
+  }
+
+  // 分页处理函数
+  const changePage = (delta) => {
+    setCurrentPage((prev) => {
+      const newPage = prev + delta
+      if (newPage < 1) return 1
+      if (newPage > totalPages) return totalPages
+      return newPage
+    })
+  }
+
+  // 当数据变化时，如果当前页超出范围，重置到第一页
+  useEffect(() => {
+    if (courses.length > 0 && currentPage > totalPages) {
+      setCurrentPage(1)
+    }
+  }, [courses.length, totalPages, currentPage])
 
   if (isLoading) {
     return (
@@ -128,60 +193,115 @@ const StudentCourses = () => {
       </div>
 
       <div className="student-courses-container">
-        <h2 style={{ margin: '0 0 20px 0', fontSize: '20px', color: '#333' }}>
-          已缴费需要排课的学生课程列表
-        </h2>
-
         {courses.length > 0 ? (
-          <div className="table-container">
-            <table className="data-table student-courses-table">
-              <thead>
-                <tr>
-                  <th style={{ width: '12%' }}>学生</th>
-                  <th style={{ width: '8%' }}>年级</th>
-                  <th style={{ width: '15%' }}>课程</th>
-                  <th style={{ width: '8%' }}>科目</th>
-                  <th style={{ width: '12%' }}>默认上课时间</th>
-                  <th style={{ width: '10%' }}>默认上课星期</th>
-                  <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
-                  <th style={{ textAlign: 'right', width: '8%' }}>已消耗</th>
-                  <th style={{ textAlign: 'right', width: '9%' }}>剩余课时</th>
-                  <th style={{ textAlign: 'center', width: '10%' }}>操作</th>
-                </tr>
-              </thead>
-              <tbody>
-                {courses.map((course) => (
-                  <tr key={`${course.student_id}-${course.course_id}`}>
-                    <td>{course.student_name}</td>
-                    <td>{course.grade || '-'}</td>
-                    <td>{course.course_name}</td>
-                    <td>{course.subject || '-'}</td>
-                    <td>{course.default_time_slot || '-'}</td>
-                    <td>{course.default_weekday || '-'}</td>
-                    <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
-                    <td style={{ textAlign: 'right' }}>{course.consumed_hours || 0}</td>
-                    <td style={{ textAlign: 'right' }} className="remaining-hours">
-                      {course.remaining_hours ? course.remaining_hours.toFixed(1) : '0.0'}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <a
-                        href={`/courses?student_id=${course.student_id}&course_id=${course.course_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="btn-link"
-                        style={{ marginRight: '8px' }}
-                      >
-                        去排课
-                      </a>
-                      <button onClick={() => handleShowEditModal(course)} className="btn-link edit-default">
-                        编辑默认
-                      </button>
-                    </td>
+          <>
+            <div className="table-container">
+              <table className="data-table student-courses-table">
+                <thead>
+                  <tr>
+                    <th style={{ width: '5%', textAlign: 'center' }}>序号</th>
+                    <th style={{ width: '5%', textAlign: 'center' }}>标记</th>
+                    <th style={{ width: '12%' }}>学生</th>
+                    <th style={{ width: '8%' }}>年级</th>
+                    <th style={{ width: '15%' }}>课程</th>
+                    <th style={{ width: '10%' }}>科目</th>
+                    <th style={{ width: '12%' }}>默认上课时间</th>
+                    <th style={{ width: '10%' }}>默认上课星期</th>
+                    <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
+                    <th style={{ textAlign: 'right', width: '8%' }}>已消耗</th>
+                    <th style={{ textAlign: 'right', width: '8%' }}>剩余课时</th>
+                    <th style={{ textAlign: 'center', width: '12%' }}>操作</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginatedCourses.map((course, index) => {
+                    // 计算全局序号（从1开始，延续上一页）
+                    const globalIndex = (currentPage - 1) * pageSize + index + 1
+                    return (
+                      <tr key={`${course.student_id}-${course.course_id}`}>
+                        <td style={{ textAlign: 'center' }}>{globalIndex}</td>
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!course.excluded_from_scheduling}
+                            onChange={() => handleToggleMark(course)}
+                            disabled={markMutation.isLoading}
+                            title="勾选后该学生不出现在新增排课的学生下拉中"
+                          />
+                        </td>
+                        <td>{course.student_name}</td>
+                        <td>{course.grade || '-'}</td>
+                        <td>{course.course_name}</td>
+                        <td>{course.subject || '-'}</td>
+                        <td>{course.default_time_slot || '-'}</td>
+                        <td>{course.default_weekday || '-'}</td>
+                        <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
+                        <td style={{ textAlign: 'right' }}>{course.consumed_hours || 0}</td>
+                        <td style={{ textAlign: 'right' }} className="remaining-hours">
+                          {course.remaining_hours ? course.remaining_hours.toFixed(1) : '0.0'}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button
+                            onClick={() => handleGoToSchedule(course.student_id, course.course_id)}
+                            className="btn-link"
+                            style={{ marginRight: '8px' }}
+                          >
+                            去排课
+                          </button>
+                          <button
+                            onClick={() => handleCopyCourses(course.student_id)}
+                            className="btn-link"
+                            style={{
+                              marginRight: '8px',
+                              color: '#28a745',
+                              borderColor: '#28a745',
+                              cursor: 'pointer'
+                            }}
+                            title="复制课程"
+                          >
+                            复制课程
+                          </button>
+                          <button onClick={() => handleShowEditModal(course)} className="btn-link edit-default">
+                            编辑默认
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {/* 分页控件 */}
+            {totalPages > 1 && (
+              <div
+                style={{
+                  marginTop: '20px',
+                  display: 'flex',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}
+              >
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => changePage(-1)}
+                  disabled={currentPage === 1}
+                >
+                  上一页
+                </button>
+                <span style={{ padding: '0 15px' }}>
+                  第 {currentPage} 页，共 {totalPages} 页（共 {courses.length} 条）
+                </span>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => changePage(1)}
+                  disabled={currentPage === totalPages}
+                >
+                  下一页
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>

@@ -17,4 +17,11 @@ export const studentCoursesService = {
   updateDefaultSchedule: async (studentId, courseId, data) => {
     return api.put(`/students/${studentId}/courses/${courseId}/default-schedule`, data)
   },
+
+  // 更新学生是否排除在排课下拉列表中的标记
+  updateExcludeFromScheduling: async (studentId, excluded) => {
+    return api.put(`/students/${studentId}/exclude-from-scheduling`, {
+      excluded_from_scheduling: excluded
+    })
+  },
 }

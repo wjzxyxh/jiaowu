@@ -248,3 +248,39 @@ Debug模式: 已启用
 教务管理系统启动成功！
 Debug模式: 已启用
 访问地址: http://localhost:80
+2026-01-28 16:49:11 - app - INFO - 日志系统初始化完成
+2026-01-28 16:49:13 - app - INFO - 应用初始化完成，配置: default
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+教师简历表已存在
+用户权限表已存在
+学生课程默认排课设置表已存在
+用户表的session_token字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+ * Serving Flask app 'app'
+ * Debug mode: on
+Address already in use
+Port 5000 is in use by another program. Either identify and stop that program, or start the server with a different port.

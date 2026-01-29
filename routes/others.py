@@ -249,21 +249,37 @@ def cleanup_orphaned_courses():
 
 
 @bp.route('/api/time-slots', methods=['GET'])
+@limiter.limit("200 per minute")
+@login_required
 def get_time_slots():
-
     """获取所有时段"""
+    try:
+        status = request.args.get('status', '')
 
-    status = request.args.get('status', '')
+        query = TimeSlot.query
 
-    query = TimeSlot.query
+        if status:
+            query = query.filter_by(status=status)
 
-    if status:
+        slots = query.order_by(TimeSlot.sort_order).all()
 
-        query = query.filter_by(status=status)
+        # 确保所有时段都能正确序列化
+        result = []
+        for slot in slots:
+            try:
+                result.append(slot.to_dict())
+            except Exception as slot_error:
+                # 如果单个时段序列化失败，记录错误但继续处理其他时段
+                print(f"时段 {slot.id} 序列化失败: {str(slot_error)}")
+                continue
 
-    slots = query.order_by(TimeSlot.sort_order).all()
+        return jsonify(result), 200
 
-    return jsonify([s.to_dict() for s in slots])
+    except Exception as e:
+        print(f"获取时段列表失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': '获取时段列表失败，请稍后重试'}), 500
 
 
 

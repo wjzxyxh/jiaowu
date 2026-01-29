@@ -17,6 +17,7 @@ import CoursesManage from './pages/CoursesManage'
 import OthersManage from './pages/OthersManage'
 import Permissions from './pages/Permissions'
 import Layout from './components/Layout'
+import CoursesLayout from './components/CoursesLayout'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -43,7 +44,6 @@ function App() {
         <Route index element={<Dashboard />} />
         <Route path="students" element={<Students />} />
         <Route path="teachers" element={<Teachers />} />
-        <Route path="courses" element={<Courses />} />
         <Route path="payments" element={<Payments />} />
         <Route path="stats" element={<Stats />} />
         <Route path="finance" element={<Finance />} />
@@ -54,6 +54,16 @@ function App() {
         <Route path="courses-manage" element={<CoursesManage />} />
         <Route path="others-manage" element={<OthersManage />} />
         <Route path="permissions" element={<Permissions />} />
+      </Route>
+      <Route
+        path="/courses"
+        element={
+          <PrivateRoute>
+            <CoursesLayout />
+          </PrivateRoute>
+        }
+      >
+        <Route index element={<Courses />} />
       </Route>
     </Routes>
   )

@@ -12,7 +12,15 @@ const queryClient = new QueryClient({
       refetchOnWindowFocus: false,
       refetchOnMount: false, // 挂载时不自动重新获取，优先使用缓存
       refetchOnReconnect: false, // 重连时不自动重新获取
-      retry: false, // 完全禁用重试，避免429错误时重复请求
+      retry: (failureCount, error) => {
+        // 对于429错误，使用指数退避重试，最多重试2次
+        if (error?.status === 429 || error?.isRateLimitError) {
+          return failureCount < 2
+        }
+        // 其他错误不重试
+        return false
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // 指数退避，最长30秒
       staleTime: 10 * 60 * 1000, // 数据10分钟内视为新鲜，不会自动重新获取
       cacheTime: 30 * 60 * 1000, // 缓存30分钟
     },

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { othersService } from '../services/othersService'
 import api from '../services/api'
@@ -11,13 +11,104 @@ const OthersManage = () => {
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
   const [editingConfig, setEditingConfig] = useState(null)
+  const [timeSlotsRateLimited, setTimeSlotsRateLimited] = useState(false) // 跟踪429错误
 
-  // 获取时段列表
-  const { data: timeSlots = [], isLoading: timeSlotsLoading } = useQuery({
-    queryKey: ['time-slots'],
-    queryFn: () => othersService.getTimeSlots(),
-    enabled: activeTab === 'time-slots',
+  // 获取时段列表（管理页面需要显示所有时段，包括停用的）
+  // 先从React Query缓存读取，如果没有再从localStorage读取
+  const cachedTimeSlots = useMemo(() => {
+    const queryCache = queryClient.getQueryCache()
+    const coursesTimeSlotsQuery = queryCache.find({ queryKey: ['time-slots', '启用'] })
+    if (coursesTimeSlotsQuery?.state?.data && Array.isArray(coursesTimeSlotsQuery.state.data) && coursesTimeSlotsQuery.state.data.length > 0) {
+      return coursesTimeSlotsQuery.state.data
+    }
+    try {
+      const cachedData = localStorage.getItem('cached_time_slots')
+      const cachedTimestamp = localStorage.getItem('cached_time_slots_timestamp')
+      if (cachedData && cachedTimestamp) {
+        const parsed = JSON.parse(cachedData)
+        const age = Date.now() - parseInt(cachedTimestamp, 10)
+        if (Array.isArray(parsed) && parsed.length > 0 && age < 3600000) return parsed
+      }
+    } catch (_) {}
+    return undefined
+  }, [queryClient])
+
+  const { data: timeSlots = [], isLoading: timeSlotsLoading, error: timeSlotsError } = useQuery({
+    queryKey: ['time-slots', 'all'],
+    queryFn: async () => {
+      try {
+        const result = await othersService.getTimeSlots()
+        let data = Array.isArray(result) ? result : (result?.data && Array.isArray(result.data) ? result.data : [])
+        if (data.length > 0) {
+          localStorage.setItem('cached_time_slots', JSON.stringify(data))
+          localStorage.setItem('cached_time_slots_timestamp', Date.now().toString())
+        }
+        setTimeSlotsRateLimited(false)
+        return data
+      } catch (error) {
+        if (error?.status === 429 || error?.response?.status === 429) {
+          let fallback = null
+          try {
+            const cachedData = localStorage.getItem('cached_time_slots')
+            if (cachedData) {
+              const parsed = JSON.parse(cachedData)
+              if (Array.isArray(parsed) && parsed.length > 0) fallback = parsed
+            }
+          } catch (_) {}
+          if (!fallback) {
+            const q = queryClient.getQueryCache().find({ queryKey: ['time-slots', '启用'] })
+            if (q?.state?.data && Array.isArray(q.state.data) && q.state.data.length > 0) {
+              fallback = q.state.data
+              try {
+                localStorage.setItem('cached_time_slots', JSON.stringify(fallback))
+                localStorage.setItem('cached_time_slots_timestamp', String(Date.now()))
+              } catch (_) {}
+            }
+          }
+          if (fallback) {
+            setTimeSlotsRateLimited(false)
+            return fallback
+          }
+          try { sessionStorage.setItem('timeSlots429Error', String(Date.now())) } catch (_) {}
+          throw { error: '请求过于频繁，请稍后再试', status: 429, response: { status: 429 }, message: '请求过于频繁，请稍后再试' }
+        }
+        throw error
+      }
+    },
+    initialData: cachedTimeSlots,
+    placeholderData: cachedTimeSlots,
+    staleTime: 5 * 60 * 1000,
+    retry: (failureCount, error) => {
+      if (error?.status === 429 || error?.response?.status === 429) return false
+      return failureCount < 1
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   })
+
+  // 检测429错误：如果数据为空且没有错误，可能是429错误导致的
+  useEffect(() => {
+    if (!timeSlotsLoading && !timeSlotsError && timeSlots.length === 0 && !cachedTimeSlots) {
+      // 检查是否最近遇到过429错误（通过检查localStorage或sessionStorage）
+      const last429Error = sessionStorage.getItem('timeSlots429Error')
+      if (last429Error) {
+        const errorTime = parseInt(last429Error)
+        // 如果429错误发生在最近5分钟内，显示429提示
+        if (Date.now() - errorTime < 5 * 60 * 1000) {
+          setTimeSlotsRateLimited(true)
+        } else {
+          sessionStorage.removeItem('timeSlots429Error')
+        }
+      }
+    }
+  }, [timeSlotsLoading, timeSlotsError, timeSlots.length, cachedTimeSlots])
+
+  // 当成功获取数据时，清除429标记和sessionStorage记录
+  useEffect(() => {
+    if (!timeSlotsLoading && !timeSlotsError && timeSlots.length > 0) {
+      setTimeSlotsRateLimited(false)
+      sessionStorage.removeItem('timeSlots429Error')
+    }
+  }, [timeSlotsLoading, timeSlotsError, timeSlots.length])
 
   // 获取教室列表
   const { data: classrooms = [], isLoading: classroomsLoading } = useQuery({
@@ -37,8 +128,23 @@ const OthersManage = () => {
 
   const deleteTimeSlotMutation = useMutation({
     mutationFn: othersService.deleteTimeSlot,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['time-slots'])
+    onSuccess: (_, deletedId) => {
+      // deletedId 是传递给 mutate 的参数
+      // 直接更新React Query缓存，移除删除的时段
+      queryClient.setQueryData(['time-slots', 'all'], (oldData = []) => {
+        const updated = oldData.filter(slot => slot.id !== deletedId)
+        // 同时更新localStorage缓存
+        localStorage.setItem('cached_time_slots', JSON.stringify(updated))
+        localStorage.setItem('cached_time_slots_timestamp', Date.now().toString())
+        return updated
+      })
+      queryClient.setQueryData(['time-slots', '启用'], (oldData = []) => {
+        return (oldData || []).filter(slot => slot.id !== deletedId)
+      })
+      // 失效所有time-slots相关的查询（尝试重新获取最新数据，但如果429错误会使用缓存）
+      queryClient.invalidateQueries({ queryKey: ['time-slots'] })
+      // 清除429错误标记
+      setTimeSlotsRateLimited(false)
       alert('删除成功')
     },
     onError: (error) => {
@@ -48,8 +154,26 @@ const OthersManage = () => {
 
   const createTimeSlotMutation = useMutation({
     mutationFn: othersService.createTimeSlot,
-    onSuccess: () => {
-      queryClient.invalidateQueries(['time-slots'])
+    onSuccess: (newTimeSlot) => {
+      // 直接更新React Query缓存，添加新创建的时段
+      queryClient.setQueryData(['time-slots', 'all'], (oldData = []) => {
+        const updated = [...(Array.isArray(oldData) ? oldData : []), newTimeSlot]
+        localStorage.setItem('cached_time_slots', JSON.stringify(updated))
+        localStorage.setItem('cached_time_slots_timestamp', Date.now().toString())
+        return updated
+      })
+      // 也更新其他相关的查询缓存
+      queryClient.setQueryData(['time-slots', '启用'], (oldData = []) => {
+        const base = Array.isArray(oldData) ? oldData : []
+        if (newTimeSlot.status === '启用' || !newTimeSlot.status) {
+          return [...base, newTimeSlot]
+        }
+        return base
+      })
+      // 失效所有time-slots相关的查询（尝试重新获取最新数据，但如果429错误会使用缓存）
+      queryClient.invalidateQueries({ queryKey: ['time-slots'] })
+      // 清除429错误标记
+      setTimeSlotsRateLimited(false)
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
@@ -61,8 +185,34 @@ const OthersManage = () => {
 
   const updateTimeSlotMutation = useMutation({
     mutationFn: ({ id, data }) => othersService.updateTimeSlot(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['time-slots'])
+    onSuccess: (updatedTimeSlot) => {
+      // 直接更新React Query缓存
+      queryClient.setQueryData(['time-slots', 'all'], (oldData = []) => {
+        const base = Array.isArray(oldData) ? oldData : []
+        const updated = base.map(slot => slot.id === updatedTimeSlot.id ? updatedTimeSlot : slot)
+        // 同时更新localStorage缓存
+        localStorage.setItem('cached_time_slots', JSON.stringify(updated))
+        localStorage.setItem('cached_time_slots_timestamp', Date.now().toString())
+        return updated
+      })
+      // 也更新其他相关的查询缓存
+      queryClient.setQueryData(['time-slots', '启用'], (oldData = []) => {
+        const base = Array.isArray(oldData) ? oldData : []
+        if (updatedTimeSlot.status === '启用' || !updatedTimeSlot.status) {
+          const existingIndex = base.findIndex(slot => slot.id === updatedTimeSlot.id)
+          if (existingIndex >= 0) {
+            const updated = [...base]
+            updated[existingIndex] = updatedTimeSlot
+            return updated
+          }
+          return [...base, updatedTimeSlot]
+        }
+        return base.filter(slot => slot.id !== updatedTimeSlot.id)
+      })
+      // 失效所有time-slots相关的查询（尝试重新获取最新数据，但如果429错误会使用缓存）
+      queryClient.invalidateQueries({ queryKey: ['time-slots'] })
+      // 清除429错误标记
+      setTimeSlotsRateLimited(false)
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
@@ -210,10 +360,6 @@ const OthersManage = () => {
 
   const isLoading = timeSlotsLoading || classroomsLoading || financeConfigsLoading
 
-  if (isLoading && activeTab !== 'finance') {
-    return <div className="loading">加载中...</div>
-  }
-
   return (
     <div className="others-manage-page" style={{ width: '100%' }}>
       <div className="page-header">
@@ -235,7 +381,7 @@ const OthersManage = () => {
 
       {/* 时段管理标签页 */}
       {activeTab === 'time-slots' && (
-        <div className="tab-content active">
+        <div className="tab-content active" style={{ display: 'block' }}>
           <div className="toolbar">
             <button
               className="btn btn-primary"
@@ -247,51 +393,126 @@ const OthersManage = () => {
               新增时段
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>时段名称</th>
-                <th>开始时间</th>
-                <th>结束时间</th>
-                <th>排序</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {timeSlots.length > 0 ? (
-                timeSlots.map((slot) => (
-                  <tr key={slot.id}>
-                    <td>{slot.id}</td>
-                    <td>{slot.name || ''}</td>
-                    <td>{slot.start_time || ''}</td>
-                    <td>{slot.end_time || ''}</td>
-                    <td>{slot.sort_order || 0}</td>
-                    <td>
-                      <span className={`status-badge status-${slot.status === '启用' ? 'normal' : 'deleted'}`}>
-                        {slot.status || '启用'}
-                      </span>
-                    </td>
-                    <td>
-                      <button className="btn btn-warning" onClick={() => handleEditTimeSlot(slot)}>
-                        编辑
-                      </button>
-                      <button className="btn btn-danger" onClick={() => handleDeleteTimeSlot(slot.id)}>
-                        删除
-                      </button>
+          {timeSlotsLoading ? (
+            <div className="loading" style={{ textAlign: 'center', padding: '20px' }}>加载中...</div>
+          ) : timeSlotsError ? (
+            <div className="error" style={{ textAlign: 'center', padding: '20px', color: '#856404', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
+              {timeSlotsError?.status === 429 || timeSlotsError?.response?.status === 429 ? (
+                <>
+                  <div style={{ marginBottom: '10px' }}>
+                    <strong>⚠️ 请求过于频繁</strong>
+                  </div>
+                  <div style={{ fontSize: '14px', marginBottom: '10px' }}>
+                    服务器暂时无法处理请求，请稍后再试
+                  </div>
+                  <div style={{ marginTop: '15px' }}>
+                    <button 
+                      className="btn btn-warning" 
+                      onClick={() => {
+                        setTimeout(() => {
+                          queryClient.invalidateQueries(['time-slots', 'all'])
+                        }, 2000)
+                      }}
+                    >
+                      稍后重试
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ marginBottom: '10px' }}>
+                    <strong>加载失败</strong>
+                  </div>
+                  <div style={{ fontSize: '14px', marginBottom: '5px' }}>
+                    {timeSlotsError?.error || timeSlotsError?.message || timeSlotsError?.response?.data?.error || '未知错误'}
+                  </div>
+                  {timeSlotsError?.response?.status && (
+                    <div style={{ fontSize: '12px', marginTop: '5px', color: '#999' }}>
+                      HTTP状态码: {timeSlotsError.response.status}
+                    </div>
+                  )}
+                  {timeSlotsError?.isNetworkError && (
+                    <div style={{ fontSize: '12px', marginTop: '5px', color: '#999' }}>
+                      网络错误，请检查网络连接
+                    </div>
+                  )}
+                  <div style={{ marginTop: '15px' }}>
+                    <button className="btn btn-secondary" onClick={() => queryClient.invalidateQueries(['time-slots', 'all'])}>
+                      重试
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>时段名称</th>
+                  <th>开始时间</th>
+                  <th>结束时间</th>
+                  <th>排序</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {timeSlots.length > 0 ? (
+                  timeSlots.map((slot) => (
+                    <tr key={slot.id}>
+                      <td>{slot.id}</td>
+                      <td>{slot.name || ''}</td>
+                      <td>{slot.start_time || ''}</td>
+                      <td>{slot.end_time || ''}</td>
+                      <td>{slot.sort_order || 0}</td>
+                      <td>
+                        <span className={`status-badge status-${slot.status === '启用' ? 'normal' : 'deleted'}`}>
+                          {slot.status || '启用'}
+                        </span>
+                      </td>
+                      <td>
+                        <button className="btn btn-warning" onClick={() => handleEditTimeSlot(slot)}>
+                          编辑
+                        </button>
+                        <button className="btn btn-danger" onClick={() => handleDeleteTimeSlot(slot.id)}>
+                          删除
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                ) : timeSlotsRateLimited ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#856404', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px' }}>
+                      <div style={{ marginBottom: '10px' }}>
+                        <strong>⚠️ 请求过于频繁</strong>
+                      </div>
+                      <div style={{ fontSize: '14px', marginBottom: '10px' }}>
+                        服务器暂时无法处理请求，请稍后再试
+                      </div>
+                      <div style={{ marginTop: '15px' }}>
+                        <button 
+                          className="btn btn-warning" 
+                          onClick={() => {
+                            setTimeSlotsRateLimited(false)
+                            setTimeout(() => queryClient.invalidateQueries(['time-slots', 'all']), 2000)
+                          }}
+                        >
+                          稍后重试
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                    暂无时段数据
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+                      暂无时段数据
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
       )}
 

@@ -1,4 +1,6 @@
 #!/bin/bash
+# 同时启动前端和后端服务
+
 cd /tmp/pycharm_project_231
 
 echo "=========================================="
@@ -33,7 +35,7 @@ fi
 
 # 启动后端
 echo "正在启动后端服务（端口5000）..."
-python3 app.py > backend.log 2>&1 &
+nohup python3 app.py > backend.log 2>&1 &
 BACKEND_PID=$!
 echo "后端进程ID: $BACKEND_PID"
 
@@ -68,5 +70,5 @@ echo "  前端日志: tail -f frontend.log"
 echo ""
 echo "停止服务："
 echo "  kill $BACKEND_PID $FRONTEND_PID"
-echo "  或运行: ./stop_all.sh"
+echo "  或运行: pkill -f 'python.*app.py' && pkill -f 'vite'"
 echo "=========================================="

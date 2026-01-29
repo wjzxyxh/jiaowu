@@ -137,16 +137,76 @@ def logout():
 
 
 @bp.route('/api/current-user', methods=['GET'])
+@limiter.limit("500 per minute")  # 增加限制，允许更频繁的请求，因为页面刷新时会调用
 @login_required
 def get_current_user():
     """获取当前登录用户信息"""
     try:
         if not current_user.is_authenticated:
             return jsonify({'error': '未登录'}), 401
-        
+
+        # 确保current_user是有效的User对象
+        if not hasattr(current_user, 'id') or not hasattr(current_user, 'username'):
+            return jsonify({'error': '用户会话无效，请重新登录'}), 401
+
+        # 尝试调用to_dict()方法，如果失败，提供备用方案
+        try:
+            user_data = current_user.to_dict()
+        except Exception as to_dict_error:
+            # 如果to_dict()失败，手动构建用户数据
+            user_data = {
+                'id': current_user.id,
+                'username': current_user.username,
+                'role': getattr(current_user, 'role', 'user'),
+                'real_name': getattr(current_user, 'real_name', ''),
+                'is_active': getattr(current_user, 'is_active', True),
+                'created_at': None,
+                'last_login': None
+            }
+
         return jsonify({
-            'user': current_user.to_dict()
+            'user': user_data
         }), 200
-    
+
     except Exception as e:
-        return jsonify({'error': f'获取用户信息失败: {str(e)}'}), 500
+        # 记录详细错误信息用于调试
+        import traceback
+        print(f"获取当前用户信息失败: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+
+        # 在开发环境下返回详细错误信息
+        from flask import current_app
+        if current_app.config.get('DEBUG', False):
+            return jsonify({'error': f'获取用户信息失败: {str(e)}'}), 500
+        else:
+            # 生产环境下返回通用错误信息
+            return jsonify({'error': '获取用户信息失败，请刷新页面重试'}), 500
+
+
+@bp.route('/api/health', methods=['GET'])
+def health_check():
+    """健康检查端点"""
+    try:
+        from extensions import db
+        from models import User
+
+        # 测试数据库连接
+        user_count = User.query.count()
+
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'user_count': user_count,
+            'timestamp': '2026-01-29'
+        }), 200
+
+    except Exception as e:
+        import traceback
+        print(f"健康检查失败: {str(e)}")
+        print(f"错误详情: {traceback.format_exc()}")
+
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': '2026-01-29'
+        }), 500

@@ -89,3 +89,7 @@ config = {
     'production': ProductionConfig,
     'default': DevelopmentConfig
 }
+
+# 为开发环境设置更宽松的速率限制
+if os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEBUG', '').lower() == 'true':
+    Config.RATELIMIT_DEFAULT = "1000 per hour; 200 per minute"

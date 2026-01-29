@@ -1,0 +1,19 @@
+.courses-layout {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+}
+
+/* 课程页面导航栏使用与首页相同的样式类 layout-header，样式由 Layout.css 提供 */
+
+.courses-layout-main {
+  flex: 1;
+  padding: 32px; /* 与主布局保持一致 */
+  background: #f8f9fa;
+  min-height: calc(100vh - 80px); /* 与主布局保持一致的高度计算 */
+}
+
+/* 响应式设计 - 针对课程页面的特殊适配 */
+
+/* 响应式样式由 Layout.css 统一处理 */

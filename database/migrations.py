@@ -137,6 +137,17 @@ def upgrade_student_table():
                 with db.engine.begin() as conn:
                     conn.execute(text('ALTER TABLE students ADD COLUMN enrollment_date DATE'))
                 print('已为学生表添加enrollment_date字段')
+            
+            if 'excluded_from_scheduling' not in columns:
+                if is_sqlite():
+                    with db.engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE students ADD COLUMN excluded_from_scheduling BOOLEAN DEFAULT 0'))
+                else:
+                    with db.engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE students ADD COLUMN excluded_from_scheduling BOOLEAN DEFAULT FALSE'))
+                print('已为学生表添加excluded_from_scheduling字段')
+            else:
+                print('学生表的excluded_from_scheduling字段已存在')
     except Exception as e:
         print(f'升级学生表时出错: {e}')
         import traceback
