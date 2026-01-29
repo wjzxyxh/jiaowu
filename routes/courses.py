@@ -41,7 +41,7 @@ from werkzeug.utils import secure_filename
 bp = Blueprint('courses', __name__)
 
 @bp.route('/api/courses', methods=['GET'])
-@limiter.limit("200 per minute")  # 数据查询接口，允许更频繁的请求
+# @limiter.limit("200 per minute")  # 限流已禁用
 def get_courses():
 
     """获取所有课程"""

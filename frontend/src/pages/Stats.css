@@ -3,6 +3,17 @@
   padding: 24px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .month-input {
@@ -39,4 +50,49 @@
 .negative {
   color: #dc3545;
   font-weight: bold;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .stats-page {
+    padding: 12px;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .toolbar input,
+  .toolbar select {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .data-table {
+    font-size: 12px;
+    min-width: 700px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 4px;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .stats-page {
+    padding: 8px;
+  }
+
+  .data-table {
+    font-size: 10px;
+    min-width: 600px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 4px 2px;
+  }
 }

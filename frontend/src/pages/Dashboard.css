@@ -1,3 +1,10 @@
+.dashboard {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
 .dashboard h1 {
   margin-bottom: 24px;
   color: #333;
@@ -107,28 +114,16 @@
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .dashboard {
+    padding: 0;
+  }
+
+  .modules-section {
+    margin-top: 20px;
+  }
+
   .function-grid {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 20px;
-  }
-
-  .function-card {
-    padding: 24px;
-  }
-
-  .function-icon {
-    font-size: 44px;
-    margin-bottom: 12px;
-  }
-
-  .function-card h3 {
-    font-size: 18px;
-  }
-}
-
-@media (max-width: 480px) {
-  .function-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 16px;
   }
 
@@ -138,14 +133,101 @@
 
   .function-icon {
     font-size: 40px;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
 
   .function-card h3 {
     font-size: 16px;
+    margin-bottom: 8px;
   }
 
   .function-card p {
-    font-size: 13px;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-icon {
+    font-size: 36px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+  }
+
+  .stat-label {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .dashboard {
+    padding: 0;
+  }
+
+  .modules-section {
+    margin-top: 16px;
+  }
+
+  .function-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .function-card {
+    padding: 16px;
+  }
+
+  .function-icon {
+    font-size: 36px;
+    margin-bottom: 10px;
+  }
+
+  .function-card h3 {
+    font-size: 15px;
+    margin-bottom: 6px;
+  }
+
+  .function-card p {
+    font-size: 11px;
+    line-height: 1.3;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .stat-card {
+    padding: 14px;
+    gap: 12px;
+  }
+
+  .stat-icon {
+    font-size: 32px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+  }
+
+  .dashboard h2 {
+    font-size: 18px;
+    margin-top: 24px;
+    margin-bottom: 16px;
   }
 }

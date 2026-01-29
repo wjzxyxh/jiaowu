@@ -3,6 +3,17 @@
   padding: 24px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page-header {
@@ -216,4 +227,91 @@
   text-align: center;
   padding: 40px;
   color: #dc3545;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .courses-manage-page {
+    padding: 12px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .tabs {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .tab {
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+
+  .toolbar .btn {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+
+  .data-table {
+    font-size: 12px;
+    min-width: 800px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 6px;
+    white-space: nowrap;
+  }
+
+  .btn-warning,
+  .btn-danger,
+  .btn-info {
+    margin-right: 3px;
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .courses-manage-page {
+    padding: 8px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .tab {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .data-table {
+    font-size: 10px;
+    min-width: 700px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 4px;
+  }
+
+  .btn-warning,
+  .btn-danger,
+  .btn-info {
+    font-size: 10px;
+    padding: 3px 6px;
+    margin-right: 2px;
+    display: block;
+    width: 100%;
+    margin-bottom: 4px;
+  }
 }

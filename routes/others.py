@@ -249,7 +249,7 @@ def cleanup_orphaned_courses():
 
 
 @bp.route('/api/time-slots', methods=['GET'])
-@limiter.limit("200 per minute")
+# @limiter.limit("200 per minute")  # 限流已禁用
 @login_required
 def get_time_slots():
     """获取所有时段"""

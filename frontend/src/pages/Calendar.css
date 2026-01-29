@@ -1,6 +1,19 @@
 .calendar-page {
   background: #f5f5f5;
-  padding: 24px;
+  padding: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+.calendar-page .page-header {
+  padding: 0;
+  margin-bottom: 24px;
+}
+
+.calendar-page .page-header h1 {
+  margin: 0;
 }
 
 .calendar-filters {
@@ -26,6 +39,10 @@
   padding: 20px;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
 }
 
 .calendar-header {
@@ -53,6 +70,9 @@
   gap: 1px;
   background: #ddd;
   border: 1px solid #ddd;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .calendar-day-header {
@@ -114,4 +134,102 @@
   background: #9e9e9e;
   color: white;
   opacity: 0.7;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .calendar-container {
+    padding: 12px;
+  }
+
+  .calendar-header {
+    margin-bottom: 12px;
+  }
+
+  .calendar-nav {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .calendar-nav h2 {
+    margin: 0 10px;
+    font-size: 18px;
+  }
+
+  .calendar-day-header {
+    padding: 8px 4px;
+    font-size: 12px;
+  }
+
+  .calendar-day {
+    min-height: 80px;
+    padding: 3px;
+  }
+
+  .calendar-event {
+    font-size: 10px;
+    padding: 2px 3px;
+  }
+
+  .calendar-filters {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .calendar-filters select {
+    min-width: 120px;
+    flex: 1;
+  }
+}
+
+@media (max-width: 480px) {
+  .calendar-container {
+    padding: 8px;
+  }
+
+  .calendar-nav {
+    gap: 6px;
+  }
+
+  .calendar-nav h2 {
+    margin: 0 8px;
+    font-size: 16px;
+  }
+
+  .calendar-nav .btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .calendar-day-header {
+    padding: 6px 2px;
+    font-size: 11px;
+  }
+
+  .calendar-day {
+    min-height: 60px;
+    padding: 2px;
+  }
+
+  .day-number {
+    font-size: 12px;
+  }
+
+  .calendar-event {
+    font-size: 9px;
+    padding: 1px 2px;
+    margin: 1px 0;
+  }
+
+  .calendar-filters {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .calendar-filters select {
+    min-width: 100px;
+    font-size: 12px;
+    padding: 6px 8px;
+  }
 }

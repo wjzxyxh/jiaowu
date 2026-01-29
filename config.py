@@ -67,7 +67,9 @@ class Config:
     LIMITER_STORAGE_URI = storage_url    # 新版本配置键
     # Flask-Limiter的default_limits可以是字符串列表或单个字符串（用分号分隔）
     # 格式: ["200 per day", "50 per hour"] 或 "200 per day; 50 per hour"
-    RATELIMIT_DEFAULT = "200 per day; 50 per hour"
+    # 限流已禁用
+    # RATELIMIT_DEFAULT = "200 per day; 50 per hour"
+    RATELIMIT_DEFAULT = None
 
 
 class DevelopmentConfig(Config):
@@ -90,6 +92,6 @@ config = {
     'default': DevelopmentConfig
 }
 
-# 为开发环境设置更宽松的速率限制
-if os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEBUG', '').lower() == 'true':
-    Config.RATELIMIT_DEFAULT = "1000 per hour; 200 per minute"
+# 为开发环境设置更宽松的速率限制 - 限流已禁用
+# if os.environ.get('FLASK_ENV') == 'development' or os.environ.get('DEBUG', '').lower() == 'true':
+#     Config.RATELIMIT_DEFAULT = "1000 per hour; 200 per minute"

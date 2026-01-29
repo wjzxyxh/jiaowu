@@ -616,7 +616,7 @@ def get_student_paid_courses(student_id):
 
 @bp.route('/api/students/paid-courses-need-scheduling', methods=['GET'])
 @login_required
-@limiter.limit("200 per minute")  # 允许更频繁的请求，因为页面会自动刷新
+# @limiter.limit("200 per minute")  # 限流已禁用
 def get_paid_courses_need_scheduling():
     """获取所有已缴费但需要排课的学生课程列表"""
     try:

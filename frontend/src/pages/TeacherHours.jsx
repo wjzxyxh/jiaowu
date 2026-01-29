@@ -562,7 +562,8 @@ const TeacherHours = () => {
       </div>
 
       {/* 表格 */}
-      <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-wrapper">
+        <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
             <th>
@@ -756,6 +757,7 @@ const TeacherHours = () => {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

@@ -3,6 +3,10 @@
   padding: 24px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .page-header {
@@ -22,6 +26,13 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .data-table {
@@ -164,4 +175,121 @@
   text-align: center;
   padding: 40px;
   color: #e74c3c;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .teachers-page {
+    padding: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .toolbar {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .toolbar .btn {
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+
+  .data-table {
+    font-size: 12px;
+    min-width: 800px; /* 确保表格最小宽度，允许横向滚动 */
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 8px 6px;
+    white-space: nowrap;
+  }
+
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) {
+    white-space: normal;
+    word-wrap: break-word;
+    max-width: 120px;
+  }
+
+  .data-table th:nth-child(5),
+  .data-table td:nth-child(5) {
+    white-space: normal;
+    word-wrap: break-word;
+    max-width: 150px;
+  }
+
+  .data-table td .btn {
+    padding: 4px 8px;
+    font-size: 11px;
+    margin: 2px;
+  }
+
+  .status-badge {
+    font-size: 10px;
+    padding: 2px 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .teachers-page {
+    padding: 8px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .toolbar {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .toolbar .btn {
+    font-size: 11px;
+    padding: 6px 12px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .data-table {
+    font-size: 10px;
+    min-width: 700px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 4px;
+  }
+
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) {
+    max-width: 100px;
+  }
+
+  .data-table th:nth-child(5),
+  .data-table td:nth-child(5) {
+    max-width: 120px;
+  }
+
+  .data-table td .btn {
+    padding: 3px 6px;
+    font-size: 10px;
+    margin: 1px;
+    display: block;
+    width: 100%;
+    margin-bottom: 4px;
+  }
+
+  .status-badge {
+    font-size: 9px;
+    padding: 2px 6px;
+  }
+
+  .bio-more-link {
+    font-size: 10px;
+  }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
@@ -189,7 +189,7 @@ const Courses = () => {
 
   // 获取排课数据
   const { data: courses = [], isLoading, error } = useQuery({
-    queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter],
+    queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentIdFromUrl],
     queryFn: () =>
       courseService.getCourses({
         month: monthFilter,
@@ -198,6 +198,7 @@ const Courses = () => {
         classroom: classroomFilter || undefined,
         subject: subjectFilter || undefined,
         grade: gradeFilter || undefined,
+        student_id: studentIdFromUrl || undefined,
       }),
   })
 
@@ -506,7 +507,10 @@ const Courses = () => {
     if (!fromGoToSchedule || hasOpenedGoToScheduleRef.current) return
     hasOpenedGoToScheduleRef.current = true
     queryClient
-      .prefetchQuery(['paid-courses-need-scheduling'], () => studentCoursesService.getPaidCoursesNeedScheduling())
+      .prefetchQuery({
+        queryKey: ['paid-courses-need-scheduling'],
+        queryFn: () => studentCoursesService.getPaidCoursesNeedScheduling(),
+      })
       .then(() => {
         setRestrictStudentsToInitialStudent(true)
         setShowModal(true)
@@ -516,6 +520,140 @@ const Courses = () => {
         setShowModal(true)
       })
   }, [fromGoToSchedule, queryClient])
+
+  // 降级复制方法（兼容旧浏览器）
+  const fallbackCopyTextToClipboard = useCallback((text, count) => {
+    const textArea = document.createElement('textarea')
+    textArea.value = text
+    textArea.style.position = 'fixed'
+    textArea.style.left = '-999999px'
+    textArea.style.top = '-999999px'
+    document.body.appendChild(textArea)
+    textArea.focus()
+    textArea.select()
+    try {
+      const successful = document.execCommand('copy')
+      if (successful) {
+        alert(`已复制 ${count} 条排课信息到剪贴板`)
+      } else {
+        alert('复制失败，请手动复制')
+      }
+    } catch (err) {
+      console.error('降级复制方法失败:', err)
+      alert('复制失败，请手动复制')
+    }
+    document.body.removeChild(textArea)
+  }, [])
+
+  // 复制课程信息到剪贴板的辅助函数
+  const copyCoursesToClipboard = useCallback((coursesToCopy, weekLabel, timeSlotsData) => {
+    if (coursesToCopy.length === 0) return
+    
+    const studentName = coursesToCopy[0].student_name
+    const lines = []
+    if (weekLabel) {
+      // 学生与时间放在同一行，中间两个空格
+      lines.push(`${studentName}  ${weekLabel}`)
+    } else {
+      lines.push(studentName)
+    }
+    lines.push('')
+    
+    // 建立时段名称到 sort_order 的映射（用于按时段排序）
+    const timeSlotOrderMap = new Map()
+    ;(timeSlotsData || []).forEach((slot) => {
+      const order = slot.sort_order !== null && slot.sort_order !== undefined ? slot.sort_order : 999
+      timeSlotOrderMap.set(slot.name, order)
+    })
+    
+    // 星期顺序映射（用于排序）
+    const weekdayOrder = { '周一': 1, '周二': 2, '周三': 3, '周四': 4, '周五': 5, '周六': 6, '周日': 7 }
+    
+    // 按日期、星期和时段排序
+    const sortedCourses = [...coursesToCopy].sort((a, b) => {
+      const dateCompare = (a.course_date || '').localeCompare(b.course_date || '')
+      if (dateCompare !== 0) return dateCompare
+      const weekdayA = weekdayOrder[a.weekday] || 999
+      const weekdayB = weekdayOrder[b.weekday] || 999
+      if (weekdayA !== weekdayB) return weekdayA - weekdayB
+      const orderA = timeSlotOrderMap.get(a.time_slot) ?? 999
+      const orderB = timeSlotOrderMap.get(b.time_slot) ?? 999
+      if (orderA !== orderB) return orderA - orderB
+      return (a.time_slot || '').localeCompare(b.time_slot || '')
+    })
+    
+    // 格式化日期：去掉年份，只保留 MM-DD
+    const formatDateWithoutYear = (dateStr) => {
+      if (!dateStr) return '-'
+      const parts = dateStr.split('-')
+      if (parts.length >= 3) return `${parts[1]}-${parts[2]}`
+      return dateStr
+    }
+    
+    let lastDate = ''
+    sortedCourses.forEach((course, index) => {
+      const dateStr = formatDateWithoutYear(course.course_date)
+      const isNewDate = dateStr !== lastDate
+      
+      // 换了日期：先加分割线（非第一条），再写「日期 星期」单独一行
+      if (isNewDate) {
+        if (lastDate !== '') {
+          lines.push('---')
+        }
+        lines.push(`${dateStr}  ${course.weekday || ''}`)
+      }
+      
+      // 一条课程记录：课程 老师 时段（相邻字段留2个空格）
+      const courseLine = `${course.course_name || '-'}  ${course.teacher_name || '-'}  ${course.time_slot || ''}`
+      lines.push(courseLine)
+      
+      lastDate = dateStr
+    })
+    
+    const textToCopy = lines.join('\n')
+    
+    // 复制到剪贴板
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(textToCopy)
+        .then(() => {
+          alert(`已复制 ${sortedCourses.length} 条排课信息到剪贴板`)
+        })
+        .catch((err) => {
+          console.error('复制失败:', err)
+          fallbackCopyTextToClipboard(textToCopy, sortedCourses.length)
+        })
+    } else {
+      fallbackCopyTextToClipboard(textToCopy, sortedCourses.length)
+    }
+  }, [fallbackCopyTextToClipboard])
+
+  // 复制课程：从 student-courses 点击「复制课程」进入时，复制该学生当周的排课信息到剪贴板
+  const hasCopiedCoursesRef = useRef(false)
+  useEffect(() => {
+    if (!copyCoursesFromUrl || !studentIdFromUrl || hasCopiedCoursesRef.current || isLoading || !validCourses.length) return
+    
+    // 确保只执行一次
+    hasCopiedCoursesRef.current = true
+    
+    // 获取该学生当周的排课数据
+    const studentCourses = validCourses.filter((c) => String(c.student_id) === String(studentIdFromUrl))
+    
+    if (studentCourses.length === 0) {
+      // 延迟一下再检查，可能数据还在加载
+      setTimeout(() => {
+        const coursesNow = validCourses.filter((c) => String(c.student_id) === String(studentIdFromUrl))
+        if (coursesNow.length === 0) {
+          alert('该学生本周暂无排课信息')
+        } else {
+          copyCoursesToClipboard(coursesNow, weekInfoLabel, timeSlots)
+        }
+      }, 500)
+      return
+    }
+    
+    copyCoursesToClipboard(studentCourses, weekInfoLabel, timeSlots)
+  }, [copyCoursesFromUrl, studentIdFromUrl, validCourses, isLoading, weekInfoLabel, copyCoursesToClipboard, timeSlots])
 
   if (isLoading) return <div className="loading">加载中...</div>
   if (error) return <div className="error">加载失败: {error?.response?.data?.error || error?.message}</div>
@@ -635,7 +773,8 @@ const Courses = () => {
       {/* 列表视图 */}
       {viewMode === 'list' && (
         <>
-          <table className="data-table">
+          <div className="table-wrapper">
+            <table className="data-table">
             <thead>
               <tr>
                 <th>
@@ -736,6 +875,7 @@ const Courses = () => {
               )}
             </tbody>
           </table>
+          </div>
           {/* 分页控件 */}
           {totalPages > 1 && (
             <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
@@ -904,7 +1044,8 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
   }, [timeSlots])
 
   return (
-    <table className="data-table" id="week-view-table">
+    <div className="table-wrapper">
+      <table className="data-table" id="week-view-table">
       <thead>
         <tr>
           <th style={{ minWidth: '120px' }}>时段</th>
@@ -1059,6 +1200,7 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
         )}
       </tbody>
     </table>
+    </div>
   )
 }
 

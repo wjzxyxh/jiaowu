@@ -55,24 +55,24 @@ def init_extensions(app):
                                 category=UserWarning,
                                 module='flask_limiter')
     
-    # 初始化Limiter
-    limiter.init_app(app)
+    # 限流已禁用 - 不再初始化Limiter
+    # limiter.init_app(app)
     
-    # 设置默认限制（如果配置中有）
+    # 设置默认限制（如果配置中有）- 已禁用限流
     # Flask-Limiter的default_limits可以是：
     # 1. 字符串列表: ["200 per day", "50 per hour"]
     # 2. 单个字符串（用分号分隔）: "200 per day; 50 per hour"
-    if 'RATELIMIT_DEFAULT' in app.config:
-        default_limits = app.config['RATELIMIT_DEFAULT']
-        if isinstance(default_limits, str):
-            # 如果是字符串，直接使用（Flask-Limiter支持用分号分隔的字符串）
-            limiter.default_limits = default_limits
-        elif isinstance(default_limits, list):
-            # 如果是列表，确保每个元素都是字符串
-            limiter.default_limits = [str(limit) for limit in default_limits]
-        else:
-            # 其他情况，转换为字符串
-            limiter.default_limits = str(default_limits) if default_limits else None
+    # if 'RATELIMIT_DEFAULT' in app.config:
+    #     default_limits = app.config['RATELIMIT_DEFAULT']
+    #     if isinstance(default_limits, str):
+    #         # 如果是字符串，直接使用（Flask-Limiter支持用分号分隔的字符串）
+    #         limiter.default_limits = default_limits
+    #     elif isinstance(default_limits, list):
+    #         # 如果是列表，确保每个元素都是字符串
+    #         limiter.default_limits = [str(limit) for limit in default_limits]
+    #     else:
+    #         # 其他情况，转换为字符串
+    #         limiter.default_limits = str(default_limits) if default_limits else None
     
     # 设置用户加载函数
     @login_manager.user_loader

@@ -133,8 +133,9 @@ const Teachers = () => {
         </button>
       </div>
 
-      <table className="data-table">
-        <thead>
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead>
           <tr>
             <th>ID</th>
             <th>姓名</th>
@@ -192,6 +193,7 @@ const Teachers = () => {
           )}
         </tbody>
       </table>
+      </div>
 
       {/* 新增/编辑教师模态框 */}
       <Modal isOpen={showModal} onClose={handleCloseModal} title={editingTeacher ? '编辑教师' : '新增教师'}>

@@ -41,7 +41,7 @@ from werkzeug.utils import secure_filename
 bp = Blueprint('dashboard', __name__)
 
 @bp.route('/api/dashboard/stats', methods=['GET'])
-@limiter.limit("500 per minute")  # 首页统计数据，允许更频繁的请求
+# @limiter.limit("500 per minute")  # 限流已禁用
 def get_dashboard_stats():
 
     """获取首页统计数据"""

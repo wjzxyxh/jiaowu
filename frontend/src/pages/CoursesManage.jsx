@@ -350,18 +350,19 @@ const CoursesManage = () => {
               新增课程
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>课程</th>
-                <th>科目</th>
-                <th>课程单价</th>
-                <th>课程描述</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>课程</th>
+                  <th>科目</th>
+                  <th>课程单价</th>
+                  <th>课程描述</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
             <tbody>
               {courses.length > 0 ? (
                 courses.map((course) => (
@@ -395,6 +396,7 @@ const CoursesManage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -409,16 +411,17 @@ const CoursesManage = () => {
               新增课程成本
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>教师姓名</th>
-                <th>课程</th>
-                <th>每次课成本</th>
-                <th>操作</th>
-              </tr>
-            </thead>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>教师姓名</th>
+                  <th>课程</th>
+                  <th>每次课成本</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
             <tbody>
               {teacherCosts.length > 0 ? (
                 teacherCosts.map((tc) => (
@@ -449,6 +452,7 @@ const CoursesManage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -463,18 +467,19 @@ const CoursesManage = () => {
               新增经验成本
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>教师姓名</th>
-                <th>课程</th>
-                <th>学生</th>
-                <th>经验（每次课）</th>
-                <th>生效时间段</th>
-                <th>操作</th>
-              </tr>
-            </thead>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>教师姓名</th>
+                  <th>课程</th>
+                  <th>学生</th>
+                  <th>经验（每次课）</th>
+                  <th>生效时间段</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
             <tbody>
               {experienceCosts.length > 0 ? (
                 experienceCosts.map((ec) => {
@@ -523,6 +528,7 @@ const CoursesManage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -1011,7 +1017,8 @@ const HistoryModal = ({ isOpen, onClose, historyData, type }) => {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="操作记录">
       <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-        <table className="data-table" style={{ width: '100%' }}>
+        <div className="table-wrapper">
+          <table className="data-table" style={{ width: '100%' }}>
           <thead>
             <tr>
               <th>操作类型</th>
@@ -1090,6 +1097,7 @@ const HistoryModal = ({ isOpen, onClose, historyData, type }) => {
             })}
           </tbody>
         </table>
+        </div>
       </div>
       <div className="form-actions" style={{ marginTop: '20px' }}>
         <button type="button" className="btn btn-primary" onClick={onClose}>

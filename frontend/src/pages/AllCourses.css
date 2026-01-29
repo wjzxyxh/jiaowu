@@ -4,6 +4,16 @@
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page-header {
@@ -222,4 +232,79 @@
 .status-badge.status-empty {
   background: #f8d7da;
   color: #721c24;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .all-courses-page {
+    padding: 12px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .filter-bar {
+    padding: 8px;
+  }
+
+  .filters-row {
+    gap: 8px;
+  }
+
+  .filters-row input[type="text"] {
+    width: 100px;
+  }
+
+  .data-table {
+    font-size: 12px;
+    min-width: 800px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 4px;
+    white-space: nowrap;
+  }
+
+  .batch-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .btn {
+    font-size: 12px;
+    padding: 5px 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .all-courses-page {
+    padding: 8px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .data-table {
+    font-size: 10px;
+    min-width: 700px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 4px 2px;
+  }
+
+  .btn {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
 }

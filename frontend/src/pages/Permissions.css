@@ -4,6 +4,16 @@
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .page-header {
@@ -382,4 +392,83 @@
   gap: 10px;
   justify-content: flex-end;
   margin-top: 20px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .permissions-page {
+    padding: 12px;
+  }
+
+  .page-header h1 {
+    font-size: 20px;
+  }
+
+  .admin-tabs {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .admin-tab {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .users-table {
+    font-size: 12px;
+    min-width: 700px;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 8px 6px;
+    white-space: nowrap;
+  }
+
+  .permissions-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .permission-card {
+    padding: 12px;
+  }
+
+  .btn {
+    font-size: 12px;
+    padding: 6px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .permissions-page {
+    padding: 8px;
+  }
+
+  .page-header h1 {
+    font-size: 18px;
+  }
+
+  .admin-tab {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+
+  .users-table {
+    font-size: 10px;
+    min-width: 600px;
+  }
+
+  .users-table th,
+  .users-table td {
+    padding: 6px 4px;
+  }
+
+  .permission-card {
+    padding: 10px;
+  }
+
+  .permission-name {
+    font-size: 14px;
+  }
 }

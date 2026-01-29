@@ -445,7 +445,8 @@ const OthersManage = () => {
               )}
             </div>
           ) : (
-            <table className="data-table">
+            <div className="table-wrapper">
+              <table className="data-table">
               <thead>
                 <tr>
                   <th>ID</th>
@@ -510,8 +511,9 @@ const OthersManage = () => {
                     </td>
                   </tr>
                 )}
-              </tbody>
-            </table>
+            </tbody>
+          </table>
+          </div>
           )}
         </div>
       )}
@@ -530,17 +532,18 @@ const OthersManage = () => {
               新增教室
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>教室名称</th>
-                <th>排序</th>
-                <th>状态</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>教室名称</th>
+                  <th>排序</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
               {classrooms.length > 0 ? (
                 classrooms.map((classroom) => (
                   <tr key={classroom.id}>
@@ -571,6 +574,7 @@ const OthersManage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -582,16 +586,17 @@ const OthersManage = () => {
               刷新
             </button>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th>配置项</th>
-                <th>说明</th>
-                <th>当前值</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
+          <div className="table-wrapper">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>配置项</th>
+                  <th>说明</th>
+                  <th>当前值</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
               {financeConfigs.length > 0 ? (
                 financeConfigs.map((config) => {
                   const configName =
@@ -624,6 +629,7 @@ const OthersManage = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

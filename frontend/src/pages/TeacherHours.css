@@ -3,6 +3,10 @@
   padding: 24px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 .month-input {
@@ -68,4 +72,129 @@
 .data-table td:nth-child(4) {
   width: 250px;
   max-width: 280px;
+}
+
+/* 表格容器，允许横向滚动 */
+.table-wrapper {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .teacher-hours-page {
+    padding: 12px;
+  }
+
+  .tabs {
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .tab {
+    padding: 8px 16px;
+    font-size: 14px;
+  }
+
+  .toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .toolbar input,
+  .toolbar select,
+  .toolbar button {
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  .data-table {
+    font-size: 12px;
+    min-width: 800px; /* 确保表格最小宽度，允许横向滚动 */
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 6px 4px;
+    white-space: nowrap;
+  }
+
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) {
+    width: 200px;
+    max-width: 200px;
+    white-space: normal;
+    word-wrap: break-word;
+  }
+
+  .data-table td textarea {
+    width: 120px !important;
+    font-size: 11px;
+  }
+
+  .data-table td input[type="number"] {
+    width: 60px !important;
+    font-size: 11px;
+    padding: 2px;
+  }
+}
+
+@media (max-width: 480px) {
+  .teacher-hours-page {
+    padding: 8px;
+  }
+
+  .tabs {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .tab {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
+  .toolbar {
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+
+  .toolbar input,
+  .toolbar select,
+  .toolbar button {
+    font-size: 11px;
+    padding: 5px 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .data-table {
+    font-size: 10px;
+    min-width: 700px;
+  }
+
+  .data-table th,
+  .data-table td {
+    padding: 4px 2px;
+  }
+
+  .data-table th:nth-child(4),
+  .data-table td:nth-child(4) {
+    width: 150px;
+    max-width: 150px;
+    font-size: 9px;
+  }
+
+  .data-table td textarea {
+    width: 100px !important;
+    font-size: 10px;
+    min-height: 30px;
+  }
+
+  .data-table td input[type="number"] {
+    width: 50px !important;
+    font-size: 10px;
+  }
 }

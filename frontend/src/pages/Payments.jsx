@@ -398,7 +398,8 @@ const Payments = () => {
       {/* 缴费记录视图 */}
       {viewMode === 'record' && (
         <div id="payment-record-view">
-          <table className="data-table">
+          <div className="table-wrapper">
+            <table className="data-table">
             <thead>
               <tr>
                 <th>序号</th>
@@ -508,6 +509,7 @@ const Payments = () => {
               )}
             </tbody>
           </table>
+          </div>
 
           {/* 分页控件 */}
           {totalPages > 1 && (
@@ -549,7 +551,8 @@ const Payments = () => {
       {/* 缴费提醒视图 */}
       {viewMode === 'reminder' && (
         <div id="payment-reminder-view">
-          <table className="data-table">
+          <div className="table-wrapper">
+            <table className="data-table">
             <thead>
               <tr>
                 <th>学生</th>
@@ -608,6 +611,7 @@ const Payments = () => {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

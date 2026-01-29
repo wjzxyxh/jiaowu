@@ -179,7 +179,8 @@ const Stats = () => {
       </div>
 
       {/* 表格 */}
-      <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="table-wrapper">
+        <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr>
             <th>姓名</th>
@@ -225,6 +226,7 @@ const Stats = () => {
           )}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }

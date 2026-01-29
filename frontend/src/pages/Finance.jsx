@@ -152,7 +152,8 @@ const Finance = () => {
           <div style={{ marginBottom: '15px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#333', fontSize: '14px' }}>缴费明细</h4>
             {detail.paid_list && detail.paid_list.length > 0 ? (
-              <table className="revenue-detail-table">
+              <div className="table-wrapper">
+                <table className="revenue-detail-table">
                 <thead>
                   <tr>
                     <th>日期</th>
@@ -181,6 +182,7 @@ const Finance = () => {
                   </tr>
                 </tbody>
               </table>
+              </div>
             ) : (
               <p style={{ color: '#999', margin: '10px 0' }}>暂无缴费记录</p>
             )}
@@ -189,7 +191,8 @@ const Finance = () => {
           <div style={{ marginBottom: '15px' }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#333', fontSize: '14px' }}>退费明细</h4>
             {detail.refund_list && detail.refund_list.length > 0 ? (
-              <table className="revenue-detail-table">
+              <div className="table-wrapper">
+                <table className="revenue-detail-table">
                 <thead>
                   <tr>
                     <th>日期</th>
@@ -218,6 +221,7 @@ const Finance = () => {
                   </tr>
                 </tbody>
               </table>
+              </div>
             ) : (
               <p style={{ color: '#999', margin: '10px 0' }}>暂无退费记录</p>
             )}
@@ -252,7 +256,8 @@ const Finance = () => {
           <div>
             <h4 style={{ margin: '0 0 10px 0', color: '#333', fontSize: '14px' }}>学生课耗明细</h4>
             {detail.student_list && detail.student_list.length > 0 ? (
-              <table className="revenue-detail-table">
+              <div className="table-wrapper">
+                <table className="revenue-detail-table">
                 <thead>
                   <tr>
                     <th>学生</th>
@@ -355,6 +360,7 @@ const Finance = () => {
                   </tr>
                 </tbody>
               </table>
+              </div>
             ) : (
               <p style={{ color: '#999', margin: '10px 0' }}>暂无学生课耗记录</p>
             )}
@@ -509,7 +515,8 @@ const Finance = () => {
           <div className="tab-content active">
             <div className="finance-section">
               <h3>成本表</h3>
-              <table className="cost-table">
+              <div className="table-wrapper">
+                <table className="cost-table">
                 <thead>
                   <tr>
                     <th>成本项目</th>
@@ -657,6 +664,7 @@ const Finance = () => {
                   </tr>
                 </tbody>
               </table>
+            </div>
             </div>
           </div>
         )}

@@ -21,7 +21,7 @@ def login_page():
 
 @bp.route('/api/login', methods=['POST'])
 @csrf.exempt  # JSON API 端点豁免 CSRF 检查
-@limiter.limit("5 per minute")  # 防止暴力破解
+# @limiter.limit("5 per minute")  # 限流已禁用
 def login():
     """用户登录"""
     try:
@@ -137,7 +137,7 @@ def logout():
 
 
 @bp.route('/api/current-user', methods=['GET'])
-@limiter.limit("500 per minute")  # 增加限制，允许更频繁的请求，因为页面刷新时会调用
+# @limiter.limit("500 per minute")  # 限流已禁用
 @login_required
 def get_current_user():
     """获取当前登录用户信息"""

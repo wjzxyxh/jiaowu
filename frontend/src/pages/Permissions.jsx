@@ -308,7 +308,8 @@ const Permissions = () => {
                   新增子管理员
                 </button>
               </div>
-              <table className="users-table">
+              <div className="table-wrapper">
+                <table className="users-table">
                 <thead>
                   <tr>
                     <th>ID</th>
@@ -371,6 +372,7 @@ const Permissions = () => {
                   )}
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         )}

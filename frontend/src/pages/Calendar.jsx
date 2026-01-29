@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { calendarService } from '../services/calendarService'
 import { studentService } from '../services/studentService'
@@ -164,7 +164,7 @@ const Calendar = () => {
   if (error) return <div className="error">加载失败: {error?.response?.data?.error || error?.message}</div>
 
   return (
-    <div className="calendar-page" style={{ width: '100%' }}>
+    <div className="calendar-page">
       <div className="page-header">
         <h1>课程表日历</h1>
       </div>

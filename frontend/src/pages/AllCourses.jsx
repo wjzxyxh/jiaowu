@@ -543,8 +543,9 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
         </div>
       </div>
 
-      <table className="data-table">
-        <thead>
+      <div className="table-wrapper">
+        <table className="data-table">
+          <thead>
           <tr>
             <th>
               <input
@@ -667,6 +668,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
           )}
         </tbody>
       </table>
+      </div>
 
       {totalPages > 1 && (
         <div className="pagination">
