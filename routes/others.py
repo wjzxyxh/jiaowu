@@ -78,10 +78,10 @@ def get_all_courses():
         # 确认状态：'' 全部 | 'true' 已确认 | 'false' 未确认
         filter_is_confirmed = request.args.get('is_confirmed', '')
         
-        # 获取排序参数（升序asc或降序desc，默认为desc）
-        order_by = request.args.get('order_by', 'desc').lower()
+        # 获取排序参数（升序asc或降序desc，默认为asc）
+        order_by = request.args.get('order_by', 'asc').lower()
         if order_by not in ['asc', 'desc']:
-            order_by = 'desc'  # 默认降序
+            order_by = 'asc'  # 默认升序
 
         
 
@@ -93,7 +93,9 @@ def get_all_courses():
 
         ).filter(
 
-            StudentCourse.status != '删除'
+            StudentCourse.status != '删除',
+
+            StudentCourse.marketing_lead_id.is_(None)
 
         )
 

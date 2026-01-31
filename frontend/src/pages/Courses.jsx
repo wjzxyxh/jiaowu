@@ -18,67 +18,102 @@ const Courses = () => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const studentIdFromUrl = searchParams.get('student_id')
   const courseIdFromUrl = searchParams.get('course_id')
   const copyCoursesFromUrl = searchParams.get('copy_courses') === 'true'
   const fromGoToSchedule = !!(studentIdFromUrl && courseIdFromUrl && !copyCoursesFromUrl)
+  const monthFromUrl = searchParams.get('month')
+  const weekFromUrl = searchParams.get('week')
 
-  // 计算当前日期所在的周数
-  const getWeekInMonth = (date) => {
-    const year = date.getFullYear()
-    const month = date.getMonth()
-    const dayOfMonth = date.getDate()
-
-    // 获取该月1号
-    const firstDay = new Date(year, month, 1)
-    const firstDayWeekday = firstDay.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
-
-    if (firstDayWeekday === 0) {
-      // 1号是周日，第1周只有1号
-      if (dayOfMonth === 1) {
-        return 1
-      } else {
-        // 从第2周开始
-        const firstMonday = new Date(year, month, 2)
-        const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
-        const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
-        return Math.min(weekNum, 5)
-      }
-    } else {
-      // 找到第一个周日
-      // 计算到周日需要多少天：7 - firstDayWeekday
-      // 例如：周一(1)->6天到周日, 周二(2)->5天, ..., 周六(6)->1天
-      const daysToSunday = 7 - firstDayWeekday
-      const firstSunday = new Date(year, month, 1 + daysToSunday)
-
-      if (dayOfMonth <= firstSunday.getDate()) {
-        // 在第1周内（1号到第一个周日）
-        return 1
-      } else {
-        // 在第2周及以后
-        // 找到第一个周一
-        const daysToMonday = 7 - firstDayWeekday // 1=周二->6天, 2=周三->5天, ..., 6=周日->1天
-        const firstMonday = new Date(year, month, 1 + daysToMonday)
-        const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
-        const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
-        return Math.min(weekNum, 5)
-      }
-    }
+  // 获取当月第一个周一（每月第一周从当月的第一个周一开始算起）
+  const getFirstMondayOfMonth = (year, monthNum) => {
+    const firstDay = new Date(year, monthNum - 1, 1)
+    const dayOfWeek = firstDay.getDay() // 0=周日, 1=周一, ..., 6=周六
+    const offset = (8 - dayOfWeek) % 7 // 周一->0, 周日->1, 周二->6, ...
+    const firstMonday = new Date(year, monthNum - 1, 1 + offset)
+    return firstMonday
   }
 
-  // 初始化当前日期所在的月份和周数（只在组件首次加载时计算一次）
+  // 计算当前月的周数范围（第一周 = 当月第一个周一所在周）
+  const getWeekRange = (month) => {
+    const [year, monthNum] = month.split('-').map(Number)
+    const firstMonday = getFirstMondayOfMonth(year, monthNum)
+    const lastDay = new Date(year, monthNum, 0)
+    const diffMs = lastDay.getTime() - firstMonday.getTime()
+    const maxWeeks = Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1)
+    return Array.from({ length: maxWeeks }, (_, i) => (i + 1).toString())
+  }
+
+  // 计算当前日期所在的周数（第一周 = 当月第一个周一所在的那一周）
+  const getWeekInMonth = (date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth() + 1
+    const firstMonday = getFirstMondayOfMonth(year, month)
+    if (date < firstMonday) return 1
+    const diffMs = date.getTime() - firstMonday.getTime()
+    const weekNum = 1 + Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000))
+    return Math.max(1, weekNum)
+  }
+
+  // 获取「包含给定日期」的那一周所在的月份和周数（周一到周日为一周；如 2 月 1 日周日属于 1 月第 4 周）
+  const getMonthAndWeekContainingDate = (date) => {
+    const dayOfWeek = date.getDay()
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const mondayOfWeek = new Date(date)
+    mondayOfWeek.setDate(date.getDate() - daysToMonday)
+    const year = mondayOfWeek.getFullYear()
+    const month = mondayOfWeek.getMonth() + 1
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`
+    const week = getWeekInMonth(mondayOfWeek)
+    return { currentMonth: monthStr, currentWeek: week.toString() }
+  }
+
+  // 初始化当前日期所在的月份和周数（优先用 URL 的 month/week，刷新后保持当前课表）
   const initialWeekState = useMemo(() => {
     const today = new Date()
-    const currentMonth = today.toISOString().slice(0, 7)
-    const currentWeek = getWeekInMonth(today)
-    return { currentMonth, currentWeek: currentWeek.toString() }
-  }, [])
+    const { currentMonth: defaultMonth, currentWeek: defaultWeek } = getMonthAndWeekContainingDate(today)
+    if (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl)) {
+      const weekOpts = getWeekRange(monthFromUrl)
+      let w
+      if (weekFromUrl != null && weekFromUrl !== '') {
+        w = weekFromUrl
+      } else {
+        // 未指定周时，使用包含今天的周（若该周在本月范围内）
+        const { currentMonth: curMonth, currentWeek: curWeek } = getMonthAndWeekContainingDate(today)
+        if (curMonth === monthFromUrl && weekOpts.includes(curWeek)) {
+          w = curWeek
+        } else {
+          w = weekOpts[0]
+        }
+      }
+      if (weekOpts.includes(String(w))) {
+        return { currentMonth: monthFromUrl, currentWeek: String(w) }
+      }
+    }
+    return { currentMonth: defaultMonth, currentWeek: defaultWeek }
+  }, [monthFromUrl, weekFromUrl])
 
-  // 视图模式：'list' 或 'week'，默认星期模式
   const [viewMode, setViewMode] = useState('week')
   const [weekFilter, setWeekFilter] = useState(initialWeekState.currentWeek)
   const [monthFilter, setMonthFilter] = useState(initialWeekState.currentMonth)
+
+  // URL 无 month/week 或无效时，同步到当前日期所在周；导航回 /courses 时也正确显示当前周
+  useEffect(() => {
+    setMonthFilter(initialWeekState.currentMonth)
+    setWeekFilter(initialWeekState.currentWeek)
+  }, [initialWeekState.currentMonth, initialWeekState.currentWeek])
+
+  // 同步课表月份/周数到 URL，刷新后保持在当前课表
+  useEffect(() => {
+    if (!monthFilter || !weekFilter) return
+    const next = new URLSearchParams(searchParams)
+    if (next.get('month') !== monthFilter || next.get('week') !== weekFilter) {
+      next.set('month', monthFilter)
+      next.set('week', weekFilter)
+      setSearchParams(next, { replace: true })
+    }
+  }, [monthFilter, weekFilter, searchParams, setSearchParams])
   const [teacherFilter, setTeacherFilter] = useState('')
   const [classroomFilter, setClassroomFilter] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('')
@@ -97,95 +132,19 @@ const Courses = () => {
   const [screenshotTarget, setScreenshotTarget] = useState(null) // 截图用：{ weekInfoLabel, monthFilter, weekFilter, courses, timeSlots }
   const screenshotCaptureRef = useRef(null)
 
-  // 计算当前月的周数范围（与原 Flask 逻辑一致）
-  const getWeekRange = (month) => {
-    const [year, monthNum] = month.split('-').map(Number)
-    const firstDay = new Date(year, monthNum - 1, 1)
-    const firstDayWeekday = firstDay.getDay()
-    const lastDay = new Date(year, monthNum, 0)
-    const daysInMonth = lastDay.getDate()
-
-    let maxWeeks = 1
-
-    if (firstDayWeekday === 0) {
-      // 1号是周日，第1周只有1号
-      const firstMonday = new Date(year, monthNum - 1, 2)
-      let currentMonday = new Date(firstMonday)
-      let weekNum = 2
-
-      while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
-        maxWeeks = weekNum
-        currentMonday = new Date(currentMonday)
-        currentMonday.setDate(currentMonday.getDate() + 7)
-        weekNum++
-      }
-    } else {
-      // 第1周：1号到第一个周日
-      maxWeeks = 1
-
-      const daysToMonday = 7 - firstDayWeekday
-      const firstMonday = new Date(year, monthNum - 1, 1 + daysToMonday)
-      let currentMonday = new Date(firstMonday)
-      let weekNum = 2
-
-      while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
-        maxWeeks = weekNum
-        currentMonday = new Date(currentMonday)
-        currentMonday.setDate(currentMonday.getDate() + 7)
-        weekNum++
-      }
-    }
-
-    return Array.from({ length: maxWeeks }, (_, i) => (i + 1).toString())
-  }
-
   const weekOptions = getWeekRange(monthFilter)
 
-  // 计算当前周的日期范围（用于显示周信息）
+  // 计算当前周的日期范围（第一周 = 当月第一个周一，周一到周日）
   const getCurrentWeekDateRange = () => {
     if (!monthFilter || !weekFilter) return null
 
     const [year, month] = monthFilter.split('-').map(Number)
     const weekNum = parseInt(weekFilter)
-    const firstDay = new Date(year, month - 1, 1)
-    const firstDayWeekday = firstDay.getDay()
-    const lastDay = new Date(year, month, 0)
-    const monthEnd = lastDay.getDate()
-
-    let startDate, endDate
-
-    if (weekNum === 1) {
-      if (firstDayWeekday === 0) {
-        startDate = new Date(year, month - 1, 1)
-        endDate = new Date(year, month - 1, 1)
-      } else {
-        const daysToSunday = 7 - firstDayWeekday
-        const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
-        startDate = new Date(year, month - 1, 1)
-        endDate = new Date(year, month - 1, firstSundayDate)
-      }
-    } else {
-      let daysToMonday
-      if (firstDayWeekday === 0) {
-        daysToMonday = 1
-      } else if (firstDayWeekday === 1) {
-        daysToMonday = 0
-      } else {
-        daysToMonday = 8 - firstDayWeekday
-      }
-
-      const firstMondayDate = 1 + daysToMonday
-      const startDateNum = firstMondayDate + (weekNum - 2) * 7
-
-      if (startDateNum > monthEnd) {
-        return null
-      }
-
-      startDate = new Date(year, month - 1, startDateNum)
-      const endDateNum = Math.min(startDateNum + 6, monthEnd)
-      endDate = new Date(year, month - 1, endDateNum)
-    }
-
+    const firstMonday = getFirstMondayOfMonth(year, month)
+    const startDate = new Date(firstMonday)
+    startDate.setDate(startDate.getDate() + (weekNum - 1) * 7)
+    const endDate = new Date(startDate)
+    endDate.setDate(endDate.getDate() + 6)
     return { startDate, endDate, year, month }
   }
 
@@ -194,7 +153,7 @@ const Courses = () => {
     ? `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${weekFilter}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
     : ''
 
-  // 获取排课数据（筛选学生优先用筛选栏选择，其次用 URL 的 student_id）
+  // 获取排课数据
   const { data: courses = [], isLoading, error } = useQuery({
     queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter || studentIdFromUrl],
     queryFn: () =>
@@ -819,7 +778,19 @@ const Courses = () => {
         <button className="btn btn-secondary" onClick={() => setShowCopyModal(true)}>
           复制到指定周
         </button>
-        <CopyToNextWeekButton courses={validCourses} selectedIds={selectedIds} monthFilter={monthFilter} weekFilter={weekFilter} onSuccess={() => queryClient.invalidateQueries(['courses'])} />
+        <CopyToNextWeekButton
+          courses={validCourses}
+          selectedIds={selectedIds}
+          monthFilter={monthFilter}
+          weekFilter={weekFilter}
+          onSuccess={(nextMonth, nextWeek) => {
+            queryClient.invalidateQueries(['courses'])
+            if (nextMonth != null && nextWeek != null) {
+              setMonthFilter(nextMonth)
+              setWeekFilter(nextWeek)
+            }
+          }}
+        />
         <button className="btn btn-secondary" onClick={handleScreenshot} title="截取当前周课表（星期模式）为图片" style={{ background: '#28a745', color: '#fff', borderColor: '#28a745' }}>
           截图
         </button>
@@ -1089,7 +1060,7 @@ const Courses = () => {
           let d = new Date(weekRange.startDate)
           const endTime = weekRange.endDate.getTime()
           while (d.getTime() <= endTime) {
-            dateMap[weekdayMap[d.getDay()]] = `${weekRange.year}-${String(weekRange.month).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            dateMap[weekdayMap[d.getDay()]] = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             d.setDate(d.getDate() + 1)
           }
         }
@@ -1227,63 +1198,28 @@ const Courses = () => {
 
 // 星期视图组件
 const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDelete, onEdit, onSelect, selectedIds, isAdmin }) => {
-  // 计算当前周的日期映射
+  // 计算当前周的日期映射（第一周 = 当月第一个周一，周一到周日；日期用实际年月日）
   const dateMap = useMemo(() => {
     if (!monthFilter || !weekFilter) return {}
 
     const [year, month] = monthFilter.split('-').map(Number)
     const weekNum = parseInt(weekFilter)
-    const firstDay = new Date(year, month - 1, 1)
-    const firstDayWeekday = firstDay.getDay()
-    const lastDay = new Date(year, month, 0)
-    const monthEnd = lastDay.getDate()
-
-    let weekStart, weekEnd
-
-    if (weekNum === 1) {
-      if (firstDayWeekday === 0) {
-        weekStart = new Date(year, month - 1, 1)
-        weekEnd = new Date(year, month - 1, 1)
-      } else {
-        const daysToSunday = 7 - firstDayWeekday
-        const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
-        weekStart = new Date(year, month - 1, 1)
-        weekEnd = new Date(year, month - 1, firstSundayDate)
-      }
-    } else {
-      let daysToMonday
-      if (firstDayWeekday === 0) {
-        daysToMonday = 1
-      } else if (firstDayWeekday === 1) {
-        daysToMonday = 0
-      } else {
-        daysToMonday = 8 - firstDayWeekday
-      }
-
-      const firstMondayDate = 1 + daysToMonday
-      const startDateNum = firstMondayDate + (weekNum - 2) * 7
-
-      if (startDateNum <= monthEnd) {
-        weekStart = new Date(year, month - 1, startDateNum)
-        const calculatedEndDateNum = startDateNum + 6
-        const endDateNum = Math.min(calculatedEndDateNum, monthEnd)
-        weekEnd = new Date(year, month - 1, endDateNum)
-      }
-    }
+    const firstMonday = getFirstMondayOfMonth(year, month)
+    const weekStart = new Date(firstMonday)
+    weekStart.setDate(weekStart.getDate() + (weekNum - 1) * 7)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setDate(weekEnd.getDate() + 6)
 
     const weekdayMap = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六' }
     const map = {}
+    let currentDate = new Date(weekStart)
+    const endTime = weekEnd.getTime()
 
-    if (weekStart && weekEnd) {
-      let currentDate = new Date(weekStart)
-      const endTime = weekEnd.getTime()
-
-      while (currentDate.getTime() <= endTime) {
-        const weekday = weekdayMap[currentDate.getDay()]
-        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
-        map[weekday] = dateStr
-        currentDate.setDate(currentDate.getDate() + 1)
-      }
+    while (currentDate.getTime() <= endTime) {
+      const weekday = weekdayMap[currentDate.getDay()]
+      const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`
+      map[weekday] = dateStr
+      currentDate.setDate(currentDate.getDate() + 1)
     }
 
     return map
@@ -1648,7 +1584,7 @@ const CopyToNextWeekButton = ({ courses, selectedIds, monthFilter, weekFilter, o
       }
       alert(message)
 
-      onSuccess()
+      onSuccess(nextWeekMonth, nextWeekNum.toString())
     } catch (err) {
       console.error('复制失败:', err)
       alert('复制失败：' + (err?.message || '未知错误'))
@@ -1664,89 +1600,35 @@ const CopyToNextWeekButton = ({ courses, selectedIds, monthFilter, weekFilter, o
   )
 }
 
-// 辅助函数：计算指定月份和周数的日期范围
+// 辅助：获取当月第一个周一（每月第一周从当月的第一个周一开始算起）
+function getFirstMondayOfMonth(year, monthNum) {
+  const firstDay = new Date(year, monthNum - 1, 1)
+  const dayOfWeek = firstDay.getDay()
+  const offset = (8 - dayOfWeek) % 7
+  return new Date(year, monthNum - 1, 1 + offset)
+}
+
+// 辅助函数：计算指定月份和周数的日期范围（第一周 = 当月第一个周一，周一到周日）
 function getCurrentWeekDateRange(monthFilter, weekFilter) {
   if (!monthFilter || !weekFilter) return null
 
   const [year, month] = monthFilter.split('-').map(Number)
   const weekNum = parseInt(weekFilter)
-  const firstDay = new Date(year, month - 1, 1)
-  const firstDayWeekday = firstDay.getDay()
-  const lastDay = new Date(year, month, 0)
-  const monthEnd = lastDay.getDate()
-
-  let startDate, endDate
-
-  if (weekNum === 1) {
-    if (firstDayWeekday === 0) {
-      startDate = new Date(year, month - 1, 1)
-      endDate = new Date(year, month - 1, 1)
-    } else {
-      const daysToSunday = 7 - firstDayWeekday
-      const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
-      startDate = new Date(year, month - 1, 1)
-      endDate = new Date(year, month - 1, firstSundayDate)
-    }
-  } else {
-    let daysToMonday
-    if (firstDayWeekday === 0) {
-      daysToMonday = 1
-    } else if (firstDayWeekday === 1) {
-      daysToMonday = 0
-    } else {
-      daysToMonday = 8 - firstDayWeekday
-    }
-
-    const firstMondayDate = 1 + daysToMonday
-    const startDateNum = firstMondayDate + (weekNum - 2) * 7
-
-    if (startDateNum > monthEnd) {
-      return null
-    }
-
-    startDate = new Date(year, month - 1, startDateNum)
-    const endDateNum = Math.min(startDateNum + 6, monthEnd)
-    endDate = new Date(year, month - 1, endDateNum)
-  }
-
+  const firstMonday = getFirstMondayOfMonth(year, month)
+  const startDate = new Date(firstMonday)
+  startDate.setDate(startDate.getDate() + (weekNum - 1) * 7)
+  const endDate = new Date(startDate)
+  endDate.setDate(endDate.getDate() + 6)
   return { startDate, endDate, year, month }
 }
 
-// 辅助函数：计算月份周数范围
+// 辅助函数：计算月份周数范围（第一周 = 当月第一个周一所在周）
 function getWeekRange(month) {
   const [year, monthNum] = month.split('-').map(Number)
-  const firstDay = new Date(year, monthNum - 1, 1)
-  const firstDayWeekday = firstDay.getDay()
+  const firstMonday = getFirstMondayOfMonth(year, monthNum)
   const lastDay = new Date(year, monthNum, 0)
-  const daysInMonth = lastDay.getDate()
-
-  let maxWeeks = 1
-
-  if (firstDayWeekday === 0) {
-    const firstMonday = new Date(year, monthNum - 1, 2)
-    let currentMonday = new Date(firstMonday)
-    let weekNum = 2
-
-    while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
-      maxWeeks = weekNum
-      currentMonday = new Date(currentMonday)
-      currentMonday.setDate(currentMonday.getDate() + 7)
-      weekNum++
-    }
-  } else {
-    const daysToMonday = 7 - firstDayWeekday
-    const firstMonday = new Date(year, monthNum - 1, 1 + daysToMonday)
-    let currentMonday = new Date(firstMonday)
-    let weekNum = 2
-
-    while (currentMonday.getDate() <= daysInMonth && weekNum <= 5) {
-      maxWeeks = weekNum
-      currentMonday = new Date(currentMonday)
-      currentMonday.setDate(currentMonday.getDate() + 7)
-      weekNum++
-    }
-  }
-
+  const diffMs = lastDay.getTime() - firstMonday.getTime()
+  const maxWeeks = Math.max(1, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)) + 1)
   return Array.from({ length: maxWeeks }, (_, i) => (i + 1).toString())
 }
 
@@ -2013,6 +1895,7 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
           subject: course.subject || prev.subject,
           time_slot: defaultSchedule.default_time_slot || prev.time_slot,
           weekday: defaultSchedule.default_weekday || prev.weekday,
+          teacher_id: defaultSchedule.default_teacher_id != null ? String(defaultSchedule.default_teacher_id) : prev.teacher_id,
         }))
       })
       .catch(() => {})
@@ -2146,25 +2029,20 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
         subject: course.subject,
       })
 
-      // 加载默认排课设置
+      // 加载默认排课设置（时段、星期、默认上课老师）
       if (courseId && formData.student_id) {
         try {
           const defaultSchedule = await studentCoursesService.getDefaultSchedule(
             parseInt(formData.student_id),
             parseInt(courseId)
           )
-          if (defaultSchedule.default_time_slot) {
-            setFormData((prev) => ({
-              ...prev,
-              time_slot: defaultSchedule.default_time_slot,
-            }))
-          }
-          if (defaultSchedule.default_weekday) {
-            setFormData((prev) => ({
-              ...prev,
-              weekday: defaultSchedule.default_weekday,
-            }))
-          }
+          setFormData((prev) => {
+            const next = { ...prev }
+            if (defaultSchedule.default_time_slot) next.time_slot = defaultSchedule.default_time_slot
+            if (defaultSchedule.default_weekday) next.weekday = defaultSchedule.default_weekday
+            if (defaultSchedule.default_teacher_id != null) next.teacher_id = String(defaultSchedule.default_teacher_id)
+            return next
+          })
         } catch (err) {
           console.error('加载默认设置失败:', err)
         }
@@ -2225,13 +2103,12 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
   const handleSubmit = (e) => {
     e.preventDefault()
 
-    // 检查冲突
     if (conflicts.length > 0) {
       alert('存在课程冲突，无法保存。请修改排课信息后再试。')
       return
     }
 
-    const data = {
+    onSubmit({
       student_id: parseInt(formData.student_id),
       teacher_id: parseInt(formData.teacher_id),
       course_id: formData.course_id ? parseInt(formData.course_id) : null,
@@ -2240,9 +2117,7 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       course_date: formData.course_date,
       time_slot: formData.time_slot || null,
       classroom: formData.classroom || null,
-    }
-
-    onSubmit(data)
+    })
   }
 
   return (
@@ -2290,20 +2165,20 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
           )}
         </div>
         <div className="form-group">
-          <label>课程（已报名课程）</label>
-          <select
-            name="course_id"
-            value={formData.course_id}
-            onChange={(e) => handleCourseChange(e.target.value)}
-          >
-            <option value="">-- 请选择课程（可选）--</option>
-            {filteredCourses.map((c) => (
-              <option key={c.course_id} value={c.course_id}>
-                {c.course_name} ({c.subject}) - 剩余 {c.remaining_hours.toFixed(1)} 小时
-              </option>
-            ))}
-          </select>
-        </div>
+            <label>课程（已报名课程）</label>
+            <select
+              name="course_id"
+              value={formData.course_id}
+              onChange={(e) => handleCourseChange(e.target.value)}
+            >
+              <option value="">-- 请选择课程（可选）--</option>
+              {filteredCourses.map((c) => (
+                <option key={c.course_id} value={c.course_id}>
+                  {c.course_name} ({c.subject}) - 剩余 {c.remaining_hours.toFixed(1)} 小时
+                </option>
+              ))}
+            </select>
+          </div>
         <div className="form-group">
           <label>科目（已报名科目）*</label>
           <select
@@ -2337,11 +2212,12 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
           </select>
         </div>
         <div className="form-group">
-          <label>星期</label>
+          <label>星期 *</label>
           <select
             name="weekday"
             value={formData.weekday}
             onChange={(e) => handleWeekdayChange(e.target.value)}
+            required
           >
             <option value="">-- 请选择星期 --</option>
             <option value="周一">周一</option>
@@ -2366,11 +2242,12 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
           />
         </div>
         <div className="form-group">
-          <label>时段</label>
+          <label>时段 *</label>
           <select
             name="time_slot"
             value={formData.time_slot}
             onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
+            required
           >
             <option value="">-- 请选择时段 --</option>
             {timeSlots.map((slot) => (
@@ -2381,11 +2258,12 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
           </select>
         </div>
         <div className="form-group">
-          <label>教室</label>
+          <label>教室 *</label>
           <select
             name="classroom"
             value={formData.classroom}
             onChange={(e) => setFormData({ ...formData, classroom: e.target.value })}
+            required
           >
             <option value="">-- 请选择教室 --</option>
             {classrooms.map((classroom) => (

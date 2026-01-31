@@ -186,7 +186,9 @@ def _compute_finance_result(month):
 
             StudentCourse.status != '删除',
 
-            StudentCourse.is_confirmed == True  # 只统计已确认的课程
+            StudentCourse.is_confirmed == True,  # 只统计已确认的课程
+
+            StudentCourse.marketing_lead_id.is_(None)
 
         ).all()
 

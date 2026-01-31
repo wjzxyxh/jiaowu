@@ -69,9 +69,10 @@ def create_excel_response(wb, filename):
 @bp.route('/api/export/students', methods=['GET'])
 def export_students():
 
-    """导出学生列表到Excel"""
+    """导出学生列表到Excel（排除营销模块试课占位学生）"""
 
-    students = Student.query.order_by(Student.created_at.desc()).all()
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    students = Student.query.filter(Student.name != TRIAL_PLACEHOLDER_NAME).order_by(Student.created_at.desc()).all()
 
     
 

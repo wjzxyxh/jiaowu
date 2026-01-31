@@ -65,8 +65,9 @@ def get_students():
         if per_page > 100:  # 限制每页最大数量
             per_page = 100
         
-        # 构建查询
-        query = Student.query
+        # 构建查询（排除营销模块试课占位学生，不显示在学生列表）
+        TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+        query = Student.query.filter(Student.name != TRIAL_PLACEHOLDER_NAME)
         
         # 状态筛选
         if status:
@@ -155,7 +156,7 @@ def create_student():
     if not data:
         return jsonify({'error': '请求数据为空'}), 400
     
-    name = data.get('name', '').strip()
+    name = (data.get('name') or '').strip()
     if not name:
         return jsonify({'error': '姓名不能为空'}), 400
     
@@ -163,7 +164,7 @@ def create_student():
         return jsonify({'error': '姓名长度不能超过50个字符'}), 400
     
     # 处理入学日期
-    enrollment_date_str = data.get('enrollment_date', '').strip()
+    enrollment_date_str = (data.get('enrollment_date') or '').strip()
     enrollment_date = None
     if enrollment_date_str:
         try:
@@ -173,14 +174,15 @@ def create_student():
     
     student = Student(
         name=name,
-        grade=data.get('grade', '').strip(),
-        status=data.get('status', '在校'),
-        phone=data.get('phone', '').strip(),
-        parent_name=data.get('parent_name', '').strip(),
-        parent_phone=data.get('parent_phone', '').strip(),
-        address=data.get('address', '').strip(),
-        notes=data.get('notes', '').strip(),
-        enrollment_date=enrollment_date
+        grade=(data.get('grade') or '').strip() or None,
+        status=(data.get('status') or '在校').strip(),
+        phone=(data.get('phone') or '').strip() or None,
+        parent_name=(data.get('parent_name') or '').strip() or None,
+        parent_phone=(data.get('parent_phone') or '').strip() or None,
+        address=(data.get('address') or '').strip() or None,
+        notes=(data.get('notes') or '').strip() or None,
+        enrollment_date=enrollment_date,
+        source=(data.get('source') or '').strip() or None
     )
     
     db.session.add(student)
@@ -225,7 +227,9 @@ def update_student(student_id):
     student.parent_phone = data.get('parent_phone', student.parent_phone).strip() if data.get('parent_phone') else student.parent_phone
     student.address = data.get('address', student.address).strip() if data.get('address') else student.address
     student.notes = data.get('notes', student.notes).strip() if data.get('notes') else student.notes
-    
+    if 'source' in data:
+        student.source = (data.get('source', '') or '').strip() or None
+
     # 处理入学日期
     enrollment_date_str = data.get('enrollment_date', '').strip()
     if enrollment_date_str:
@@ -236,8 +240,38 @@ def update_student(student_id):
     elif 'enrollment_date' in data and data.get('enrollment_date') == '':
         # 如果传入空字符串，表示要清空入学日期
         student.enrollment_date = None
-    
+
+    was_off_campus = (old_data.get('status') == '离校')
+    is_now_off_campus = (student.status == '离校')
+
     db.session.commit()
+
+    # 学生状态改为离校时，缴费页面对应学生的「进行中」改为「暂停排课」；已是「结束」的仍显示结束，不额外处理
+    if is_now_off_campus and not was_off_campus:
+        default_schedules = StudentCourseDefaultSchedule.query.filter_by(student_id=student_id).all()
+        for default_schedule in default_schedules:
+            if not getattr(default_schedule, 'scheduling_paused', False):
+                default_schedule.scheduling_paused = True
+                default_schedule.updated_at = datetime.now()
+                log_operation('students', 'update', 'StudentCourseDefaultSchedule', default_schedule.id,
+                              f'学生离校自动暂停排课 student_id={student_id} course_id={default_schedule.course_id}',
+                              {'scheduling_paused': False}, {'scheduling_paused': True})
+        if default_schedules:
+            db.session.commit()
+
+    # 学生状态改为在校时，缴费页面对应学生的「暂停排课」改为「进行中」；已是「结束」的仍显示结束，不额外处理
+    if not is_now_off_campus and was_off_campus:
+        default_schedules = StudentCourseDefaultSchedule.query.filter_by(student_id=student_id).all()
+        for default_schedule in default_schedules:
+            if getattr(default_schedule, 'scheduling_paused', False):
+                default_schedule.scheduling_paused = False
+                default_schedule.updated_at = datetime.now()
+                log_operation('students', 'update', 'StudentCourseDefaultSchedule', default_schedule.id,
+                              f'学生在校自动恢复排课 student_id={student_id} course_id={default_schedule.course_id}',
+                              {'scheduling_paused': True}, {'scheduling_paused': False})
+        if default_schedules:
+            db.session.commit()
+
     log_operation('students', 'update', 'Student', student.id, student.name, old_data, student.to_dict())
     return jsonify(student.to_dict())
 
@@ -721,6 +755,12 @@ def get_paid_courses_need_scheduling():
                 if default_schedule and getattr(default_schedule, 'scheduling_paused', False):
                     continue
 
+                default_teacher_id = default_schedule.default_teacher_id if default_schedule else None
+                default_teacher_name = ''
+                if default_teacher_id:
+                    t = Teacher.query.get(default_teacher_id)
+                    if t:
+                        default_teacher_name = t.name or ''
                 result_list.append({
                     'student_id': info['student_id'],
                     'student_name': info['student_name'],
@@ -733,6 +773,8 @@ def get_paid_courses_need_scheduling():
                     'remaining_hours': remaining_hours,
                     'default_time_slot': default_schedule.default_time_slot if default_schedule else '',
                     'default_weekday': default_schedule.default_weekday if default_schedule else '',
+                    'default_teacher_id': default_teacher_id,
+                    'default_teacher_name': default_teacher_name,
                     'excluded_from_scheduling': student.excluded_from_scheduling if student else False
                 })
         
@@ -765,19 +807,30 @@ def student_course_default_schedule(student_id, course_id):
             course_id=course_id
         ).first()
         
+        default_teacher_id = default_schedule.default_teacher_id if default_schedule else None
+        default_teacher_name = ''
+        if default_teacher_id:
+            t = Teacher.query.get(default_teacher_id)
+            if t:
+                default_teacher_name = t.name or ''
         return jsonify({
             'student_id': student.id,
             'student_name': student.name,
             'course_id': course.id,
             'course_name': course.name,
             'default_time_slot': default_schedule.default_time_slot if default_schedule else '',
-            'default_weekday': default_schedule.default_weekday if default_schedule else ''
+            'default_weekday': default_schedule.default_weekday if default_schedule else '',
+            'default_teacher_id': default_teacher_id,
+            'default_teacher_name': default_teacher_name
         })
     
     elif request.method == 'PUT':
         data = request.get_json()
         default_time_slot = data.get('default_time_slot', '')
         default_weekday = data.get('default_weekday', '')
+        default_teacher_id = data.get('default_teacher_id')
+        if default_teacher_id is not None:
+            default_teacher_id = int(default_teacher_id) if default_teacher_id else None
         
         # 查找或创建默认设置记录
         default_schedule = StudentCourseDefaultSchedule.query.filter_by(
@@ -789,6 +842,7 @@ def student_course_default_schedule(student_id, course_id):
             # 更新现有记录
             default_schedule.default_time_slot = default_time_slot
             default_schedule.default_weekday = default_weekday
+            default_schedule.default_teacher_id = default_teacher_id
             default_schedule.updated_at = datetime.now()
         else:
             # 创建新记录
@@ -796,7 +850,8 @@ def student_course_default_schedule(student_id, course_id):
                 student_id=student_id,
                 course_id=course_id,
                 default_time_slot=default_time_slot,
-                default_weekday=default_weekday
+                default_weekday=default_weekday,
+                default_teacher_id=default_teacher_id
             )
             db.session.add(default_schedule)
         
@@ -808,7 +863,8 @@ def student_course_default_schedule(student_id, course_id):
                 'student_id': student.id,
                 'course_id': course.id,
                 'default_time_slot': default_time_slot,
-                'default_weekday': default_weekday
+                'default_weekday': default_weekday,
+                'default_teacher_id': default_schedule.default_teacher_id
             })
         except Exception as e:
             db.session.rollback()
@@ -871,6 +927,7 @@ def update_student_course_scheduling_paused(student_id, course_id):
                 course_id=course_id,
                 default_time_slot='',
                 default_weekday='',
+                default_teacher_id=None,
                 scheduling_paused=bool(paused)
             )
             db.session.add(default_schedule)

@@ -170,6 +170,9 @@
   padding: 32px;
   background: #f8f9fa;
   min-height: calc(100vh - 80px);
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* Responsive Design */
@@ -194,6 +197,9 @@
 
   .layout-main {
     padding: 20px;
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
   }
 }
 
@@ -222,5 +228,8 @@
 
   .layout-main {
     padding: 16px;
+    width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
   }
 }

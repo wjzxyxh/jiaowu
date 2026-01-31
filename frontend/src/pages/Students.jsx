@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentService } from '../services/studentService'
+import { marketingService } from '../services/marketingService'
 import Modal from '../components/Modal'
 import './Students.css'
 
@@ -81,11 +82,33 @@ const Students = () => {
   }, [students, allStudentsData])
 
   const deleteMutation = useMutation({
-    mutationFn: studentService.deleteStudent,
-    onSuccess: (data) => {
+    mutationFn: ({ id }) => studentService.deleteStudent(id),
+    onSuccess: async (data, variables) => {
+      if (variables.studentData) {
+        const s = variables.studentData
+        try {
+          await marketingService.createLead({
+            name: s.name,
+            grade: s.grade,
+            source: s.source,
+            status: s.status || '在校',
+            phone: s.phone,
+            parent_name: s.parent_name,
+            parent_phone: s.parent_phone,
+            address: s.address,
+            notes: s.notes,
+            enrollment_date: s.enrollment_date,
+            lead_status: 'draft',
+            saved_at: new Date().toISOString(),
+          })
+          queryClient.invalidateQueries(['marketing-drafts'])
+        } catch (e) {
+          console.warn('恢复至营销待确认名单失败', e)
+        }
+      }
       queryClient.invalidateQueries(['students'])
       queryClient.invalidateQueries(['students-all-grades'])
-      alert(data?.message || '删除成功！已删除学生及其所有相关数据。')
+      alert(data?.message || '删除成功！已删除学生及其所有相关数据；已恢复至营销模块待确认名单。')
     },
     onError: (error) => {
       alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
@@ -134,13 +157,13 @@ const Students = () => {
     return () => clearTimeout(timer)
   }, [queryClient])
 
-  const handleDelete = (id) => {
+  const handleDelete = (student) => {
     if (
       window.confirm(
-        '确定要删除这个学生吗？\n\n注意：删除学生将同时删除以下所有相关数据：\n- 所有排课记录\n- 学生课时统计\n- 缴费记录\n- 老师课时将自动重新计算\n\n此操作不可恢复！'
+        '确定要删除这个学生吗？\n\n注意：删除学生将同时删除以下所有相关数据：\n- 所有排课记录\n- 学生课时统计\n- 缴费记录\n- 老师课时将自动重新计算\n\n删除后该学生将恢复至营销模块待确认名单。'
       )
     ) {
-      deleteMutation.mutate(id)
+      deleteMutation.mutate({ id: student.id, studentData: student })
     }
   }
 
@@ -155,7 +178,7 @@ const Students = () => {
     const formDataObj = Object.fromEntries(formData)
 
     const data = {}
-    const canBeEmptyFields = ['enrollment_date']
+    const canBeEmptyFields = ['enrollment_date', 'source']
 
     for (const [key, value] of Object.entries(formDataObj)) {
       if (value !== null && value !== undefined) {
@@ -418,7 +441,7 @@ const Students = () => {
           ))}
         </select>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+        <label className="enrollment-date-filter" style={{ display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0 }}>
           <span>登记日期:</span>
           <input
             type="date"
@@ -454,14 +477,16 @@ const Students = () => {
         </div>
       )}
 
+      <div className="table-wrapper" style={{ overflowX: 'auto' }}>
       <table className="data-table">
         <thead>
           <tr>
             <th style={{ width: '60px' }}>序号</th>
             <th>姓名</th>
+            <th>来源</th>
             <th>年级</th>
-            <th>登记日期</th>
-            <th>状态</th>
+            <th style={{ minWidth: '110px' }}>登记日期</th>
+            <th style={{ minWidth: '70px' }}>状态</th>
             <th>联系电话</th>
             <th>家长姓名</th>
             <th>操作</th>
@@ -475,6 +500,7 @@ const Students = () => {
                 <tr key={student.id}>
                   <td>{rowIndex}</td>
                   <td>{student.name}</td>
+                  <td>{student.source || '-'}</td>
                   <td>{student.grade || '-'}</td>
                   <td>{student.enrollment_date || '-'}</td>
                   <td>
@@ -488,7 +514,7 @@ const Students = () => {
                     <button className="btn btn-warning" onClick={() => handleEdit(student)}>
                       编辑
                     </button>
-                    <button className="btn btn-danger" onClick={() => handleDelete(student.id)}>
+                    <button className="btn btn-danger" onClick={() => handleDelete(student)}>
                       删除
                     </button>
                   </td>
@@ -497,13 +523,14 @@ const Students = () => {
             })
           ) : (
             <tr>
-              <td colSpan="8" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
+              <td colSpan="9" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
                 {isRateLimit ? '请求过于频繁，请稍后再试' : '暂无学生数据'}
               </td>
             </tr>
           )}
         </tbody>
       </table>
+      </div>
 
       {/* 分页控件 */}
       {pagination.total_pages > 1 && (
@@ -551,6 +578,16 @@ const Students = () => {
               required
               maxLength={50}
             />
+          </div>
+          <div className="form-group">
+            <label>来源</label>
+            <select name="source" defaultValue={editingStudent?.source || ''}>
+              <option value="">请选择</option>
+              <option value="转介绍">转介绍</option>
+              <option value="传单">传单</option>
+              <option value="家教中介">家教中介</option>
+              <option value="其它">其它</option>
+            </select>
           </div>
           <div className="form-group">
             <label>年级</label>

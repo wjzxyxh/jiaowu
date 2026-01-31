@@ -1,0 +1,155 @@
+.marketing-page {
+  width: 100%;
+  min-height: 400px;
+  background: white;
+  padding: 24px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.marketing-page .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.marketing-page .page-header h1 {
+  margin: 0;
+  color: #333;
+}
+
+.marketing-desc {
+  margin-bottom: 20px;
+  color: #666;
+  font-size: 14px;
+}
+
+.marketing-desc a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.marketing-desc a:hover {
+  text-decoration: underline;
+}
+
+.marketing-page .toolbar {
+  margin-bottom: 24px;
+}
+
+.submitted-section,
+.trials-section,
+.drafts-section,
+.schedule-section {
+  margin-top: 24px;
+}
+
+.submitted-section h2,
+.trials-section h2,
+.drafts-section h2,
+.schedule-section h2 {
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  color: #555;
+}
+
+.submitted-section h2 {
+  color: #28a745;
+}
+
+.trials-section h2 {
+  color: #fd7e14;
+}
+
+.schedule-section h2 {
+  color: #17a2b8;
+}
+
+.marketing-page .table-wrapper {
+  overflow-x: auto;
+}
+
+.marketing-page .data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.marketing-page .data-table thead {
+  background: #f5f5f5;
+}
+
+.marketing-page .data-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: bold;
+  border-bottom: 2px solid #ddd;
+}
+
+.marketing-page .data-table td {
+  padding: 12px;
+  border-bottom: 1px solid #eee;
+}
+
+.marketing-page .data-table tbody tr:hover {
+  background: #f9f9f9;
+}
+
+.marketing-page .empty-tip {
+  text-align: center;
+  color: #999;
+  padding: 24px;
+}
+
+.marketing-page .btn-sm {
+  padding: 6px 10px;
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.marketing-page .btn-info {
+  background: #17a2b8;
+  color: white;
+  border-color: #17a2b8;
+}
+
+.marketing-page .btn-info:hover {
+  background: #138496;
+  border-color: #117a8b;
+  color: white;
+}
+
+.marketing-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.marketing-actions .btn {
+  flex: 1;
+  margin: 0 5px;
+}
+
+.marketing-actions .btn:first-child {
+  margin-left: 0;
+}
+
+.marketing-actions .btn:last-child {
+  margin-right: 0;
+}
+
+/* 课表截取区域：确保完整截取，不裁剪 */
+.marketing-timetable-capture {
+  overflow: visible !important;
+}
+
+.marketing-timetable-capture .timetable-grid-wrapper,
+.marketing-timetable-capture .marketing-timetable-wrapper {
+  overflow: visible !important;
+}
+
+/* 试课表页面：避免L型布局，确保内容填满 */
+.timetable-page.marketing-page {
+  width: 100%;
+  max-width: 100%;
+}

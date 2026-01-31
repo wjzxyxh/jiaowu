@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas'
 import { studentCoursesService } from '../services/studentCoursesService'
 import { othersService } from '../services/othersService'
 import { courseService } from '../services/courseService'
+import { teacherService } from '../services/teacherService'
 import Modal from '../components/Modal'
 import './StudentCourses.css'
 
@@ -16,6 +17,7 @@ const StudentCourses = () => {
   const [editingCourse, setEditingCourse] = useState(null)
   const [defaultTimeSlot, setDefaultTimeSlot] = useState('')
   const [defaultWeekday, setDefaultWeekday] = useState('')
+  const [defaultTeacherId, setDefaultTeacherId] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
   // 筛选：是否标记、是否复制、是否截图
@@ -77,6 +79,14 @@ const StudentCourses = () => {
     queryKey: ['time-slots', '启用'],
     queryFn: () => othersService.getTimeSlots({ status: '启用' }),
     staleTime: 10 * 60 * 1000,
+  })
+
+  // 获取老师列表（用于默认上课老师）
+  const { data: teachers = [] } = useQuery({
+    queryKey: ['teachers', '启用'],
+    queryFn: () => teacherService.getTeachers({ status: '启用' }),
+    staleTime: 10 * 60 * 1000,
+    enabled: showModal,
   })
 
   // 预取当前页学生的当周排课数据，便于「复制」时一次点击即可同步复制（在用户手势内）
@@ -258,6 +268,7 @@ const StudentCourses = () => {
     if (showModal && defaultScheduleData) {
       setDefaultTimeSlot(defaultScheduleData.default_time_slot || '')
       setDefaultWeekday(defaultScheduleData.default_weekday || '')
+      setDefaultTeacherId(defaultScheduleData.default_teacher_id != null ? String(defaultScheduleData.default_teacher_id) : '')
     }
   }, [showModal, defaultScheduleData])
 
@@ -268,6 +279,7 @@ const StudentCourses = () => {
     // 重置表单（等待数据加载）
     setDefaultTimeSlot('')
     setDefaultWeekday('')
+    setDefaultTeacherId('')
   }
 
   // 关闭模态框
@@ -276,6 +288,7 @@ const StudentCourses = () => {
     setEditingCourse(null)
     setDefaultTimeSlot('')
     setDefaultWeekday('')
+    setDefaultTeacherId('')
   }
 
   // 保存默认排课设置
@@ -289,6 +302,7 @@ const StudentCourses = () => {
       data: {
         default_time_slot: defaultTimeSlot,
         default_weekday: defaultWeekday,
+        default_teacher_id: defaultTeacherId ? parseInt(defaultTeacherId, 10) : null,
       },
     })
   }
@@ -860,6 +874,7 @@ const StudentCourses = () => {
                     <th style={{ width: '15%' }}>课程</th>
                     <th style={{ width: '12%' }}>默认上课时间</th>
                     <th style={{ width: '10%' }}>默认上课星期</th>
+                    <th style={{ width: '10%' }}>默认上课老师</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>已消耗</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>剩余课时</th>
@@ -886,6 +901,7 @@ const StudentCourses = () => {
                         <td>{course.course_name}</td>
                         <td>{course.default_time_slot || '-'}</td>
                         <td>{course.default_weekday || '-'}</td>
+                        <td>{course.default_teacher_name || '-'}</td>
                         <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
                         <td style={{ textAlign: 'right' }}>{course.consumed_hours || 0}</td>
                         <td style={{ textAlign: 'right' }} className="remaining-hours">
@@ -1134,6 +1150,18 @@ const StudentCourses = () => {
                 <option value="周五">周五</option>
                 <option value="周六">周六</option>
                 <option value="周日">周日</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label>默认上课老师</label>
+              <select value={defaultTeacherId} onChange={(e) => setDefaultTeacherId(e.target.value)}>
+                <option value="">-- 请选择老师 --</option>
+                {Array.isArray(teachers) &&
+                  teachers.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
               </select>
             </div>
             <div className="form-actions">

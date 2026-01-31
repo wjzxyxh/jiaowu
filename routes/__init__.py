@@ -22,6 +22,7 @@ from .notifications import bp as notifications_bp
 from .dashboard import bp as dashboard_bp
 from .debug import bp as debug_bp
 from .permissions import bp as permissions_bp
+from .marketing import bp as marketing_bp
 
 # 所有蓝图列表
 blueprints = [
@@ -45,6 +46,7 @@ blueprints = [
     dashboard_bp,
     debug_bp,
     permissions_bp,
+    marketing_bp,
 ]
 
 __all__ = ['blueprints']

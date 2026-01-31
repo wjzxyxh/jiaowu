@@ -12,8 +12,8 @@ import './Payments.css'
 const Payments = () => {
   const queryClient = useQueryClient()
   const [viewMode, setViewMode] = useState('record') // 'record' 或 'reminder'
-  const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString())
-  const [monthFilter, setMonthFilter] = useState((new Date().getMonth() + 1).toString())
+  const [yearFilter, setYearFilter] = useState('') // 默认全部年份
+  const [monthFilter, setMonthFilter] = useState('') // 默认全部月份
   const [studentFilter, setStudentFilter] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -166,16 +166,49 @@ const Payments = () => {
     }
   }, [processedPayments])
 
+  // 同一学生同一课程（缴费、非结束）的累计剩余课时：按缴费日期从前往后累计（1月28日+1月29日+...）
+  const cumulativeRemainingByKey = useMemo(() => {
+    const byKey = {}
+    for (const p of processedPayments) {
+      if (p.type !== '缴费' || p._status === '结束') continue
+      const key = `${p.student_id}_${p.course_id ?? 'null'}`
+      if (!byKey[key]) byKey[key] = []
+      byKey[key].push(p)
+    }
+    const map = {}
+    for (const key of Object.keys(byKey)) {
+      const list = byKey[key].sort((a, b) => (a.payment_date || '').localeCompare(b.payment_date || ''))
+      map[key] = list.reduce((sum, p) => sum + (p._remainingHours || 0), 0)
+    }
+    return map
+  }, [processedPayments])
+
   // 分页
   const totalPages = Math.ceil(processedPayments.length / perPage)
   const startIndex = (currentPage - 1) * perPage
   const paginatedPayments = processedPayments.slice(startIndex, startIndex + perPage)
 
-  // 缴费提醒数据
+  // 缴费提醒：仅当同一学生同一课程的累计剩余课时 <= 阈值时展示
   const reminderData = useMemo(() => {
     if (viewMode !== 'reminder') return []
-    return statsData.filter((s) => s.remaining_hours < reminderThreshold)
-  }, [viewMode, statsData, reminderThreshold])
+    const list = []
+    const seen = new Set()
+    for (const p of processedPayments) {
+      if (p.type !== '缴费' || p._status === '结束') continue
+      const key = `${p.student_id}_${p.course_id ?? 'null'}`
+      if (seen.has(key)) continue
+      const cumulative = cumulativeRemainingByKey[key] ?? 0
+      if (cumulative > reminderThreshold) continue
+      seen.add(key)
+      list.push({
+        student_id: p.student_id,
+        course_id: p.course_id,
+        student_name: p.student_name,
+        remaining_hours: cumulative,
+      })
+    }
+    return list
+  }, [viewMode, processedPayments, cumulativeRemainingByKey, reminderThreshold])
 
   // Mutations
   const createMutation = useMutation({
@@ -301,6 +334,15 @@ const Payments = () => {
     }
   }
 
+  const clearFilters = () => {
+    setYearFilter('')
+    setMonthFilter('')
+    setStudentFilter('')
+    setTypeFilter('')
+    setStatusFilter('')
+    setCurrentPage(1)
+  }
+
   // 生成年份选项
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
@@ -419,6 +461,9 @@ const Payments = () => {
           <option value="暂停排课">暂停排课</option>
           <option value="结束">结束</option>
         </select>
+        <button className="btn btn-secondary" onClick={clearFilters}>
+          清除筛选
+        </button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
           <button className="btn btn-primary" onClick={handleAddPayment}>
             新增缴费
@@ -524,24 +569,23 @@ const Payments = () => {
                   const remainingCostColor = remainingCost < 0 ? { color: '#dc3545', fontWeight: 'bold' } : {}
                   const remainingCostPrefix = remainingCost < 0 ? '-' : ''
 
-                  const rowStyle = status === '结束' ? { color: '#999', opacity: 0.7 } : {}
-                  const nameStyle =
-                    remainingHours < reminderThreshold && type === '缴费' && status !== '结束'
-                      ? { color: '#ff6b6b', fontWeight: 'bold' }
-                      : {}
-                  const warningText =
-                    remainingHours < reminderThreshold && type === '缴费' && status !== '结束'
-                      ? ` (剩余课时: ${remainingHours.toFixed(2)}，请及时缴费！)`
-                      : ''
+                  const cumulativeKey = `${p.student_id}_${p.course_id ?? 'null'}`
+                  const cumulativeHours = type === '缴费' && status !== '结束' ? (cumulativeRemainingByKey[cumulativeKey] ?? 0) : 0
+                  const hoursLow = cumulativeHours <= reminderThreshold && type === '缴费' && status !== '结束'
+                  const rowStyle =
+                    status === '结束'
+                      ? { color: '#999', opacity: 0.7 }
+                      : hoursLow
+                        ? { color: '#dc3545', backgroundColor: 'rgba(220, 53, 69, 0.08)' }
+                        : {}
 
                   return (
                     <tr key={p.id} style={rowStyle}>
                       <td>{sequenceNumber}</td>
                       <td>{typeBadge}</td>
                       <td>{p.payment_date}</td>
-                      <td style={nameStyle}>
+                      <td>
                         {p.student_name}
-                        {warningText}
                       </td>
                       <td>{p.course_name || '-'}</td>
                       <td>{p.original_amount.toFixed(2)}</td>

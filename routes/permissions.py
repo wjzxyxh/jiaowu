@@ -13,6 +13,7 @@ bp = Blueprint('permissions', __name__)
 # 定义所有功能模块列表（与主页 MODULE_CONFIG 保持一致）
 MODULE_LIST = [
     {'code': 'students', 'name': '学生管理', 'icon': '👥', 'path': '/students'},
+    {'code': 'marketing', 'name': '营销模块', 'icon': '📢', 'path': '/marketing'},
     {'code': 'teachers', 'name': '教师管理', 'icon': '👨‍🏫', 'path': '/teachers'},
     {'code': 'courses_manage', 'name': '课程管理', 'icon': '📚', 'path': '/courses_manage'},
     {'code': 'courses', 'name': '排课管理', 'icon': '📅', 'path': '/courses'},

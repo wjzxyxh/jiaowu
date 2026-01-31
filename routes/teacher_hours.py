@@ -149,7 +149,9 @@ def get_teacher_hours():
 
                 StudentCourse.status != '删除',
 
-                StudentCourse.is_confirmed == True  # 只统计已确认的课程
+                StudentCourse.is_confirmed == True,  # 只统计已确认的课程
+
+                StudentCourse.marketing_lead_id.is_(None)
 
             ).order_by(StudentCourse.student_name, StudentCourse.course_id, StudentCourse.course_date, StudentCourse.time_slot).all()
 
@@ -1065,7 +1067,9 @@ def recalculate_teacher_hours():
 
             StudentCourse.course_id.isnot(None),
 
-            StudentCourse.is_confirmed == True  # 只统计已确认的课程
+            StudentCourse.is_confirmed == True,  # 只统计已确认的课程
+
+            StudentCourse.marketing_lead_id.is_(None)
 
         ).distinct(StudentCourse.teacher_id, StudentCourse.course_id).all()
 
@@ -1104,7 +1108,9 @@ def recalculate_teacher_hours():
 
             StudentCourse.status != '删除',
 
-            StudentCourse.course_id.isnot(None)
+            StudentCourse.course_id.isnot(None),
+
+            StudentCourse.marketing_lead_id.is_(None)
 
         ).distinct(StudentCourse.teacher_id, StudentCourse.course_id).all()
 

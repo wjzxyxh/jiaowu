@@ -10,7 +10,7 @@ from models import (
     TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
     TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
     TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
-    OperationLog, Notification
+    OperationLog, Notification, MarketingLead
 )
 from utils import (
     allowed_file, get_original_filename, get_safe_storage_filename,
@@ -40,6 +40,36 @@ from werkzeug.utils import secure_filename
 
 bp = Blueprint('courses', __name__)
 
+# 试课排课占位学生名称（用于试课学员，不显示在学生列表中）
+TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+
+
+def _get_or_create_trial_placeholder_student():
+    """获取或创建试课排课占位学生"""
+    placeholder = Student.query.filter_by(name=TRIAL_PLACEHOLDER_NAME).first()
+    if not placeholder:
+        placeholder = Student(
+            name=TRIAL_PLACEHOLDER_NAME,
+            grade='',
+            status='离校',
+        )
+        db.session.add(placeholder)
+        db.session.flush()
+    return placeholder
+
+
+def _monday_of_week_containing(d):
+    """返回 d 所在周的周一（周为周一到周日）。"""
+    return d - timedelta(days=d.weekday())
+
+
+def _first_monday_of_month(year, month_num):
+    """返回当月第一个周一（每月第一周从当月的第一个周一开始算起）。"""
+    first_day = date(year, month_num, 1)
+    offset = (7 - first_day.weekday()) % 7  # 0=周一->0, 6=周日->1, 1=周二->6, ...
+    return first_day + timedelta(days=offset)
+
+
 @bp.route('/api/courses', methods=['GET'])
 # @limiter.limit("200 per minute")  # 限流已禁用
 def get_courses():
@@ -63,6 +93,34 @@ def get_courses():
     filter_grade = request.args.get('grade')
 
     filter_student_id = request.args.get('student_id')  # 支持按学生ID筛选
+
+    filter_trial_lead_id = request.args.get('trial_lead_id')  # 支持按试课线索ID筛选
+
+    filter_trial_lead_ids = request.args.get('trial_lead_ids')  # 营销模块：多个线索ID，逗号分隔
+
+    scope_month = request.args.get('scope') == 'month'  # 试课模式：查询整月（用于计算老师课时费）
+
+    scope_leads = request.args.get('scope') == 'leads'  # 营销模块：按多个线索ID查询排课
+
+    
+
+    # 营销模块：按多个线索ID查询排课（不限月份）
+    if filter_trial_lead_ids and scope_leads:
+        try:
+            lead_ids = [int(x.strip()) for x in filter_trial_lead_ids.split(',') if x.strip()]
+        except (ValueError, AttributeError):
+            lead_ids = []
+        if lead_ids:
+            from models import Student
+            query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
+                joinedload(StudentCourse.course)
+            ).filter(
+                StudentCourse.marketing_lead_id.in_(lead_ids),
+                StudentCourse.status != '删除'
+            ).order_by(StudentCourse.course_date.desc(), StudentCourse.time_slot)
+            courses = query.all()
+            return jsonify([c.to_dict() for c in courses])
+        return jsonify([])
 
     
 
@@ -89,6 +147,15 @@ def get_courses():
         if filter_student_id:
 
             query = query.filter(StudentCourse.student_id == filter_student_id)
+
+        if filter_trial_lead_id:
+
+            query = query.filter(StudentCourse.marketing_lead_id == filter_trial_lead_id)
+
+        # 营销模块排课为独立排课，不显示在其它地方；非营销查询时排除 marketing_lead_id
+        else:
+
+            query = query.filter(StudentCourse.marketing_lead_id.is_(None))
 
         return query
 
@@ -166,89 +233,34 @@ def get_courses():
 
             
 
-            # 否则按周查询
-
-            if week_num == 1:
-
-                # 第1周：从1号开始，到第一个周日结束
-
-                # 如果1号是周日，第1周只有1号
-
-                # 如果1号是周一，第1周是1-7号
-
-                # 如果1号是周四，第1周是1-4号
-
-                if first_day_weekday == 6:  # 周日
-
-                    # 1号是周日，第1周只有1号
-
-                    start_date = first_day
-
-                    end_date = first_day
-
-                else:
-
-                    # 找到第一个周日
-
-                    days_to_sunday = 6 - first_day_weekday  # 0=周一->6天到周日, 1=周二->5天, ..., 5=周六->1天
-
-                    first_sunday = first_day + timedelta(days=days_to_sunday)
-
-                    start_date = first_day
-
-                    end_date = min(first_sunday, month_end)
-
-            else:
-
-                # 第2周及以后：从第一个周一开始
-
-                # 找到第一个周一
-
-                if first_day_weekday == 0:  # 周一
-
-                    days_to_monday = 0
-
-                else:
-
-                    days_to_monday = 7 - first_day_weekday  # 1=周二->6天, 2=周三->5天, ..., 6=周日->1天
-
-                
-
-                first_monday = first_day + timedelta(days=days_to_monday)
-
-                
-
-                # 第2周从第一个周一开始，第3周从第二个周一开始，以此类推
-
-                # 一周的结束是周日，所以结束日期是开始日期（周一）+6天
-
-                start_date = first_monday + timedelta(weeks=week_num - 2)
-
-                end_date = start_date + timedelta(days=6)  # 周日
-
-                
-
-                # 确保日期在月份内
-
-                if start_date > month_end:
-
-                    return jsonify([])
-
-                end_date = min(end_date, month_end)
+            # 如果指定了trial_lead_id且scope=month，查询整个月的试课记录（用于试课排课页计算老师课时费）
+            if filter_trial_lead_id and scope_month:
+                from models import Student
+                query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
+                    joinedload(StudentCourse.course)
+                ).filter(
+                    StudentCourse.course_date >= month_start,
+                    StudentCourse.course_date <= month_end,
+                    StudentCourse.status != '删除',
+                    StudentCourse.marketing_lead_id == filter_trial_lead_id
+                )
+                courses = query.all()
+                return jsonify([c.to_dict() for c in courses])
 
             
 
-            # 只查询该月内的数据，并加载课程关联（过滤已删除的学生）
+            # 否则按周查询：第一周 = 当月第一个周一，周一到周日
+            first_monday = _first_monday_of_month(year, month_num)
+            start_date = first_monday + timedelta(weeks=week_num - 1)
+            end_date = start_date + timedelta(days=6)
+
+            # 按周范围查询（不限制在当月内，以便包含跨周的日期如2月1日）
             from models import Student
             query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
                 joinedload(StudentCourse.course)
 
             ).filter(
-
-                StudentCourse.course_date >= month_start,
-
-                StudentCourse.course_date <= month_end,
 
                 StudentCourse.course_date >= start_date,
 
@@ -284,108 +296,21 @@ def get_courses():
 
         except (ValueError, IndexError) as e:
 
-            # 如果格式错误，回退到当前周
-
+            # 如果格式错误，回退到当前周（周一到周日）
             today = date.today()
+            start_date = _monday_of_week_containing(today)
+            end_date = start_date + timedelta(days=6)
 
-            year = today.year
-
-            month_num = today.month
-
-            first_day = date(year, month_num, 1)
-
-            first_day_weekday = first_day.weekday()
-
-            day_of_month = today.day
-
-            month_end = date(year, month_num, calendar.monthrange(year, month_num)[1])
-
-            
-
-            # 计算当前日期是第几周（使用与上面相同的逻辑）
-
-            if first_day_weekday == 6:  # 1号是周日
-
-                if day_of_month == 1:
-
-                    week_num = 1
-
-                    start_date = first_day
-
-                    end_date = first_day
-
-                else:
-
-                    first_monday = first_day + timedelta(days=1)
-
-                    days_from_first_monday = day_of_month - first_monday.day
-
-                    week_num = days_from_first_monday // 7 + 2
-
-                    start_date = first_monday + timedelta(weeks=week_num - 2)
-
-                    end_date = min(start_date + timedelta(days=6), month_end)
-
-            else:
-
-                days_to_sunday = 6 - first_day_weekday
-
-                first_sunday = first_day + timedelta(days=days_to_sunday)
-
-                
-
-                if day_of_month <= first_sunday.day:
-
-                    week_num = 1
-
-                    start_date = first_day
-
-                    end_date = min(first_sunday, month_end)
-
-                else:
-
-                    if first_day_weekday == 0:
-
-                        days_to_monday = 0
-
-                    else:
-
-                        days_to_monday = 7 - first_day_weekday
-
-                    first_monday = first_day + timedelta(days=days_to_monday)
-
-                    days_from_first_monday = day_of_month - first_monday.day
-
-                    week_num = days_from_first_monday // 7 + 2
-
-                    start_date = first_monday + timedelta(weeks=week_num - 2)
-
-                    end_date = min(start_date + timedelta(days=6), month_end)
-
-            
-
-            # 过滤已删除的学生
             from models import Student
             query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-
                 joinedload(StudentCourse.course)
-
             ).filter(
-
                 StudentCourse.course_date >= start_date,
-
                 StudentCourse.course_date <= end_date,
-
                 StudentCourse.status != '删除'
-
             )
-
-            # 应用筛选条件
-
             query = apply_filters(query)
-
             courses = query.all()
-
             return jsonify([c.to_dict() for c in courses])
 
     elif month:
@@ -426,120 +351,21 @@ def get_courses():
 
     else:
 
-        # 默认返回当前周的数据（使用当前日期所在的年月和周）
-
+        # 默认返回当前周的数据（周一到周日）
         today = date.today()
+        start_date = _monday_of_week_containing(today)
+        end_date = start_date + timedelta(days=6)
 
-        year = today.year
-
-        month_num = today.month
-
-        first_day = date(year, month_num, 1)
-
-        first_day_weekday = first_day.weekday()  # 0=Monday, 6=Sunday
-
-        day_of_month = today.day
-
-        month_end = date(year, month_num, calendar.monthrange(year, month_num)[1])
-
-        
-
-        # 计算当前日期是第几周
-
-        if first_day_weekday == 6:  # 1号是周日
-
-            # 第1周只有1号
-
-            if day_of_month == 1:
-
-                week_num = 1
-
-                start_date = first_day
-
-                end_date = first_day
-
-            else:
-
-                # 从第2周开始
-
-                first_monday = first_day + timedelta(days=1)
-
-                days_from_first_monday = day_of_month - first_monday.day
-
-                week_num = days_from_first_monday // 7 + 2
-
-                start_date = first_monday + timedelta(weeks=week_num - 2)
-
-                end_date = min(start_date + timedelta(days=6), month_end)
-
-        else:
-
-            # 找到第一个周日
-
-            days_to_sunday = 6 - first_day_weekday
-
-            first_sunday = first_day + timedelta(days=days_to_sunday)
-
-            
-
-            if day_of_month <= first_sunday.day:
-
-                # 在第1周内（1号到第一个周日）
-
-                week_num = 1
-
-                start_date = first_day
-
-                end_date = min(first_sunday, month_end)
-
-            else:
-
-                # 在第2周及以后
-
-                # 找到第一个周一
-
-                if first_day_weekday == 0:  # 周一
-
-                    days_to_monday = 0
-
-                else:
-
-                    days_to_monday = 7 - first_day_weekday
-
-                first_monday = first_day + timedelta(days=days_to_monday)
-
-                days_from_first_monday = day_of_month - first_monday.day
-
-                week_num = days_from_first_monday // 7 + 2
-
-                start_date = first_monday + timedelta(weeks=week_num - 2)
-
-                end_date = min(start_date + timedelta(days=6), month_end)
-
-        
-
-        # 过滤已删除的学生
         from models import Student
         query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-
             joinedload(StudentCourse.course)
-
         ).filter(
-
             StudentCourse.course_date >= start_date,
-
             StudentCourse.course_date <= end_date,
-
             StudentCourse.status != '删除'
-
         )
-
-        # 应用筛选条件
-
         query = apply_filters(query)
-
         courses = query.all()
-
         return jsonify([c.to_dict() for c in courses])
 
 
@@ -564,9 +390,11 @@ def create_course():
 
         
 
-        # 验证必需字段
+        # 验证必需字段（试课可传 marketing_lead_id 代替 student_id）
 
-        if 'student_id' not in data:
+        is_trial = 'marketing_lead_id' in data and data.get('marketing_lead_id')
+
+        if not is_trial and 'student_id' not in data:
 
             return jsonify({'error': '缺少学生ID'}), 400
 
@@ -584,13 +412,39 @@ def create_course():
 
         
 
-        # 获取学生和教师
+        # 获取学生/试课线索和教师
 
-        student = db.session.get(Student, data['student_id'])
+        if is_trial:
 
-        if not student:
+            lead = db.session.get(MarketingLead, data['marketing_lead_id'])
 
-            return jsonify({'error': f'学生ID {data["student_id"]} 不存在'}), 404
+            if not lead:
+
+                return jsonify({'error': f'营销线索ID {data["marketing_lead_id"]} 不存在'}), 404
+
+            placeholder = _get_or_create_trial_placeholder_student()
+
+            student = placeholder
+
+            student_name = lead.name
+
+            student_grade = lead.grade or ''
+
+            marketing_lead_id = lead.id
+
+        else:
+
+            student = db.session.get(Student, data['student_id'])
+
+            if not student:
+
+                return jsonify({'error': f'学生ID {data["student_id"]} 不存在'}), 404
+
+            student_name = student.name
+
+            student_grade = student.grade or ''
+
+            marketing_lead_id = None
 
         
 
@@ -657,89 +511,15 @@ def create_course():
 
         
 
-        # 计算当前日期所在的周范围（用于检查重复）
+        # 计算当前日期所在的周范围（周一到周日，用于检查重复）
+        week_start = _monday_of_week_containing(course_date)
+        week_end = week_start + timedelta(days=6)
 
-        year = course_date.year
-
-        month_num = course_date.month
-
-        day_of_month = course_date.day
-
-        
-
-        first_day = date(year, month_num, 1)
-
-        first_day_weekday = first_day.weekday()  # 0=Monday, 6=Sunday
-
-        month_end = date(year, month_num, calendar.monthrange(year, month_num)[1])
-
-        
-
-        # 计算当前日期所在的周
-
-        if first_day_weekday == 6:  # 1号是周日
-
-            if day_of_month == 1:
-
-                week_start = first_day
-
-                week_end = first_day
-
-            else:
-
-                first_monday = first_day + timedelta(days=1)
-
-                days_from_first_monday = day_of_month - first_monday.day
-
-                week_num = days_from_first_monday // 7 + 2
-
-                week_start = first_monday + timedelta(weeks=week_num - 2)
-
-                week_end = min(week_start + timedelta(days=6), month_end)
-
-        else:
-
-            days_to_sunday = 6 - first_day_weekday
-
-            first_sunday = first_day + timedelta(days=days_to_sunday)
-
-            
-
-            if day_of_month <= first_sunday.day:
-
-                week_start = first_day
-
-                week_end = min(first_sunday, month_end)
-
-            else:
-
-                if first_day_weekday == 0:  # 周一
-
-                    days_to_monday = 0
-
-                else:
-
-                    days_to_monday = 7 - first_day_weekday
-
-                first_monday = first_day + timedelta(days=days_to_monday)
-
-                days_from_first_monday = day_of_month - first_monday.day
-
-                week_num = days_from_first_monday // 7 + 2
-
-                week_start = first_monday + timedelta(weeks=week_num - 2)
-
-                week_end = min(week_start + timedelta(days=6), month_end)
-
-        
-
-        # 检查同一周内是否已存在相同的记录（学生姓名、星期、课程、时段相同）
+        # 检查同一周内是否已存在相同的记录（学生姓名/线索、星期、课程、时段相同）
 
         time_slot = data.get('time_slot', '')
 
-        existing_course = StudentCourse.query.filter(
-
-            StudentCourse.student_name == student.name,
+        base_dup = StudentCourse.query.filter(
 
             StudentCourse.weekday == weekday,
 
@@ -753,7 +533,23 @@ def create_course():
 
             StudentCourse.status != '删除'
 
-        ).first()
+        )
+
+        if is_trial:
+
+            existing_course = base_dup.filter(
+
+                StudentCourse.marketing_lead_id == marketing_lead_id
+
+            ).first()
+
+        else:
+
+            existing_course = base_dup.filter(
+
+                StudentCourse.student_name == student_name
+
+            ).first()
 
         
 
@@ -805,39 +601,41 @@ def create_course():
 
         
 
-        # 在创建排课记录之前，先检查剩余课时（按课程）
+        # 在创建排课记录之前，试课以外的需检查剩余课时（按课程）
 
-        month = course_date.strftime('%Y-%m')
+        if not is_trial:
 
-        stats = ClassHoursStats.query.filter_by(
+            month = course_date.strftime('%Y-%m')
 
-            student_id=student.id,
+            stats = ClassHoursStats.query.filter_by(
 
-            course_id=course_id,
+                student_id=student.id,
 
-            month=month
+                course_id=course_id,
 
-        ).first()
+                month=month
 
-        
+            ).first()
 
-        # 获取配置的最小排课课时阈值
+            
 
-        min_hours_for_scheduling = get_finance_config('min_hours_for_scheduling', -1)
+            # 获取配置的最小排课课时阈值
 
-        
+            min_hours_for_scheduling = get_finance_config('min_hours_for_scheduling', -1)
 
-        # 检查剩余课时，如果低于配置值则不允许排课
+            
 
-        if stats:
+            # 检查剩余课时，如果低于配置值则不允许排课
 
-            if stats.remaining_hours < min_hours_for_scheduling:
+            if stats:
 
-                return jsonify({
+                if stats.remaining_hours < min_hours_for_scheduling:
 
-                    'error': f'学生 {student.name} 的课程 {course_obj.name} 剩余课时为 {stats.remaining_hours}，低于 {min_hours_for_scheduling}，无法排课。请先缴费！'
+                    return jsonify({
 
-                }), 400
+                        'error': f'学生 {student.name} 的课程 {course_obj.name} 剩余课时为 {stats.remaining_hours}，低于 {min_hours_for_scheduling}，无法排课。请先缴费！'
+
+                    }), 400
 
         
 
@@ -851,9 +649,11 @@ def create_course():
 
             student_id=student.id,
 
-            student_name=student.name,
+            marketing_lead_id=marketing_lead_id,
 
-            grade=student.grade,
+            student_name=student_name,
+
+            grade=student_grade,
 
             course_id=course_id,
 
@@ -1133,9 +933,11 @@ def update_course(course_id):
 
         if course.course_id:
 
-            update_class_hours_stats(course.student_id, month, course.course_id)
+            if not course.marketing_lead_id:
 
-            update_teacher_hours(course.teacher_id, month, course.course_id)
+                update_class_hours_stats(course.student_id, month, course.course_id)
+
+                update_teacher_hours(course.teacher_id, month, course.course_id)
 
     
 
@@ -1184,19 +986,19 @@ def confirm_course(course_id):
 
         
 
-        # 更新课时统计（按课程）
+        # 更新课时统计（按课程，试课不更新学生课时）
 
         month = course.course_date.strftime('%Y-%m')
 
         if course.course_id:
 
-            update_class_hours_stats(course.student_id, month, course.course_id)
+            if not course.marketing_lead_id:
 
-            update_teacher_hours(course.teacher_id, month, course.course_id)
+                update_class_hours_stats(course.student_id, month, course.course_id)
 
-            # 更新财务记录（成本、工资、利润）
+                update_teacher_hours(course.teacher_id, month, course.course_id)
 
-            update_finance_record(month)
+                update_finance_record(month)
 
         
 
@@ -1300,8 +1102,8 @@ def batch_confirm_courses():
             course.is_confirmed = True
             confirmed_count += 1
 
-            # 记录需要更新的学生-课程-月份组合
-            if course.course_id:
+            # 记录需要更新的学生-课程-月份组合（试课不更新学生课时）
+            if course.course_id and not course.marketing_lead_id:
                 month = course.course_date.strftime('%Y-%m')
                 updated_students_courses.add((course.student_id, course.course_id, month))
 
@@ -1311,22 +1113,17 @@ def batch_confirm_courses():
         for student_id, course_id, month in updated_students_courses:
             update_class_hours_stats(student_id, month, course_id)
 
-        # 批量更新老师课时统计
+        # 批量更新老师课时统计（试课不统计老师课时）
         updated_teachers_courses = set()
+        updated_months = set()
         for course in courses:
-            if course.course_id:
+            if course.course_id and not course.marketing_lead_id:
                 month = course.course_date.strftime('%Y-%m')
                 updated_teachers_courses.add((course.teacher_id, course.course_id, month))
+                updated_months.add(month)
 
         for teacher_id, course_id, month in updated_teachers_courses:
             update_teacher_hours(teacher_id, month, course_id)
-
-        # 更新财务记录（成本、工资、利润）- 只更新涉及的月份
-        updated_months = set()
-        for course in courses:
-            if course.course_id:
-                month = course.course_date.strftime('%Y-%m')
-                updated_months.add(month)
 
         for month in updated_months:
             update_finance_record(month)
@@ -1433,8 +1230,8 @@ def batch_cancel_confirm_courses():
             course.is_confirmed = False
             cancelled_count += 1
 
-            # 记录需要更新的学生-课程-月份组合
-            if course.course_id:
+            # 记录需要更新的学生-课程-月份组合（试课不更新学生课时）
+            if course.course_id and not course.marketing_lead_id:
                 month = course.course_date.strftime('%Y-%m')
                 updated_students_courses.add((course.student_id, course.course_id, month))
 
@@ -1444,22 +1241,17 @@ def batch_cancel_confirm_courses():
         for student_id, course_id, month in updated_students_courses:
             update_class_hours_stats(student_id, month, course_id)
 
-        # 批量更新老师课时统计
+        # 批量更新老师课时统计（试课不统计老师课时）
         updated_teachers_courses = set()
+        updated_months = set()
         for course in courses:
-            if course.course_id:
+            if course.course_id and not course.marketing_lead_id:
                 month = course.course_date.strftime('%Y-%m')
                 updated_teachers_courses.add((course.teacher_id, course.course_id, month))
+                updated_months.add(month)
 
         for teacher_id, course_id, month in updated_teachers_courses:
             update_teacher_hours(teacher_id, month, course_id)
-
-        # 更新财务记录（成本、工资、利润）- 只更新涉及的月份
-        updated_months = set()
-        for course in courses:
-            if course.course_id:
-                month = course.course_date.strftime('%Y-%m')
-                updated_months.add(month)
 
         for month in updated_months:
             update_finance_record(month)
@@ -1505,24 +1297,18 @@ def delete_course(course_id):
         student_id = course.student_id
         teacher_id = course.teacher_id
         course_id_for_stats = course.course_id
+        is_trial = bool(course.marketing_lead_id)
 
         # 彻底删除记录
         db.session.delete(course)
         db.session.commit()
 
-        # 只有删除已确认的课程时才更新课时统计
-        # 因为只有已确认的课程才会影响课时统计
-        if was_confirmed:
+        # 只有删除已确认的课程时才更新课时统计（试课不更新学生和老师课时）
+        if was_confirmed and not is_trial and course_id_for_stats:
             month = course_date.strftime('%Y-%m')
-
-            if course_id_for_stats:
-                update_class_hours_stats(student_id, month, course_id_for_stats)
-
-                # 更新老师课时（按课程）
-                update_teacher_hours(teacher_id, month, course_id_for_stats)
-
-                # 更新财务记录（成本、工资、利润）
-                update_finance_record(month)
+            update_class_hours_stats(student_id, month, course_id_for_stats)
+            update_teacher_hours(teacher_id, month, course_id_for_stats)
+            update_finance_record(month)
 
         # 注意：剩余课时只由缴费记录修改，删除排课不直接修改剩余课时
         # 剩余课时会在缴费/退费时自动更新

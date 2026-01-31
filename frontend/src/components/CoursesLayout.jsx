@@ -115,28 +115,21 @@ const CoursesLayout = () => {
   }, [location.pathname, queryClient])
 
   React.useEffect(() => {
-    // 检查URL参数中是否有student_id（从student-courses页面进入时会带这个参数）
     const params = new URLSearchParams(window.location.search)
     const hasStudentId = params.has('student_id')
 
-    // 检查sessionStorage中是否记录了从student-courses进入
     const fromStudentCoursesFlag = sessionStorage.getItem('fromStudentCourses')
 
-    // 如果URL中有student_id参数，说明是从student-courses页面进入的
     if (hasStudentId) {
       setFromStudentCourses(true)
-      // 设置标记，即使URL参数被清除后也能记住来源
       sessionStorage.setItem('fromStudentCourses', 'true')
     } else if (fromStudentCoursesFlag === 'true' && location.pathname === '/courses') {
-      // 如果sessionStorage中有标记且当前在courses页面，保持标记
       setFromStudentCourses(true)
     } else {
-      // 如果不在courses页面，清除标记
       if (location.pathname !== '/courses') {
         sessionStorage.removeItem('fromStudentCourses')
         setFromStudentCourses(false)
       } else {
-        // 在courses页面但没有标记，说明不是从student-courses进入的
         setFromStudentCourses(false)
       }
     }
@@ -221,13 +214,11 @@ const CoursesLayout = () => {
                 e.target.style.transform = 'translateY(0)'
                 e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)'
               }}
-              onClick={async (e) => {
-                // 如果是从student-courses页面进入的，点击返回时自动标记该学生
+              onClick={async () => {
                 if (fromStudentCourses && location.pathname === '/courses') {
                   const studentIdToMark = sessionStorage.getItem('studentIdToMark')
                   if (studentIdToMark) {
                     try {
-                      // 自动标记该学生（排除在排课下拉列表中）
                       await studentCoursesService.updateExcludeFromScheduling(
                         parseInt(studentIdToMark),
                         true
@@ -235,12 +226,9 @@ const CoursesLayout = () => {
                       queryClient.invalidateQueries(['paid-courses-need-scheduling'])
                     } catch (error) {
                       console.error('自动标记学生失败:', error)
-                      // 即使标记失败，也继续跳转
                     }
                     sessionStorage.removeItem('studentIdToMark')
                   }
-                }
-                if (fromStudentCourses) {
                   sessionStorage.removeItem('fromStudentCourses')
                 }
               }}

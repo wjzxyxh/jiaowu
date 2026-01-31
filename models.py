@@ -29,6 +29,7 @@ class Student(db.Model):
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
     enrollment_date = db.Column(db.Date, comment='入学日期')
+    source = db.Column(db.String(50), comment='来源：转介绍、传单、家教中介、其它')
     excluded_from_scheduling = db.Column(db.Boolean, default=False, comment='是否排除在排课下拉列表中')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
@@ -46,8 +47,51 @@ class Student(db.Model):
             'default_time_slot': self.default_time_slot,
             'default_weekday': self.default_weekday,
             'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
+            'source': self.source,
             'excluded_from_scheduling': self.excluded_from_scheduling,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
+        }
+
+
+class MarketingLead(db.Model):
+    """营销模块线索表（待确认/已提交到学生管理）"""
+    __tablename__ = 'marketing_leads'
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False, comment='姓名')
+    grade = db.Column(db.String(20), comment='年级')
+    source = db.Column(db.String(50), comment='来源：转介绍、传单、家教中介、其它')
+    status = db.Column(db.String(20), default='在校', comment='在校状态')
+    phone = db.Column(db.String(20), comment='联系电话')
+    parent_name = db.Column(db.String(50), comment='家长姓名')
+    parent_phone = db.Column(db.String(20), comment='家长电话')
+    address = db.Column(db.String(200), comment='地址')
+    notes = db.Column(db.Text, comment='备注/学习记录')
+    enrollment_date = db.Column(db.Date, comment='登记日期')
+    lead_status = db.Column(db.String(20), default='draft', comment='draft=待确认, trial=试课, submitted=已提交到学生管理')
+    saved_at = db.Column(db.DateTime, comment='暂存时间')
+    submitted_at = db.Column(db.DateTime, comment='提交到学生管理时间')
+    created_at = db.Column(db.DateTime, default=datetime.now)
+    updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'grade': self.grade,
+            'source': self.source,
+            'status': self.status,
+            'phone': self.phone,
+            'parent_name': self.parent_name,
+            'parent_phone': self.parent_phone,
+            'address': self.address,
+            'notes': self.notes,
+            'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
+            'lead_status': self.lead_status,
+            'saved_at': self.saved_at.strftime('%Y-%m-%d %H:%M:%S') if self.saved_at else None,
+            'submitted_at': self.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if self.submitted_at else None,
+            'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
+            'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None,
         }
 
 
@@ -139,9 +183,10 @@ class Course(db.Model):
 class StudentCourse(db.Model):
     """学生课程表"""
     __tablename__ = 'student_courses'
-    
+
     id = db.Column(db.Integer, primary_key=True)
     student_id = db.Column(db.Integer, db.ForeignKey('students.id'), nullable=False)
+    marketing_lead_id = db.Column(db.Integer, db.ForeignKey('marketing_leads.id'), nullable=True, comment='营销线索ID，试课时使用')
     student_name = db.Column(db.String(50), nullable=False, comment='学生姓名')
     grade = db.Column(db.String(20), comment='年级')
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=True, comment='课程ID')
@@ -157,6 +202,7 @@ class StudentCourse(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     student = db.relationship('Student', backref='courses')
+    marketing_lead = db.relationship('MarketingLead', backref='trial_courses')
     teacher = db.relationship('Teacher', backref='courses')
     course = db.relationship('Course', backref='student_courses')
     
@@ -171,6 +217,7 @@ class StudentCourse(db.Model):
         return {
             'id': self.id,
             'student_id': self.student_id,
+            'marketing_lead_id': self.marketing_lead_id,
             'student_name': self.student_name,
             'grade': self.grade,
             'course_id': self.course_id,
@@ -197,6 +244,7 @@ class StudentCourseDefaultSchedule(db.Model):
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
+    default_teacher_id = db.Column(db.Integer, db.ForeignKey('teachers.id'), nullable=True, comment='默认上课老师ID')
     scheduling_paused = db.Column(db.Boolean, default=False, comment='是否暂停排课（进行中时可切换，暂停后不再参与排课）')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
@@ -205,6 +253,7 @@ class StudentCourseDefaultSchedule(db.Model):
     
     student = db.relationship('Student', backref='course_default_schedules')
     course = db.relationship('Course', backref='student_default_schedules')
+    default_teacher = db.relationship('Teacher', foreign_keys=[default_teacher_id], backref='student_default_schedules')
     
     def to_dict(self):
         return {
@@ -213,6 +262,7 @@ class StudentCourseDefaultSchedule(db.Model):
             'course_id': self.course_id,
             'default_time_slot': self.default_time_slot or '',
             'default_weekday': self.default_weekday or '',
+            'default_teacher_id': self.default_teacher_id,
             'scheduling_paused': self.scheduling_paused if self.scheduling_paused is not None else False,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None

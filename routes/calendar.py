@@ -65,8 +65,8 @@ def get_calendar_courses():
         if classroom:
             query = query.filter(StudentCourse.classroom == classroom)
 
-        # 过滤掉已删除的排课记录
-        query = query.filter(StudentCourse.status != '删除')
+        # 过滤掉已删除的排课记录；营销模块排课为独立排课，不显示在其它地方
+        query = query.filter(StudentCourse.status != '删除', StudentCourse.marketing_lead_id.is_(None))
 
         courses = query.order_by(StudentCourse.course_date, StudentCourse.time_slot).all()
 

@@ -601,7 +601,7 @@ const CoursesManage = () => {
             </div>
             <div className="form-group">
               <label>每次课成本 *</label>
-              <input type="number" name="cost_per_class" step="0.01" defaultValue={editingItem.data?.cost_per_class || 0} required min="0" placeholder="请输入每次课的成本" />
+              <input type="number" name="cost_per_class" step="0.01" defaultValue={editingItem.data != null ? editingItem.data.cost_per_class : 145} required min="0" placeholder="请输入每次课的成本" />
             </div>
             <div className="form-actions">
               <button type="button" className="btn" onClick={handleCloseModal}>

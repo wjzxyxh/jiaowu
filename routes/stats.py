@@ -115,7 +115,9 @@ def get_stats():
 
             StudentCourse.status != '删除',
 
-            StudentCourse.is_confirmed == True  # 只显示已确认的课程
+            StudentCourse.is_confirmed == True,  # 只显示已确认的课程
+
+            StudentCourse.marketing_lead_id.is_(None)
 
         ).order_by(StudentCourse.course_date, StudentCourse.time_slot).all()
 
@@ -234,7 +236,8 @@ def debug_student_stats(student_id):
                 StudentCourse.course_date >= start_date,
                 StudentCourse.course_date <= end_date,
                 StudentCourse.status != '删除',
-                StudentCourse.is_confirmed == True
+                StudentCourse.is_confirmed == True,
+                StudentCourse.marketing_lead_id.is_(None)
             ).all()
 
             # 手动计算实际课时（按新规则）

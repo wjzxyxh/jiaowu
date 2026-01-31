@@ -28,8 +28,8 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     date_start: '',
     date_end: '',
     status: '',
-    is_confirmed: '', // '' 全部 | 'true' 已确认 | 'false' 未确认
-    order_by: 'desc',
+    is_confirmed: 'false', // '' 全部 | 'true' 已确认 | 'false' 未确认（默认未确认）
+    order_by: 'asc',
   })
   const [searchInput, setSearchInput] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
@@ -244,8 +244,8 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       date_start: '',
       date_end: '',
       status: '',
-      is_confirmed: '',
-      order_by: 'desc',
+      is_confirmed: 'false',
+      order_by: 'asc',
     })
     setPage(1)
   }
@@ -869,11 +869,12 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
           </select>
         </div>
         <div className="form-group">
-          <label>星期</label>
+          <label>星期 *</label>
           <select
             name="weekday"
             value={formData.weekday}
             onChange={(e) => setFormData({ ...formData, weekday: e.target.value })}
+            required
           >
             <option value="">-- 请选择星期 --</option>
             <option value="周一">周一</option>
@@ -896,11 +897,12 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
           />
         </div>
         <div className="form-group">
-          <label>时段</label>
+          <label>时段 *</label>
           <select
             name="time_slot"
             value={formData.time_slot}
             onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
+            required
           >
             <option value="">-- 请选择时段 --</option>
             {(timeSlots || []).map((slot) => (
@@ -911,11 +913,12 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
           </select>
         </div>
         <div className="form-group">
-          <label>教室</label>
+          <label>教室 *</label>
           <select
             name="classroom"
             value={formData.classroom}
             onChange={(e) => setFormData({ ...formData, classroom: e.target.value })}
+            required
           >
             <option value="">-- 请选择教室 --</option>
             {(classrooms || []).map((room) => (
@@ -1435,11 +1438,12 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
         </div>
 
         <div className="form-group">
-          <label>星期</label>
+          <label>星期 *</label>
           <select
             name="weekday"
             value={formData.weekday}
             onChange={(e) => handleWeekdayChange(e.target.value)}
+            required
           >
             <option value="">-- 请选择星期 --</option>
             <option value="周一">周一</option>
@@ -1464,11 +1468,12 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
         </div>
 
         <div className="form-group">
-          <label>时段</label>
+          <label>时段 *</label>
           <select
             name="time_slot"
             value={formData.time_slot}
             onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
+            required
           >
             <option value="">-- 请选择时段 --</option>
             {(timeSlots || []).map((slot) => (
@@ -1480,11 +1485,12 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
         </div>
 
         <div className="form-group">
-          <label>教室</label>
+          <label>教室 *</label>
           <select
             name="classroom"
             value={formData.classroom}
             onChange={(e) => setFormData({ ...formData, classroom: e.target.value })}
+            required
           >
             <option value="">-- 请选择教室 --</option>
             {(classrooms || []).map((room) => (

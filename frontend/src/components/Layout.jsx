@@ -73,6 +73,8 @@ const Layout = () => {
       '/courses-manage': ['courses-list'],
       '/others-manage': ['classrooms'], // 只刷新classrooms，不刷新time-slots
       '/student-courses': ['paid-courses-need-scheduling'],
+      '/marketing': ['marketing-drafts', 'marketing-schedules'],
+      '/marketing/timetable': ['marketing-schedules'],
       '/permissions': ['users', 'permission-modules'],
     }
 
@@ -201,7 +203,7 @@ const Layout = () => {
           <h1 style={{ margin: 0 }}>教务管理系统</h1>
           {!isHomePage && (
             <Link
-              to={fromStudentCourses && location.pathname === '/courses' ? '/student-courses' : '/'}
+              to={location.pathname === '/marketing/timetable' ? '/marketing' : fromStudentCourses && location.pathname === '/courses' ? '/student-courses' : '/'}
               className="back-home-btn"
               style={{
                 display: 'inline-flex',
@@ -258,7 +260,7 @@ const Layout = () => {
               }}
             >
               <span>←</span>
-              <span>{fromStudentCourses && location.pathname === '/courses' ? '返回学生课程' : '返回首页'}</span>
+              <span>{location.pathname === '/marketing/timetable' ? '返回营销' : fromStudentCourses && location.pathname === '/courses' ? '返回学生课程' : '返回首页'}</span>
             </Link>
           )}
         </div>
@@ -282,6 +284,8 @@ const Layout = () => {
                 '/courses-manage': ['courses-list'],
                 '/others-manage': ['classrooms'], // 只刷新classrooms，不刷新time-slots
                 '/student-courses': ['paid-courses-need-scheduling'],
+                '/marketing': ['marketing-drafts', 'marketing-schedules'],
+                '/marketing/timetable': ['marketing-schedules'],
                 '/permissions': ['users', 'permission-modules'],
               }
 

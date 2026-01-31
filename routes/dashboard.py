@@ -82,7 +82,9 @@ def get_dashboard_stats():
 
                 StudentCourse.status == '正常',
 
-                StudentCourse.course_date >= today
+                StudentCourse.course_date >= today,
+
+                StudentCourse.marketing_lead_id.is_(None)
 
             ).count(),
 
@@ -100,7 +102,9 @@ def get_dashboard_stats():
 
                 StudentCourse.course_date == today,
 
-                StudentCourse.status == '正常'
+                StudentCourse.status == '正常',
+
+                StudentCourse.marketing_lead_id.is_(None)
 
             ).count(),
 
@@ -108,7 +112,9 @@ def get_dashboard_stats():
 
                 StudentCourse.course_date == today + timedelta(days=1),
 
-                StudentCourse.status == '正常'
+                StudentCourse.status == '正常',
+
+                StudentCourse.marketing_lead_id.is_(None)
 
             ).count(),
 

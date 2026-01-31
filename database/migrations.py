@@ -94,6 +94,24 @@ def upgrade_student_table_with_default_schedule():
         traceback.print_exc()
 
 
+def upgrade_student_table_with_source():
+    """升级学生表，添加来源字段（如果不存在）"""
+    try:
+        inspector = inspect(db.engine)
+        if 'students' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('students')]
+            if 'source' not in columns:
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE students ADD COLUMN source VARCHAR(50)'))
+                print('已为学生表添加source字段')
+            else:
+                print('学生表的source字段已存在')
+    except Exception as e:
+        print(f'升级学生表（source）时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def upgrade_student_table():
     """升级学生表，添加照片和更多联系信息字段（如果不存在）"""
     try:
@@ -1119,6 +1137,27 @@ def upgrade_student_course_default_schedule_scheduling_paused():
         traceback.print_exc()
 
 
+def upgrade_student_course_default_schedule_default_teacher_id():
+    """为学生课程默认排课设置表添加 default_teacher_id 字段（默认上课老师）"""
+    try:
+        if not table_exists('student_course_default_schedules'):
+            return
+        if column_exists('student_course_default_schedules', 'default_teacher_id'):
+            print('学生课程默认排课设置表的 default_teacher_id 字段已存在')
+            return
+        if is_sqlite():
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN default_teacher_id INTEGER REFERENCES teachers(id)'))
+        else:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN default_teacher_id INT NULL'))
+        print('已为学生课程默认排课设置表添加 default_teacher_id 字段')
+    except Exception as e:
+        print(f'升级学生课程默认排课设置表 default_teacher_id 时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def create_user_permissions_table():
     """创建用户权限表"""
     try:
@@ -1167,6 +1206,24 @@ def create_user_permissions_table():
         traceback.print_exc()
 
 
+def upgrade_student_course_table_with_marketing_lead():
+    """升级学生课程表，添加marketing_lead_id字段（用于试课排课）"""
+    try:
+        inspector = inspect(db.engine)
+        if 'student_courses' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('student_courses')]
+            if 'marketing_lead_id' not in columns:
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE student_courses ADD COLUMN marketing_lead_id INTEGER'))
+                print('已为学生课程表添加marketing_lead_id字段')
+            else:
+                print('学生课程表的marketing_lead_id字段已存在')
+    except Exception as e:
+        print(f'升级学生课程表（marketing_lead_id）时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def upgrade_user_table_with_session_token():
     """升级用户表，添加session_token字段用于单点登录"""
     try:
@@ -1191,6 +1248,7 @@ def run_migrations():
     """运行所有数据库迁移"""
     upgrade_student_table()
     upgrade_student_table_with_default_schedule()
+    upgrade_student_table_with_source()
     create_student_course_default_schedule_table()
     upgrade_teacher_table()
     upgrade_student_course_table()
@@ -1203,8 +1261,10 @@ def run_migrations():
     upgrade_class_hours_stats_table_with_course()
     upgrade_teacher_hours_table_with_course()
     upgrade_student_course_table_with_confirmed()
+    upgrade_student_course_table_with_marketing_lead()
     upgrade_teacher_resume_table()
     create_user_permissions_table()
     create_student_course_default_schedule_table()
     upgrade_student_course_default_schedule_scheduling_paused()
+    upgrade_student_course_default_schedule_default_teacher_id()
     upgrade_user_table_with_session_token()

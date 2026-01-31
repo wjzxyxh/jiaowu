@@ -21,6 +21,11 @@
   margin-bottom: 20px;
 }
 
+/* 筛选区登记日期，防止与状态筛选重叠 */
+.enrollment-date-filter {
+  white-space: nowrap;
+}
+
 .filters {
   margin-bottom: 20px;
 }
@@ -52,6 +57,12 @@
 .data-table td {
   padding: 12px;
   border-bottom: 1px solid #eee;
+}
+
+/* 登记日期列：保证足够宽度完整显示日期 */
+.data-table th:nth-child(4),
+.data-table td:nth-child(4) {
+  min-width: 120px;
 }
 
 .data-table tbody tr:hover {
