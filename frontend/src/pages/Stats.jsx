@@ -9,6 +9,20 @@ const Stats = () => {
   const [monthFilter, setMonthFilter] = useState(currentMonth)
   const [selectedStudentId, setSelectedStudentId] = useState('')
 
+  // 下拉月份选项：与 teacher-hours 一致，当前月前 24 个月到当前月后 12 个月，格式 2026年3月、2026年4月 等
+  const monthOptions = useMemo(() => {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 24, 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 12, 1)
+    const list = []
+    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+      const y = d.getFullYear()
+      const m = d.getMonth() + 1
+      list.push({ value: `${y}-${String(m).padStart(2, '0')}`, label: `${y}年${m}月` })
+    }
+    return list
+  }, [])
+
   // 获取学生列表（在校状态）
   const { data: studentsData = [] } = useQuery({
     queryKey: ['students', '在校'],
@@ -152,14 +166,56 @@ const Stats = () => {
         <h1>学生课时</h1>
       </div>
 
-      {/* 工具栏 */}
+      {/* 工具栏：日历筛选与 teacher-hours 一致 */}
       <div className="toolbar" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <input
-          type="month"
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-          style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px' }}
-        />
+        <div className="month-picker-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              const [y, m] = monthFilter.split('-').map(Number)
+              const prev = new Date(y, m - 2, 1)
+              setMonthFilter(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+            }}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              background: '#f5f5f5',
+              cursor: 'pointer',
+            }}
+          >
+            上月
+          </button>
+          <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              minWidth: '120px',
+            }}
+          >
+            {monthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setMonthFilter(currentMonth)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              background: '#e8f4fd',
+              cursor: 'pointer',
+            }}
+          >
+            本月
+          </button>
+        </div>
         <select
           value={selectedStudentId}
           onChange={(e) => setSelectedStudentId(e.target.value)}
