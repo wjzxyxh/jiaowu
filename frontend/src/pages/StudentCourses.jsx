@@ -18,9 +18,10 @@ const StudentCourses = () => {
   const [defaultWeekday, setDefaultWeekday] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
-  // 筛选：是否标记、是否点击复制课程
+  // 筛选：是否标记、是否复制、是否截图
   const [filterMarked, setFilterMarked] = useState('all')   // 'all' | 'marked' | 'unmarked'
   const [filterCopied, setFilterCopied] = useState('all') // 'all' | 'copied' | 'not_copied'
+  const [filterScreenshot, setFilterScreenshot] = useState('all') // 'all' | 'screenshot' | 'not_screenshot'
   const [batchOperating, setBatchOperating] = useState(false)
   const [screenshotStudents, setScreenshotStudents] = useState(new Set()) // 已截图的学生ID
   const [screenshotTarget, setScreenshotTarget] = useState(null) // 待截图的 { studentId, studentName, courses, weekInfoLabel, monthFilter, weekFilter }
@@ -56,9 +57,11 @@ const StudentCourses = () => {
       if (filterMarked === 'unmarked' && course.excluded_from_scheduling) return false
       if (filterCopied === 'copied' && !copiedStudents.has(course.student_id)) return false
       if (filterCopied === 'not_copied' && copiedStudents.has(course.student_id)) return false
+      if (filterScreenshot === 'screenshot' && !screenshotStudents.has(course.student_id)) return false
+      if (filterScreenshot === 'not_screenshot' && screenshotStudents.has(course.student_id)) return false
       return true
     })
-  }, [courses, filterMarked, filterCopied, copiedStudents])
+  }, [courses, filterMarked, filterCopied, filterScreenshot, copiedStudents, screenshotStudents])
 
   // 分页数据计算（基于筛选后的列表）
   const paginatedCourses = useMemo(() => {
@@ -173,7 +176,7 @@ const StudentCourses = () => {
   const handleSelectAll = async () => {
     const studentIds = [...new Set(filteredCourses.map((c) => c.student_id))]
     if (studentIds.length === 0) {
-      alert('当前筛选结果为空，无法全选。')
+      alert('当前筛选结果为空，无法全部勾选。')
       return
     }
     setBatchOperating(true)
@@ -238,6 +241,7 @@ const StudentCourses = () => {
       // 重置筛选条件
       setFilterMarked('all')
       setFilterCopied('all')
+      setFilterScreenshot('all')
       setCurrentPage(1)
       
       queryClient.invalidateQueries(['paid-courses-need-scheduling'])
@@ -787,7 +791,6 @@ const StudentCourses = () => {
             {/* 工具栏：筛选、全选、取消勾选、重置 */}
             <div className="student-courses-toolbar">
               <div className="toolbar-filters">
-                <span className="toolbar-section-label">筛选</span>
                 <div className="filter-item">
                   <span className="filter-name">是否标记</span>
                   <select
@@ -812,10 +815,21 @@ const StudentCourses = () => {
                     <option value="not_copied">未复制</option>
                   </select>
                 </div>
+                <div className="filter-item">
+                  <span className="filter-name">是否截图</span>
+                  <select
+                    value={filterScreenshot}
+                    onChange={(e) => { setFilterScreenshot(e.target.value); setCurrentPage(1) }}
+                    className="filter-select"
+                  >
+                    <option value="all">全部</option>
+                    <option value="screenshot">已截图</option>
+                    <option value="not_screenshot">未截图</option>
+                  </select>
+                </div>
               </div>
               <div className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-actions">
-                <span className="toolbar-section-label">批量</span>
                 <button
                   type="button"
                   className="btn btn-secondary toolbar-btn"
@@ -823,7 +837,7 @@ const StudentCourses = () => {
                   disabled={batchOperating || filteredCourses.length === 0}
                   title={filteredCourses.length === 0 ? '当前筛选结果为空，无法操作' : ''}
                 >
-                  {batchOperating ? '处理中...' : (isAllMarked ? '取消勾选' : '全选')}
+                  {batchOperating ? '处理中...' : (isAllMarked ? '取消勾选' : '全部勾选')}
                 </button>
                 <button
                   type="button"
@@ -950,7 +964,7 @@ const StudentCourses = () => {
                 </button>
                 <span style={{ padding: '0 15px' }}>
                   第 {currentPage} 页，共 {totalPages} 页（当前 {filteredCourses.length} 条
-                  {(filterMarked !== 'all' || filterCopied !== 'all') ? ` / 全部 ${courses.length} 条` : ''}）
+                  {(filterMarked !== 'all' || filterCopied !== 'all' || filterScreenshot !== 'all') ? ` / 全部 ${courses.length} 条` : ''}）
                 </span>
                 <button
                   className="btn btn-secondary"

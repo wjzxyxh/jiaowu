@@ -10,6 +10,7 @@ import { othersService } from '../services/othersService'
 import { statsService } from '../services/statsService'
 import { studentCoursesService } from '../services/studentCoursesService'
 import Modal from '../components/Modal'
+import { buildConfirmFailureMessage } from '../utils/confirmCourseError'
 import './AllCourses.css'
 
 const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) => {
@@ -163,6 +164,9 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       }
       alert(message)
     },
+    onError: (err) => {
+      alert(buildConfirmFailureMessage(err).trim())
+    },
   })
 
   const batchCancelConfirmMutation = useMutation({
@@ -187,8 +191,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       alert('确认成功')
     },
     onError: (err) => {
-      const msg = err?.response?.data?.error || err?.message || '确认失败'
-      alert(msg)
+      alert(buildConfirmFailureMessage(err).trim())
     },
   })
 

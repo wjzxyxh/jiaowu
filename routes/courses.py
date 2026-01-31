@@ -1160,17 +1160,20 @@ def confirm_course(course_id):
         # 若是「确认上课」（从未确认变为已确认），必须先保证更早日期的同学生同课程已确认
         if not course.is_confirmed:
             course_id_match = (StudentCourse.course_id == course.course_id) if course.course_id is not None else StudentCourse.course_id.is_(None)
-            earlier = StudentCourse.query.filter(
+            earlier_list = StudentCourse.query.filter(
                 StudentCourse.student_id == course.student_id,
                 course_id_match,
                 StudentCourse.course_date < course.course_date,
                 StudentCourse.is_confirmed == False,
                 StudentCourse.status != '删除'
-            ).order_by(StudentCourse.course_date.asc()).first()
-            if earlier:
-                d = earlier.course_date
+            ).order_by(StudentCourse.course_date.asc()).all()
+            if earlier_list:
+                required = [{'course_date': c.course_date.strftime('%Y-%m-%d'), 'time_slot': c.time_slot or ''} for c in earlier_list]
+                parts = [f"{c.course_date.month}月{c.course_date.day}日 {c.time_slot or ''}".strip() for c in earlier_list]
                 return jsonify({
-                    'error': f'请先确认更早日期的课程：{d.strftime("%Y-%m-%d")}（{d.month}月{d.day}日）'
+                    'error': '请先确认更早日期的课程',
+                    'required_courses': required,
+                    'required_courses_label': '、'.join(parts)
                 }), 400
 
         # 切换确认状态
@@ -1268,17 +1271,20 @@ def batch_confirm_courses():
             if course.is_confirmed:
                 continue
             course_id_match = (StudentCourse.course_id == course.course_id) if course.course_id is not None else StudentCourse.course_id.is_(None)
-            earlier = StudentCourse.query.filter(
+            earlier_list = StudentCourse.query.filter(
                 StudentCourse.student_id == course.student_id,
                 course_id_match,
                 StudentCourse.course_date < course.course_date,
                 StudentCourse.is_confirmed == False,
                 StudentCourse.status != '删除'
-            ).order_by(StudentCourse.course_date.asc()).first()
-            if earlier:
-                d = earlier.course_date
+            ).order_by(StudentCourse.course_date.asc()).all()
+            if earlier_list:
+                required = [{'course_date': c.course_date.strftime('%Y-%m-%d'), 'time_slot': c.time_slot or ''} for c in earlier_list]
+                parts = [f"{c.course_date.month}月{c.course_date.day}日 {c.time_slot or ''}".strip() for c in earlier_list]
                 return jsonify({
-                    'error': f'请先确认更早日期的课程：{d.strftime("%Y-%m-%d")}（{d.month}月{d.day}日）'
+                    'error': '请先确认更早日期的课程',
+                    'required_courses': required,
+                    'required_courses_label': '、'.join(parts)
                 }), 400
 
         # 统计需要更新的学生和课程组合

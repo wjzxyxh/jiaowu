@@ -12,6 +12,20 @@ const Finance = () => {
   const [monthFilter, setMonthFilter] = useState(currentMonth)
   const [yearFilter, setYearFilter] = useState(currentYear)
   const [activeTab, setActiveTab] = useState('overview') // 'overview', 'cost', 'salary', 'profit'
+
+  // 下拉月份选项：与 teacher-hours 一致，当前月前 24 个月到当前月后 12 个月
+  const monthOptions = useMemo(() => {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 24, 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 12, 1)
+    const list = []
+    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+      const y = d.getFullYear()
+      const m = d.getMonth() + 1
+      list.push({ value: `${y}-${String(m).padStart(2, '0')}`, label: `${y}年${m}月` })
+    }
+    return list
+  }, [])
   const [showRevenueDetail, setShowRevenueDetail] = useState(false)
   const [expandedStudentDetails, setExpandedStudentDetails] = useState(new Set())
 
@@ -399,14 +413,56 @@ const Finance = () => {
           </select>
         </div>
         {viewMode === 'month' ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <label style={{ fontWeight: 'normal', margin: 0 }}>选择月份：</label>
-            <input
-              type="month"
+          <div className="month-picker-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => {
+                const [y, m] = monthFilter.split('-').map(Number)
+                const prev = new Date(y, m - 2, 1)
+                setMonthFilter(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+              }}
+              style={{
+                padding: '6px 12px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                background: '#f5f5f5',
+                cursor: 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              上月
+            </button>
+            <select
               value={monthFilter}
               onChange={(e) => setMonthFilter(e.target.value)}
-              style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px' }}
-            />
+              style={{
+                padding: '6px 12px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                minWidth: '120px',
+                fontSize: '14px',
+              }}
+            >
+              {monthOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setMonthFilter(currentMonth)}
+              style={{
+                padding: '6px 12px',
+                border: '1px solid #ddd',
+                borderRadius: '4px',
+                background: '#e8f4fd',
+                cursor: 'pointer',
+                fontSize: '14px',
+              }}
+            >
+              本月
+            </button>
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>

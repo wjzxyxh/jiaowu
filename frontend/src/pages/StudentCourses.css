@@ -29,7 +29,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0;
+  gap: 12px;
   margin-bottom: 20px;
   padding: 16px 20px;
   background: #f8f9fa;
@@ -93,8 +93,9 @@
   width: 1px;
   height: 28px;
   background: #dee2e6;
-  margin: 0 20px;
+  margin: 0;
   flex-shrink: 0;
+  align-self: center;
 }
 
 .student-courses-toolbar .toolbar-actions .toolbar-section-label {

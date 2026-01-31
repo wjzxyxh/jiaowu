@@ -11,6 +11,7 @@ import { othersService } from '../services/othersService'
 import { studentCoursesService } from '../services/studentCoursesService'
 import { statsService } from '../services/statsService'
 import Modal from '../components/Modal'
+import { buildConfirmFailureMessage } from '../utils/confirmCourseError'
 import './Courses.css'
 
 const Courses = () => {
@@ -329,8 +330,7 @@ const Courses = () => {
       alert('确认成功')
     },
     onError: (err) => {
-      const msg = err?.response?.data?.error || err?.message || '确认失败'
-      alert(msg)
+      alert(buildConfirmFailureMessage(err).trim())
     },
   })
 
@@ -346,8 +346,7 @@ const Courses = () => {
       alert(message)
     },
     onError: (err) => {
-      const msg = err?.response?.data?.error || err?.message || '批量确认失败'
-      alert(msg)
+      alert(buildConfirmFailureMessage(err).trim())
     },
   })
 
