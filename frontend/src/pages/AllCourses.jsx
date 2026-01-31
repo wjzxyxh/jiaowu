@@ -20,15 +20,17 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
   const [page, setPage] = useState(1)
   const [filters, setFilters] = useState({
-    student_name: '',
+    search: '',
     teacher: '',
     subject: '',
     grade: '',
     date_start: '',
     date_end: '',
     status: '',
+    is_confirmed: '', // '' 全部 | 'true' 已确认 | 'false' 未确认
     order_by: 'desc',
   })
+  const [searchInput, setSearchInput] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
   const [showEditModal, setShowEditModal] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -40,6 +42,11 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
   const pageSize = 20
 
+  // 搜索框与 filters.search 同步（如清除筛选后）
+  React.useEffect(() => {
+    setSearchInput(filters.search)
+  }, [filters.search])
+
   // 从「去排课」进入时自动打开新增排课
   React.useEffect(() => {
     if (!openAddModalOnMount || !initialStudentId || !initialCourseId || hasOpenedGoToScheduleRef.current) return
@@ -47,10 +54,14 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     setShowAddModal(true)
   }, [openAddModalOnMount, initialStudentId, initialCourseId])
 
-  // 获取排课数据
+  // 获取排课数据（is_confirmed 为空时不传，避免后端收到空字符串）
   const { data, isLoading, error } = useQuery({
     queryKey: ['all-courses', page, filters],
-    queryFn: () => allCoursesService.getAllCourses({ page, per_page: pageSize, ...filters }),
+    queryFn: () => {
+      const params = { page, per_page: pageSize, ...filters }
+      if (!params.is_confirmed) delete params.is_confirmed
+      return allCoursesService.getAllCourses(params)
+    },
   })
 
   const courses = data?.courses || []
@@ -223,13 +234,14 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   // 清除筛选
   const handleClearFilters = () => {
     setFilters({
-      student_name: '',
+      search: '',
       teacher: '',
       subject: '',
       grade: '',
       date_start: '',
       date_end: '',
       status: '',
+      is_confirmed: '',
       order_by: 'desc',
     })
     setPage(1)
@@ -467,12 +479,15 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
       <div className="filter-bar">
         <div className="filter-group">
-          <label>筛选：</label>
           <input
             type="text"
-            placeholder="学生"
-            value={filters.student_name}
-            onChange={(e) => handleFilterChange('student_name', e.target.value)}
+            placeholder="搜索学生、老师、科目、年级（按回车查询）"
+            title="输入学生姓名、老师、科目或年级进行模糊搜索，按回车执行查询"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleFilterChange('search', searchInput)
+            }}
           />
         </div>
         <div className="filter-group">
@@ -521,6 +536,13 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
             <option value="正常">正常</option>
             <option value="请假">请假</option>
             <option value="跑空">跑空</option>
+          </select>
+        </div>
+        <div className="filter-group">
+          <select value={filters.is_confirmed} onChange={(e) => handleFilterChange('is_confirmed', e.target.value)}>
+            <option value="">全部确认状态</option>
+            <option value="false">未确认</option>
+            <option value="true">已确认</option>
           </select>
         </div>
         <div className="filter-group">

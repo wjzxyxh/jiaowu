@@ -75,6 +75,9 @@ def get_all_courses():
 
         filter_status = request.args.get('status')
         
+        # 确认状态：'' 全部 | 'true' 已确认 | 'false' 未确认
+        filter_is_confirmed = request.args.get('is_confirmed', '')
+        
         # 获取排序参数（升序asc或降序desc，默认为desc）
         order_by = request.args.get('order_by', 'desc').lower()
         if order_by not in ['asc', 'desc']:
@@ -149,10 +152,12 @@ def get_all_courses():
             query = query.filter(StudentCourse.course_date <= end_date)
 
         if filter_status:
-
             query = query.filter(StudentCourse.status == filter_status)
 
-        
+        if filter_is_confirmed == 'true':
+            query = query.filter(StudentCourse.is_confirmed == True)
+        elif filter_is_confirmed == 'false':
+            query = query.filter(StudentCourse.is_confirmed == False)
 
         # 按日期和时段排序（支持升序/降序）
         if order_by == 'asc':

@@ -162,6 +162,14 @@
   font-weight: bold;
 }
 
+/* 年级列收窄 */
+.data-table th:nth-child(4),
+.data-table td:nth-child(4) {
+  width: 70px;
+  max-width: 70px;
+  white-space: nowrap;
+}
+
 .data-table tbody tr:hover {
   background: #f8f9fa;
 }
@@ -295,11 +303,6 @@
   .data-table td {
     padding: 6px 4px;
     white-space: nowrap;
-  }
-
-  .batch-actions {
-    flex-wrap: wrap;
-    gap: 6px;
   }
 
   .btn {
