@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { teacherHoursService } from '../services/teacherHoursService'
 import { teacherService } from '../services/teacherService'
@@ -9,6 +9,20 @@ const TeacherHours = () => {
   const [currentTab, setCurrentTab] = useState('parttime') // 'fulltime' or 'parttime'
   const [monthFilter, setMonthFilter] = useState(currentMonth)
   const [selectedTeacherId, setSelectedTeacherId] = useState('')
+
+  // 下拉月份选项：当前月前 24 个月到当前月后 12 个月，格式 2026年3月、2026年4月 等
+  const monthOptions = useMemo(() => {
+    const now = new Date()
+    const start = new Date(now.getFullYear(), now.getMonth() - 24, 1)
+    const end = new Date(now.getFullYear(), now.getMonth() + 12, 1)
+    const list = []
+    for (let d = new Date(start); d <= end; d.setMonth(d.getMonth() + 1)) {
+      const y = d.getFullYear()
+      const m = d.getMonth() + 1
+      list.push({ value: `${y}-${String(m).padStart(2, '0')}`, label: `${y}年${m}月` })
+    }
+    return list
+  }, [])
   const [selectedRows, setSelectedRows] = useState(new Set())
   const [expandedDetails, setExpandedDetails] = useState(new Set())
 
@@ -203,32 +217,38 @@ const TeacherHours = () => {
     settleMutation.mutate({ hoursIds, isSettled })
   }
 
-  // 批量结算
-  const handleBatchSettle = (isSettled) => {
+  // 批量结算：已结算的勾选行执行取消结算，未结算的勾选行执行确认结算
+  const handleBatchSettleClick = () => {
     if (selectedRows.size === 0) {
       alert('请先选择要操作的记录')
       return
     }
-
-    const allHoursIds = []
-    selectedRows.forEach((rowKey) => {
-      const group = groupedData.find((g) => `${g.teacher_id}-${g.month}` === rowKey)
-      if (group) {
-        allHoursIds.push(...group.hours_ids)
-      }
-    })
-
-    if (allHoursIds.length === 0) {
+    const hasUnsettled = selectedUnsettledIds.length > 0
+    const hasSettled = selectedSettledIds.length > 0
+    if (!hasUnsettled && !hasSettled) {
       alert('没有找到要操作的记录')
       return
     }
+    const msg = hasUnsettled && hasSettled
+      ? `选中有未结算和已结算记录，将确认结算 ${selectedUnsettledIds.length} 条、取消结算 ${selectedSettledIds.length} 条，确定吗？`
+      : hasUnsettled
+        ? `确定要确认结算选中的 ${selectedRows.size} 条记录吗？`
+        : `确定要取消结算选中的 ${selectedRows.size} 条记录吗？`
+    if (!window.confirm(msg)) return
 
-    const action = isSettled ? '确认结算' : '取消结算'
-    if (!window.confirm(`确定要${action}选中的 ${selectedRows.size} 条记录吗？`)) {
-      return
+    const doUnsettle = () => {
+      if (selectedSettledIds.length > 0) {
+        settleMutation.mutate({ hoursIds: selectedSettledIds, isSettled: false })
+      }
     }
-
-    settleMutation.mutate({ hoursIds: allHoursIds, isSettled })
+    if (hasUnsettled) {
+      settleMutation.mutate(
+        { hoursIds: selectedUnsettledIds, isSettled: true },
+        { onSuccess: hasSettled ? doUnsettle : undefined }
+      )
+    } else {
+      doUnsettle()
+    }
   }
 
   // 导出Excel
@@ -481,6 +501,27 @@ const TeacherHours = () => {
   const isAllSelected = groupedData.length > 0 && selectedRows.size === groupedData.length
   const hasSelected = selectedRows.size > 0
 
+  // 勾选行中已结算 / 未结算的 hours_ids，以及按钮文案
+  const { selectedSettledIds, selectedUnsettledIds, batchSettleLabel } = useMemo(() => {
+    const settledIds = []
+    const unsettledIds = []
+    selectedRows.forEach((rowKey) => {
+      const group = groupedData.find((g) => `${g.teacher_id}-${g.month}` === rowKey)
+      if (group && group.hours_ids && group.hours_ids.length) {
+        if (group.is_settled) settledIds.push(...group.hours_ids)
+        else unsettledIds.push(...group.hours_ids)
+      }
+    })
+    const onlyUnsettled = unsettledIds.length > 0 && settledIds.length === 0
+    const onlySettled = settledIds.length > 0 && unsettledIds.length === 0
+    const label = onlyUnsettled ? '确认结算' : onlySettled ? '取消结算' : '批量结算'
+    return {
+      selectedSettledIds: settledIds,
+      selectedUnsettledIds: unsettledIds,
+      batchSettleLabel: label,
+    }
+  }, [selectedRows, groupedData])
+
   if (isLoading) return <div className="loading">加载中...</div>
   if (error) return <div className="error">加载失败: {error.error || error.message}</div>
 
@@ -502,12 +543,54 @@ const TeacherHours = () => {
 
       {/* 工具栏 */}
       <div className="toolbar" style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <input
-          type="month"
-          value={monthFilter}
-          onChange={(e) => setMonthFilter(e.target.value)}
-          style={{ padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px' }}
-        />
+        <div className="month-picker-wrap" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <button
+            type="button"
+            onClick={() => {
+              const [y, m] = monthFilter.split('-').map(Number)
+              const prev = new Date(y, m - 2, 1)
+              setMonthFilter(`${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`)
+            }}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              background: '#f5f5f5',
+              cursor: 'pointer',
+            }}
+          >
+            上月
+          </button>
+          <select
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              minWidth: '120px',
+            }}
+          >
+            {monthOptions.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => setMonthFilter(currentMonth)}
+            style={{
+              padding: '6px 12px',
+              border: '1px solid #ddd',
+              borderRadius: '4px',
+              background: '#e8f4fd',
+              cursor: 'pointer',
+            }}
+          >
+            本月
+          </button>
+        </div>
         <select
           value={selectedTeacherId}
           onChange={(e) => setSelectedTeacherId(e.target.value)}
@@ -526,12 +609,12 @@ const TeacherHours = () => {
         <button
           className="btn btn-success"
           id="batch-settle-btn"
-          onClick={() => handleBatchSettle(true)}
+          onClick={handleBatchSettleClick}
           disabled={!hasSelected}
           style={{
             marginLeft: '10px',
             padding: '6px 12px',
-            background: '#28a745',
+            background: batchSettleLabel === '取消结算' ? '#6c757d' : '#28a745',
             color: 'white',
             border: 'none',
             borderRadius: '4px',
@@ -539,25 +622,7 @@ const TeacherHours = () => {
             opacity: hasSelected ? 1 : 0.6,
           }}
         >
-          批量确认结算
-        </button>
-        <button
-          className="btn btn-secondary"
-          id="batch-cancel-settle-btn"
-          onClick={() => handleBatchSettle(false)}
-          disabled={!hasSelected}
-          style={{
-            marginLeft: '10px',
-            padding: '6px 12px',
-            background: '#6c757d',
-            color: 'white',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: hasSelected ? 'pointer' : 'not-allowed',
-            opacity: hasSelected ? 1 : 0.6,
-          }}
-        >
-          批量取消结算
+          {batchSettleLabel}
         </button>
       </div>
 
