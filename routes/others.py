@@ -26,7 +26,7 @@ from services import (
 from config import Config
 import os
 from datetime import datetime, date, timedelta
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -56,6 +56,8 @@ def get_all_courses():
         
 
         # 获取筛选参数
+
+        filter_search = request.args.get('search', '').strip()  # 搜索框：学生、老师、科目、年级
 
         filter_student_name = request.args.get('student_name')
 
@@ -96,25 +98,28 @@ def get_all_courses():
 
         # 应用筛选条件
 
-        if filter_student_name:
-
-            query = query.filter(StudentCourse.student_name.like(f'%{filter_student_name}%'))
-
-        if filter_teacher:
-
-            query = query.filter(StudentCourse.teacher_name == filter_teacher)
-
-        if filter_classroom:
-
-            query = query.filter(StudentCourse.classroom == filter_classroom)
-
-        if filter_subject:
-
-            query = query.filter(StudentCourse.subject == filter_subject)
-
-        if filter_grade:
-
-            query = query.filter(StudentCourse.grade == filter_grade)
+        if filter_search:
+            # 搜索框：匹配学生、老师、科目、年级任一
+            search_like = f'%{filter_search}%'
+            query = query.filter(
+                or_(
+                    StudentCourse.student_name.like(search_like),
+                    StudentCourse.teacher_name.like(search_like),
+                    StudentCourse.subject.like(search_like),
+                    (StudentCourse.grade.is_(None) == False) & (StudentCourse.grade.like(search_like)),
+                )
+            )
+        else:
+            if filter_student_name:
+                query = query.filter(StudentCourse.student_name.like(f'%{filter_student_name}%'))
+            if filter_teacher:
+                query = query.filter(StudentCourse.teacher_name == filter_teacher)
+            if filter_classroom:
+                query = query.filter(StudentCourse.classroom == filter_classroom)
+            if filter_subject:
+                query = query.filter(StudentCourse.subject == filter_subject)
+            if filter_grade:
+                query = query.filter(StudentCourse.grade == filter_grade)
 
         # 处理日期筛选
         start_date = None

@@ -24,4 +24,11 @@ export const studentCoursesService = {
       excluded_from_scheduling: excluded
     })
   },
+
+  // 更新学生-课程是否暂停排课（进行中时可切换，暂停后不再参与排课）
+  updateSchedulingPaused: async (studentId, courseId, paused) => {
+    return api.put(`/students/${studentId}/courses/${courseId}/scheduling-paused`, {
+      paused
+    })
+  },
 }

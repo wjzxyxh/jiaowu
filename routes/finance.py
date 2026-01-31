@@ -40,61 +40,19 @@ from werkzeug.utils import secure_filename
 
 bp = Blueprint('finance', __name__)
 
-@bp.route('/api/finance', methods=['GET'])
-def get_finance():
 
-    """获取财务记录"""
-
-    month = request.args.get('month')
-
-    year = request.args.get('year')
-
-    
-
-    # 如果提供了年份参数，返回年份聚合数据
-
-    if year:
-
-        return get_finance_by_year(year)
-
-    
-
-    # 否则按月份查询
-
-    if not month:
-
-        month = get_current_month()
-
-    
-
-    # 不在这里强制重新计算财务记录，只在确认上课时更新
-
-    # 财务记录的计算已经只统计已确认的课程，所以不需要每次打开页面都重新计算
-
+def _compute_finance_result(month):
+    """计算单月财务结果，返回结果字典或 None。供 get_finance 与 get_finance_by_year 复用。"""
     finance = FinanceRecord.query.filter_by(month=month).first()
-
-    
-
-    # 如果财务记录不存在，则创建并计算（首次访问该月份时）
-
     if not finance:
-
         update_finance_record(month)
-
         finance = FinanceRecord.query.filter_by(month=month).first()
-
-    
-
     if not finance:
-
-        return jsonify({})
-
-    
+        return None
 
     # 计算总课耗（所有学生的当月课时总和，过滤已删除的学生）
     from models import Student
     stats_list = ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(ClassHoursStats.month == month).all()
-
     total_class_hours = sum(stats.actual_hours for stats in stats_list)
 
     
@@ -750,11 +708,112 @@ def get_finance():
 
     result['revenue_detail'] = revenue_detail
 
-    
-
-    return jsonify(result)
+    return result
 
 
+def _aggregate_finance_by_year(year):
+    """按年聚合 12 个月财务数据，返回与单月相同结构的字典（数值为年度合计）。"""
+    year = int(year)
+    aggregated = {
+        'month': f'{year}-全年',
+        'monthly_revenue': 0,
+        'total_class_hours': 0,
+        'part_time_salary': 0,
+        'full_time_salary': 0,
+        'rent': 0,
+        'utilities': 0,
+        'marketing_flyer': 0,
+        'marketing_labor': 0,
+        'other_paper': 0,
+        'other_toner': 0,
+        'teacher_cost': 0,
+        'marketing_cost': 0,
+        'rent_utilities': 0,
+        'other_cost': 0,
+        'monthly_profit': 0,
+        'payment_detail': {'total_paid': 0, 'total_refund': 0, 'count_paid': 0, 'count_refund': 0},
+        'teacher_cost_detail': [],
+        'revenue_detail': None,
+        'revenue_mode': '课耗模式',
+    }
+    teacher_totals = {}
+    for month_num in range(1, 13):
+        month = f'{year}-{month_num:02d}'
+        r = _compute_finance_result(month)
+        if not r:
+            continue
+        aggregated['monthly_revenue'] += float(r.get('monthly_revenue') or 0)
+        aggregated['total_class_hours'] += float(r.get('total_class_hours') or 0)
+        aggregated['part_time_salary'] += float(r.get('part_time_salary') or 0)
+        aggregated['full_time_salary'] += float(r.get('full_time_salary') or 0)
+        aggregated['rent'] += float(r.get('rent') or 0)
+        aggregated['utilities'] += float(r.get('utilities') or 0)
+        aggregated['marketing_flyer'] += float(r.get('marketing_flyer') or 0)
+        aggregated['marketing_labor'] += float(r.get('marketing_labor') or 0)
+        aggregated['other_paper'] += float(r.get('other_paper') or 0)
+        aggregated['other_toner'] += float(r.get('other_toner') or 0)
+        aggregated['teacher_cost'] += float(r.get('teacher_cost') or 0)
+        aggregated['marketing_cost'] += float(r.get('marketing_cost') or 0)
+        aggregated['rent_utilities'] += float(r.get('rent_utilities') or 0)
+        aggregated['other_cost'] += float(r.get('other_cost') or 0)
+        aggregated['monthly_profit'] += float(r.get('monthly_profit') or 0)
+        pd = r.get('payment_detail') or {}
+        aggregated['payment_detail']['total_paid'] += float(pd.get('total_paid') or 0)
+        aggregated['payment_detail']['total_refund'] += float(pd.get('total_refund') or 0)
+        aggregated['payment_detail']['count_paid'] += int(pd.get('count_paid') or 0)
+        aggregated['payment_detail']['count_refund'] += int(pd.get('count_refund') or 0)
+        for t in (r.get('teacher_cost_detail') or []):
+            name = t.get('teacher_name') or ''
+            if name not in teacher_totals:
+                teacher_totals[name] = {
+                    'teacher_name': name,
+                    'base_salary': 0, 'course_cost': 0, 'experience_cost': 0,
+                    'incentive': 0, 'total': 0, 'employment_type': t.get('employment_type', '兼职'),
+                }
+            teacher_totals[name]['base_salary'] += float(t.get('base_salary') or 0)
+            teacher_totals[name]['course_cost'] += float(t.get('course_cost') or 0)
+            teacher_totals[name]['experience_cost'] += float(t.get('experience_cost') or 0)
+            teacher_totals[name]['incentive'] += float(t.get('incentive') or 0)
+            teacher_totals[name]['total'] += float(t.get('total') or 0)
+    aggregated['teacher_cost_detail'] = [
+        {**v, 'base_salary': round(v['base_salary'], 2), 'course_cost': round(v['course_cost'], 2),
+         'experience_cost': round(v['experience_cost'], 2), 'incentive': round(v['incentive'], 2),
+         'total': round(v['total'], 2)}
+        for v in teacher_totals.values()
+    ]
+    for k in ['monthly_revenue', 'total_class_hours', 'part_time_salary', 'full_time_salary',
+              'rent', 'utilities', 'marketing_flyer', 'marketing_labor', 'other_paper', 'other_toner',
+              'teacher_cost', 'marketing_cost', 'rent_utilities', 'other_cost', 'monthly_profit']:
+        if k in aggregated and isinstance(aggregated[k], (int, float)):
+            aggregated[k] = round(aggregated[k], 2)
+    pd = aggregated['payment_detail']
+    pd['total_paid'] = round(pd['total_paid'], 2)
+    pd['total_refund'] = round(pd['total_refund'], 2)
+    return aggregated
+
+
+@bp.route('/api/finance', methods=['GET'])
+@login_required
+def get_finance():
+    """获取财务记录。查询参数: month=YYYY-MM 或 year=YYYY，默认当前月。"""
+    month = request.args.get('month')
+    year = request.args.get('year')
+    if year:
+        try:
+            data = _aggregate_finance_by_year(year)
+            return jsonify(data)
+        except (ValueError, TypeError):
+            return jsonify({'error': 'invalid year'}), 400
+    if month:
+        data = _compute_finance_result(month)
+        if data is None:
+            return jsonify({'error': 'not found', 'month': month}), 404
+        return jsonify(data)
+    month = get_current_month()
+    data = _compute_finance_result(month)
+    if data is None:
+        return jsonify({})
+    return jsonify(data)
 
 
 

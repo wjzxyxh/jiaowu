@@ -110,9 +110,9 @@
   margin: 2px 0;
   border-radius: 3px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-all;
+  overflow: visible;
 }
 
 .calendar-event.normal {

@@ -717,7 +717,10 @@ def get_paid_courses_need_scheduling():
                     student_id=student_id,
                     course_id=course_id
                 ).first()
-                
+                # 暂停排课的学生-课程不参与排课列表
+                if default_schedule and getattr(default_schedule, 'scheduling_paused', False):
+                    continue
+
                 result_list.append({
                     'student_id': info['student_id'],
                     'student_name': info['student_name'],
@@ -843,6 +846,50 @@ def update_student_exclude_from_scheduling(student_id):
         return jsonify({'error': error_msg}), 500
 
 
+@bp.route('/api/students/<int:student_id>/courses/<int:course_id>/scheduling-paused', methods=['PUT'])
+@login_required
+@csrf.exempt
+def update_student_course_scheduling_paused(student_id, course_id):
+    """更新学生-课程是否暂停排课（进行中时可切换，暂停后不再参与排课）"""
+    try:
+        student = Student.query.get_or_404(student_id)
+        course = Course.query.get_or_404(course_id)
+        data = request.get_json() or {}
+        paused = data.get('paused', False)
+
+        default_schedule = StudentCourseDefaultSchedule.query.filter_by(
+            student_id=student_id,
+            course_id=course_id
+        ).first()
+
+        if default_schedule:
+            default_schedule.scheduling_paused = bool(paused)
+            default_schedule.updated_at = datetime.now()
+        else:
+            default_schedule = StudentCourseDefaultSchedule(
+                student_id=student_id,
+                course_id=course_id,
+                default_time_slot='',
+                default_weekday='',
+                scheduling_paused=bool(paused)
+            )
+            db.session.add(default_schedule)
+
+        db.session.commit()
+        log_operation('students', 'update', 'StudentCourseDefaultSchedule', default_schedule.id,
+                     f'{student.name}-{course.name}', {'scheduling_paused': not paused}, {'scheduling_paused': paused})
+        return jsonify({
+            'message': '更新成功',
+            'student_id': student_id,
+            'course_id': course_id,
+            'scheduling_paused': default_schedule.scheduling_paused
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_msg = f"更新学生课程暂停排课状态失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': error_msg}), 500
 
 
 

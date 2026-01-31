@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import html2canvas from 'html2canvas'
 import { useAuth } from '../contexts/AuthContext'
 import { courseService } from '../services/courseService'
 import { studentService } from '../services/studentService'
@@ -81,6 +82,9 @@ const Courses = () => {
   const [classroomFilter, setClassroomFilter] = useState('')
   const [subjectFilter, setSubjectFilter] = useState('')
   const [gradeFilter, setGradeFilter] = useState('')
+  const [studentFilter, setStudentFilter] = useState('') // 筛选学生：student_id 或 ''
+  const [confirmFilter, setConfirmFilter] = useState('') // 筛选确认：'' | 'confirmed' | 'unconfirmed'
+  const [statusFilter, setStatusFilter] = useState('') // 筛选状态：'' | '正常' | '请假' | '跑空' | '删除'
   const [showModal, setShowModal] = useState(false)
   const [restrictStudentsToInitialStudent, setRestrictStudentsToInitialStudent] = useState(false)
   const [showCopyModal, setShowCopyModal] = useState(false)
@@ -89,6 +93,8 @@ const Courses = () => {
   const [selectedIds, setSelectedIds] = useState([])
   const [currentPage, setCurrentPage] = useState(1)
   const pageSize = 10
+  const [screenshotTarget, setScreenshotTarget] = useState(null) // 截图用：{ weekInfoLabel, monthFilter, weekFilter, courses, timeSlots }
+  const screenshotCaptureRef = useRef(null)
 
   // 计算当前月的周数范围（与原 Flask 逻辑一致）
   const getWeekRange = (month) => {
@@ -187,9 +193,9 @@ const Courses = () => {
     ? `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${weekFilter}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
     : ''
 
-  // 获取排课数据
+  // 获取排课数据（筛选学生优先用筛选栏选择，其次用 URL 的 student_id）
   const { data: courses = [], isLoading, error } = useQuery({
-    queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentIdFromUrl],
+    queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter || studentIdFromUrl],
     queryFn: () =>
       courseService.getCourses({
         month: monthFilter,
@@ -198,14 +204,22 @@ const Courses = () => {
         classroom: classroomFilter || undefined,
         subject: subjectFilter || undefined,
         grade: gradeFilter || undefined,
-        student_id: studentIdFromUrl || undefined,
+        student_id: studentFilter || studentIdFromUrl || undefined,
       }),
   })
 
-  // 过滤掉已删除的课程
+  // 按状态、确认状态筛选
   const validCourses = useMemo(() => {
-    return courses.filter((c) => c.status !== '删除')
-  }, [courses])
+    let list = courses
+    if (statusFilter) {
+      list = list.filter((c) => c.status === statusFilter)
+    } else {
+      list = list.filter((c) => c.status !== '删除')
+    }
+    if (confirmFilter === 'confirmed') list = list.filter((c) => c.is_confirmed)
+    if (confirmFilter === 'unconfirmed') list = list.filter((c) => !c.is_confirmed)
+    return list
+  }, [courses, statusFilter, confirmFilter])
 
   // 分页数据
   const paginatedCourses = useMemo(() => {
@@ -255,8 +269,8 @@ const Courses = () => {
     }
   }, [validCourses])
 
-  // 使用统一的学生查询key，共享缓存
-  const { data: students = [] } = useQuery({
+  // 使用统一的学生查询key，共享缓存；接口返回 { students: [], pagination }，统一取为数组
+  const { data: studentsResponse } = useQuery({
     queryKey: ['students', '在校'],
     queryFn: () => studentService.getStudents({ status: '在校', per_page: 1000 }),
     staleTime: 10 * 60 * 1000,
@@ -264,6 +278,7 @@ const Courses = () => {
     retry: false,
     placeholderData: (previousData) => previousData,
   })
+  const students = Array.isArray(studentsResponse?.students) ? studentsResponse.students : []
 
   const { data: courseList = [] } = useQuery({
     queryKey: ['courses-list'],
@@ -313,6 +328,10 @@ const Courses = () => {
       queryClient.invalidateQueries(['dashboard-stats'])
       alert('确认成功')
     },
+    onError: (err) => {
+      const msg = err?.response?.data?.error || err?.message || '确认失败'
+      alert(msg)
+    },
   })
 
   const batchConfirmMutation = useMutation({
@@ -325,6 +344,10 @@ const Courses = () => {
         message += `，${data.already_confirmed_count} 个已确认`
       }
       alert(message)
+    },
+    onError: (err) => {
+      const msg = err?.response?.data?.error || err?.message || '批量确认失败'
+      alert(msg)
     },
   })
 
@@ -356,9 +379,40 @@ const Courses = () => {
     }
   }
 
-  const handleConfirm = (id) => {
-    if (window.confirm('确定要确认这节课已上吗？')) {
-      confirmMutation.mutate(id)
+  const minHoursForReminder = 3
+  const handleConfirm = async (course) => {
+    const isConfirmed = course.is_confirmed
+    if (!isConfirmed && course.student_id && course.course_id) {
+      let remainingHours
+      try {
+        const month = new Date().toISOString().slice(0, 7)
+        const stats = await statsService.getStats({
+          month,
+          student_id: course.student_id,
+          course_id: course.course_id,
+        })
+        if (stats && stats.length > 0) {
+          const stat = stats.find((s) => s.student_id === course.student_id && s.course_id === course.course_id)
+          if (stat) remainingHours = stat.remaining_hours ?? 0
+        }
+      } catch (err) {
+        console.error('查询剩余课时失败:', err)
+      }
+      if (remainingHours !== undefined && remainingHours <= minHoursForReminder) {
+        if (
+          !window.confirm(
+            `⚠️ 警告：该学生剩余课时为${remainingHours}，低于或等于提醒阈值${minHoursForReminder}。确认上课后将剩余${remainingHours - 1}课时。\n\n建议先缴费再确认上课，是否继续确认？`
+          )
+        ) {
+          return
+        }
+      }
+    }
+    const message = isConfirmed
+      ? '确定要取消确认该课程吗？取消后将恢复剩余课时。'
+      : '确认该课程已上课？确认后将扣除剩余课时。'
+    if (window.confirm(message)) {
+      confirmMutation.mutate(course.id)
     }
   }
 
@@ -466,11 +520,29 @@ const Courses = () => {
     setViewMode((prev) => (prev === 'list' ? 'week' : 'list'))
   }
 
+  // 截图：截取当前星期模式课表为图片（仅星期模式下可用）
+  const handleScreenshot = () => {
+    if (viewMode !== 'week') {
+      alert('请先切换到星期模式后再截图')
+      return
+    }
+    setScreenshotTarget({
+      weekInfoLabel,
+      monthFilter,
+      weekFilter,
+      courses: validCourses,
+      timeSlots: timeSlots || [],
+    })
+  }
+
   const handleClearFilters = () => {
     setTeacherFilter('')
     setClassroomFilter('')
     setSubjectFilter('')
     setGradeFilter('')
+    setStudentFilter('')
+    setConfirmFilter('')
+    setStatusFilter('')
   }
 
   const handleCreateCourse = (data) => {
@@ -499,7 +571,53 @@ const Courses = () => {
   // 当视图模式或筛选条件改变时，重置到第一页
   useEffect(() => {
     setCurrentPage(1)
-  }, [viewMode, teacherFilter, classroomFilter, subjectFilter, gradeFilter])
+  }, [viewMode, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter, confirmFilter, statusFilter])
+
+  // 截图：screenshotTarget 设置后渲染隐藏表格，延迟后 html2canvas 截取并下载
+  useEffect(() => {
+    if (!screenshotTarget || !screenshotCaptureRef.current) return
+    const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+    const delay = isMobile ? 700 : 250
+    const timer = setTimeout(() => {
+      const el = screenshotCaptureRef.current
+      if (!el) {
+        setScreenshotTarget(null)
+        return
+      }
+      const target = screenshotTarget
+      el.style.visibility = 'visible'
+      el.style.opacity = '1'
+      el.style.zIndex = '99999'
+      const doCapture = () => {
+        if (isMobile) {
+          void el.offsetHeight
+          void el.scrollHeight
+        }
+        html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
+          .then((canvas) => {
+            const fileName = `排课表_${target.monthFilter}_第${target.weekFilter}周.png`
+            const link = document.createElement('a')
+            link.download = fileName
+            link.href = canvas.toDataURL('image/png')
+            link.click()
+            canvas.toBlob((blob) => {
+              if (blob && navigator.clipboard && navigator.clipboard.write) {
+                navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+                  .catch((clipErr) => console.warn('剪贴板写入失败:', clipErr))
+              }
+            }, 'image/png')
+            setScreenshotTarget(null)
+          })
+          .catch((err) => {
+            console.error('截图失败:', err)
+            alert('截图失败，请重试')
+            setScreenshotTarget(null)
+          })
+      }
+      requestAnimationFrame(() => requestAnimationFrame(doCapture))
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [screenshotTarget])
 
   // 去排课：从 student-courses 点击「去排课」进入时，先预取学生课程数据再打开弹窗，避免弹窗内学生字段显示「加载中」
   const hasOpenedGoToScheduleRef = useRef(false)
@@ -703,11 +821,26 @@ const Courses = () => {
           复制到指定周
         </button>
         <CopyToNextWeekButton courses={validCourses} selectedIds={selectedIds} monthFilter={monthFilter} weekFilter={weekFilter} onSuccess={() => queryClient.invalidateQueries(['courses'])} />
+        <button className="btn btn-secondary" onClick={handleScreenshot} title="截取当前周课表（星期模式）为图片" style={{ background: '#28a745', color: '#fff', borderColor: '#28a745' }}>
+          截图
+        </button>
       </div>
 
       {/* 筛选栏 */}
       <div className="filter-bar" style={{ display: 'flex', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
         <label style={{ display: 'inline-block', margin: 0, fontWeight: 'bold' }}>筛选：</label>
+        <select
+          value={studentFilter}
+          onChange={(e) => setStudentFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto', minWidth: '100px' }}
+        >
+          <option value="">全部学生</option>
+          {students.map((s) => (
+            <option key={s.id} value={String(s.id)}>
+              {s.name || s.student_name || `学生${s.id}`}
+            </option>
+          ))}
+        </select>
         <select
           value={teacherFilter}
           onChange={(e) => setTeacherFilter(e.target.value)}
@@ -755,6 +888,25 @@ const Courses = () => {
               {grade}
             </option>
           ))}
+        </select>
+        <select
+          value={confirmFilter}
+          onChange={(e) => setConfirmFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部确认</option>
+          <option value="confirmed">已确认</option>
+          <option value="unconfirmed">未确认</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          style={{ display: 'inline-block', padding: '6px 12px', border: '1px solid #ddd', borderRadius: '4px', fontSize: '14px', width: 'auto' }}
+        >
+          <option value="">全部状态</option>
+          <option value="正常">正常</option>
+          <option value="请假">请假</option>
+          <option value="跑空">跑空</option>
         </select>
         <button className="btn btn-secondary" onClick={handleClearFilters} style={{ display: 'inline-block', padding: '6px 12px', width: 'auto' }}>
           清除筛选
@@ -835,11 +987,11 @@ const Courses = () => {
                       </td>
                       <td>
                         {course.is_confirmed ? (
-                          <button className="btn btn-secondary" onClick={() => handleConfirm(course.id)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
-                            取消确认
+                          <button className="btn btn-secondary" onClick={() => handleConfirm(course)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                            已确认
                           </button>
                         ) : (
-                          <button className="btn btn-success" onClick={() => handleConfirm(course.id)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                          <button className="btn btn-success" onClick={() => handleConfirm(course)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
                             确认
                           </button>
                         )}
@@ -908,6 +1060,115 @@ const Courses = () => {
           isAdmin={isAdmin}
         />
       )}
+
+      {/* 截图用：隐藏的当周课表，结构与星期视图一致，仅用于 html2canvas 截取 */}
+      {screenshotTarget && (() => {
+        const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+        const wrapStyle = {
+          position: 'fixed',
+          left: 0,
+          top: 0,
+          width: 'fit-content',
+          padding: isMobile ? '8px' : '16px',
+          background: '#fff',
+          fontFamily: 'sans-serif',
+          fontSize: isMobile ? '12px' : '14px',
+          color: isMobile ? '#000' : undefined,
+          visibility: 'hidden',
+          pointerEvents: 'none',
+          zIndex: -1,
+          overflow: 'visible',
+        }
+        const thStyle = { padding: isMobile ? '4px 2px' : '10px', border: '1px solid #dee2e6', textAlign: 'center', color: isMobile ? '#000' : undefined }
+        const tdStyle = { padding: isMobile ? '3px 2px' : '8px 6px', border: '1px solid #dee2e6', verticalAlign: 'top', color: isMobile ? '#000' : undefined, minWidth: isMobile ? '56px' : '120px' }
+        const tdSlotStyle = { ...tdStyle, fontWeight: 600, background: '#f5f5f5', whiteSpace: 'nowrap' }
+        const tdCourseStyle = { ...tdStyle, background: '#fffde7' }
+        const weekRange = getCurrentWeekDateRange(screenshotTarget.monthFilter, screenshotTarget.weekFilter)
+        const weekdayMap = { 0: '周日', 1: '周一', 2: '周二', 3: '周三', 4: '周四', 5: '周五', 6: '周六' }
+        const dateMap = {}
+        if (weekRange && weekRange.startDate && weekRange.endDate) {
+          let d = new Date(weekRange.startDate)
+          const endTime = weekRange.endDate.getTime()
+          while (d.getTime() <= endTime) {
+            dateMap[weekdayMap[d.getDay()]] = `${weekRange.year}-${String(weekRange.month).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+            d.setDate(d.getDate() + 1)
+          }
+        }
+        const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+        const sortedSlots = (screenshotTarget.timeSlots || []).slice().sort((a, b) => {
+          const oa = a.sort_order != null ? a.sort_order : 999
+          const ob = b.sort_order != null ? b.sort_order : 999
+          return oa - ob || (a.name || '').localeCompare(b.name || '')
+        })
+        const tbodyRows = sortedSlots.length === 0
+          ? (
+              <tr>
+                <td colSpan={8} style={{ padding: '20px', textAlign: 'center', color: isMobile ? '#000' : '#666' }}>暂无时段或排课数据</td>
+              </tr>
+            )
+          : sortedSlots.map((timeSlot) => {
+              const timeSlotName = timeSlot.name || timeSlot
+              return (
+                <tr key={timeSlotName}>
+                  <td style={{ ...tdSlotStyle, fontSize: isMobile ? '11px' : undefined, textAlign: 'center' }}>{timeSlotName}</td>
+                  {weekdays.map((weekday) => {
+                    const matched = (screenshotTarget.courses || []).filter(
+                      (c) => (c.time_slot || '').trim() === timeSlotName.trim() && (c.weekday || '').trim() === weekday
+                    )
+                    if (matched.length === 0) {
+                      return <td key={weekday} style={tdStyle} />
+                    }
+                    return (
+                      <td key={weekday} style={tdCourseStyle}>
+                        {matched.map((course, idx) => (
+                          <div
+                            key={course.id || idx}
+                            style={{
+                              border: '1px solid #e6e0a0',
+                              borderRadius: '4px',
+                              padding: isMobile ? '2px 4px' : '4px 6px',
+                              marginBottom: idx < matched.length - 1 ? (isMobile ? 2 : 4) : 0,
+                              fontSize: isMobile ? '11px' : '13px',
+                              background: '#fffde7',
+                              color: isMobile ? '#000' : undefined,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {[course.course_name || course.subject, course.student_name, course.teacher_name, course.classroom].filter(Boolean).join(' ')}
+                          </div>
+                        ))}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )
+            })
+        return (
+          <div ref={screenshotCaptureRef} style={wrapStyle}>
+            <div style={{ marginBottom: isMobile ? '6px' : '12px', fontWeight: 600, fontSize: isMobile ? '14px' : '16px', textAlign: 'center', color: isMobile ? '#000' : undefined }}>
+              {screenshotTarget.weekInfoLabel}
+            </div>
+            <table style={{ borderCollapse: 'collapse', border: '1px solid #dee2e6', tableLayout: 'auto', width: 'auto' }}>
+              <thead>
+                <tr style={{ background: '#f8f9fa' }}>
+                  <th style={{ ...thStyle, minWidth: isMobile ? '48px' : '80px' }}>时段</th>
+                  {weekdays.map((weekday) => {
+                    const dateStr = dateMap[weekday] || ''
+                    const dateDisplay = dateStr ? `${dateStr.split('-')[1]}-${dateStr.split('-')[2]}` : ''
+                    return (
+                      <th key={weekday} style={{ ...thStyle, minWidth: isMobile ? '56px' : '120px' }}>
+                        <div>{weekday}</div>
+                        {dateDisplay && <div style={{ marginTop: '4px', fontSize: isMobile ? '10px' : '12px', color: isMobile ? '#000' : '#666' }}>{dateDisplay}</div>}
+                      </th>
+                    )
+                  })}
+                </tr>
+              </thead>
+              <tbody>{tbodyRows}</tbody>
+            </table>
+          </div>
+        )
+      })()}
 
       {/* 新增排课模态框 */}
       {showModal && (
@@ -1045,10 +1306,10 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
 
   return (
     <div className="table-wrapper">
-      <table className="data-table" id="week-view-table">
+      <table className="data-table" id="week-view-table" style={{ tableLayout: 'auto', minWidth: '100%' }}>
       <thead>
         <tr>
-          <th style={{ minWidth: '120px' }}>时段</th>
+          <th style={{ minWidth: '100px' }}>时段</th>
           {weekdays.map((weekday) => {
             const dateStr = dateMap[weekday] || ''
             const dateDisplay = dateStr ? (
@@ -1057,7 +1318,7 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
               </span>
             ) : null
             return (
-              <th key={weekday} style={{ minWidth: '150px' }}>
+              <th key={weekday} style={{ minWidth: '200px' }}>
                 {weekday}
                 {dateDisplay && <br />}
                 {dateDisplay}
@@ -1092,14 +1353,14 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
                   })
 
                   if (matchedCourses.length === 0) {
-                    return <td key={weekday} style={{ padding: '4px', verticalAlign: 'top' }}></td>
+                    return <td key={weekday} style={{ padding: '4px', verticalAlign: 'top', minWidth: '200px' }}></td>
                   }
 
                   return (
-                    <td key={weekday} style={{ padding: '4px', verticalAlign: 'top' }}>
+                    <td key={weekday} style={{ padding: '4px', verticalAlign: 'top', minWidth: '200px' }}>
                       {matchedCourses.map((course, index) => {
                         const statusClass = course.status === '正常' ? 'normal' : course.status === '请假' ? 'leave' : course.status === '跑空' ? 'empty' : 'deleted'
-                        const marginBottom = index < matchedCourses.length - 1 ? '3px' : '0'
+                        const marginBottom = index < matchedCourses.length - 1 ? '6px' : '0'
                         const confirmedStyle = course.is_confirmed
                           ? { background: '#f5f5f5', opacity: 0.8, color: '#666' }
                           : { background: 'white' }
@@ -1108,10 +1369,9 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
                         const courseName = course.course_name || course.subject || ''
                         const studentName = course.student_name || ''
                         const teacherName = course.teacher_name || ''
-                        const timeSlot = course.time_slot || ''
                         const classroom = course.classroom || ''
 
-                        const displayText = [courseName, studentName, teacherName, timeSlot, classroom].filter((item) => item).join(' ')
+                        const displayText = [courseName, studentName, teacherName, classroom].filter((item) => item).join(' ')
 
                         return (
                           <div
@@ -1119,28 +1379,35 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
                             style={{
                               border: '1px solid #ddd',
                               borderRadius: '3px',
-                              padding: '3px 4px',
+                              padding: '2px 4px',
                               marginBottom,
                               ...confirmedStyle,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: '4px',
                             }}
                           >
-                            <div style={{ fontSize: '11px', lineHeight: 1.3, marginBottom: '2px' }}>{displayText}</div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                              <span className={`status-badge status-${statusClass}`} style={{ fontSize: '9px', padding: '1px 3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: '11px', lineHeight: 1.3, wordBreak: 'break-all', whiteSpace: 'normal', flex: '1 1 auto', minWidth: 0 }} title={displayText}>
+                                {displayText}
+                              </span>
+                              <span className={`status-badge status-${statusClass}`} style={{ fontSize: '9px', padding: '1px 3px', flexShrink: 0 }}>
                                 {course.status}
                               </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
                               {course.is_confirmed ? (
                                 <button
                                   className="btn btn-secondary"
-                                  onClick={() => onConfirm(course.id)}
+                                  onClick={() => onConfirm(course)}
                                   style={{ padding: '1px 4px', fontSize: '10px', background: '#6c757d', color: 'white' }}
                                 >
-                                  取消确认
+                                  已确认
                                 </button>
                               ) : (
                                 <button
                                   className="btn btn-success"
-                                  onClick={() => onConfirm(course.id)}
+                                  onClick={() => onConfirm(course)}
                                   style={{ padding: '1px 4px', fontSize: '10px', background: '#28a745', color: 'white' }}
                                 >
                                   确认

@@ -197,6 +197,7 @@ class StudentCourseDefaultSchedule(db.Model):
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False)
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
+    scheduling_paused = db.Column(db.Boolean, default=False, comment='是否暂停排课（进行中时可切换，暂停后不再参与排课）')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
     
@@ -212,6 +213,7 @@ class StudentCourseDefaultSchedule(db.Model):
             'course_id': self.course_id,
             'default_time_slot': self.default_time_slot or '',
             'default_weekday': self.default_weekday or '',
+            'scheduling_paused': self.scheduling_paused if self.scheduling_paused is not None else False,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

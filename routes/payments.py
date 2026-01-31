@@ -10,7 +10,7 @@ from models import (
     TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
     TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
     TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
-    OperationLog, Notification
+    OperationLog, Notification, StudentCourseDefaultSchedule
 )
 from utils import (
     allowed_file, get_original_filename, get_safe_storage_filename,
@@ -455,6 +455,17 @@ def get_payments():
 
                 payment_dict['remaining_cost'] = round(remaining_cost, 2)
 
+                # 该学生-课程是否暂停排课（仅缴费且指定课程时有效）
+
+                if payment.course_id:
+                    default_schedule = StudentCourseDefaultSchedule.query.filter_by(
+                        student_id=payment.student_id,
+                        course_id=payment.course_id
+                    ).first()
+                    payment_dict['scheduling_paused'] = default_schedule.scheduling_paused if default_schedule and getattr(default_schedule, 'scheduling_paused', None) else False
+                else:
+                    payment_dict['scheduling_paused'] = False
+
             else:
 
                 # 退费记录：剩余课时和剩余费用为0，状态为结束
@@ -464,6 +475,8 @@ def get_payments():
                 payment_dict['remaining_hours'] = 0
 
                 payment_dict['remaining_cost'] = 0
+
+                payment_dict['scheduling_paused'] = False
 
             
 

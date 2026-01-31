@@ -172,6 +172,12 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
       queryClient.invalidateQueries(['courses'])
+      queryClient.invalidateQueries(['dashboard-stats'])
+      alert('确认成功')
+    },
+    onError: (err) => {
+      const msg = err?.response?.data?.error || err?.message || '确认失败'
+      alert(msg)
     },
   })
 
@@ -460,14 +466,16 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       </div>
 
       <div className="filter-bar">
-        <div className="filters-row">
-          <label style={{ fontWeight: 'bold' }}>筛选：</label>
+        <div className="filter-group">
+          <label>筛选：</label>
           <input
             type="text"
             placeholder="学生"
             value={filters.student_name}
             onChange={(e) => handleFilterChange('student_name', e.target.value)}
           />
+        </div>
+        <div className="filter-group">
           <select value={filters.teacher} onChange={(e) => handleFilterChange('teacher', e.target.value)}>
             <option value="">全部老师</option>
             {filterOptions.teachers.map((teacher) => (
@@ -492,34 +500,40 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
               </option>
             ))}
           </select>
-          <label>开始日期：</label>
+        </div>
+        <div className="filter-group">
+          <label>开始：</label>
           <input
             type="date"
             value={filters.date_start}
             onChange={(e) => handleFilterChange('date_start', e.target.value)}
           />
-          <label>结束日期：</label>
+          <label>结束：</label>
           <input
             type="date"
             value={filters.date_end}
             onChange={(e) => handleFilterChange('date_end', e.target.value)}
           />
+        </div>
+        <div className="filter-group">
           <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
             <option value="">全部状态</option>
             <option value="正常">正常</option>
             <option value="请假">请假</option>
             <option value="跑空">跑空</option>
           </select>
-          <label style={{ fontWeight: 'bold' }}>排序：</label>
+        </div>
+        <div className="filter-group">
+          <label>排序：</label>
           <select value={filters.order_by} onChange={(e) => handleFilterChange('order_by', e.target.value)}>
             <option value="desc">日期降序（最新在前）</option>
             <option value="asc">日期升序（最早在前）</option>
           </select>
+        </div>
+        <div className="filter-group filter-group-actions">
           <button className="btn btn-secondary" onClick={handleClearFilters}>
             清除筛选
           </button>
-        </div>
-        <div className="batch-actions">
           <button
             className="btn btn-success"
             onClick={handleBatchConfirm}
@@ -613,7 +627,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
                         onClick={() => handleConfirmCourse(course)}
                         style={{ background: '#6c757d', color: 'white', padding: '4px 8px', fontSize: '12px' }}
                       >
-                        取消确认
+                        已确认
                       </button>
                     ) : (
                       <button
@@ -621,7 +635,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
                         onClick={() => handleConfirmCourse(course)}
                         style={{ background: '#28a745', color: 'white', padding: '4px 8px', fontSize: '12px' }}
                       >
-                        确认上课
+                        确认
                       </button>
                     )}
                   </td>

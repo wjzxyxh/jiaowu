@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { paymentService } from '../services/paymentService'
 import { studentService } from '../services/studentService'
+import { studentCoursesService } from '../services/studentCoursesService'
 import { courseManageService } from '../services/courseManageService'
 import { statsService } from '../services/statsService'
 import { othersService } from '../services/othersService'
@@ -102,18 +103,27 @@ const Payments = () => {
       const key = `${p.student_id}_${p.course_id || 'null'}`
       const remainingHours = p.remaining_hours !== undefined ? p.remaining_hours : remainingHoursMap[key] || 0
       const remainingCost = p.remaining_cost !== undefined ? p.remaining_cost : remainingHours * (p.unit_price || 0)
+      const schedulingPaused = !!p.scheduling_paused
 
       return {
         ...p,
         _status: status,
         _remainingHours: remainingHours,
         _remainingCost: remainingCost,
+        _schedulingPaused: schedulingPaused,
       }
     })
 
-    // 应用状态筛选
+    // 应用状态筛选（进行中 / 暂停排课 / 结束）
     if (statusFilter) {
-      processed = processed.filter((p) => p._status === statusFilter)
+      if (statusFilter === '暂停排课') {
+        processed = processed.filter((p) => p._status === '进行中' && p._schedulingPaused)
+      } else {
+        processed = processed.filter((p) => {
+          if (statusFilter === '进行中') return p._status === '进行中' && !p._schedulingPaused
+          return p._status === statusFilter
+        })
+      }
     }
 
     // 排序：进行中的按剩余课时升序，结束的放在后面
@@ -193,6 +203,29 @@ const Payments = () => {
       alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
+
+  const toggleSchedulingPausedMutation = useMutation({
+    mutationFn: ({ studentId, courseId, paused }) =>
+      studentCoursesService.updateSchedulingPaused(studentId, courseId, paused),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['payments'])
+      // 使排课管理、学生课程、全部排课等页面的「需要排课」列表及时更新
+      queryClient.invalidateQueries(['paid-courses-need-scheduling'])
+    },
+    onError: (error) => {
+      alert('操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+  })
+
+  const handleToggleSchedulingPaused = (p) => {
+    if (p.type !== '缴费' || !p.course_id || p._status === '结束') return
+    const newPaused = !p._schedulingPaused
+    toggleSchedulingPausedMutation.mutate({
+      studentId: p.student_id,
+      courseId: p.course_id,
+      paused: newPaused,
+    })
+  }
 
   // 初始化年份选项
   useEffect(() => {
@@ -383,6 +416,7 @@ const Payments = () => {
         <select id="payment-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">全部状态</option>
           <option value="进行中">进行中</option>
+          <option value="暂停排课">暂停排课</option>
           <option value="结束">结束</option>
         </select>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
@@ -442,13 +476,46 @@ const Payments = () => {
                   const amountColor = type === '退费' ? { color: '#dc3545', fontWeight: 'bold' } : {}
                   const amountPrefix = type === '退费' ? '-' : ''
 
+                  const canToggleScheduling = type === '缴费' && p.course_id && status === '进行中'
                   const statusBadge =
                     status === '结束' ? (
                       <span className="status-badge" style={{ background: '#6c757d', color: 'white' }}>
                         结束
                       </span>
+                    ) : p._schedulingPaused ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="status-badge"
+                        style={{
+                          background: '#fd7e14',
+                          color: 'white',
+                          cursor: canToggleScheduling ? 'pointer' : 'default',
+                        }}
+                        title={canToggleScheduling ? '点击恢复为进行中，可排课' : ''}
+                        onClick={() => canToggleScheduling && handleToggleSchedulingPaused(p)}
+                        onKeyDown={(e) =>
+                          canToggleScheduling && (e.key === 'Enter' || e.key === ' ') && handleToggleSchedulingPaused(p)
+                        }
+                      >
+                        暂停排课
+                      </span>
                     ) : (
-                      <span className="status-badge" style={{ background: '#17a2b8', color: 'white' }}>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="status-badge"
+                        style={{
+                          background: '#17a2b8',
+                          color: 'white',
+                          cursor: canToggleScheduling ? 'pointer' : 'default',
+                        }}
+                        title={canToggleScheduling ? '点击暂停排课，之后将不再进行排课' : ''}
+                        onClick={() => canToggleScheduling && handleToggleSchedulingPaused(p)}
+                        onKeyDown={(e) =>
+                          canToggleScheduling && (e.key === 'Enter' || e.key === ' ') && handleToggleSchedulingPaused(p)
+                        }
+                      >
                         进行中
                       </span>
                     )

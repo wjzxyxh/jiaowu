@@ -123,32 +123,33 @@ const Calendar = () => {
           className={`calendar-day ${isOtherMonth ? 'other-month' : ''} ${isToday ? 'today' : ''}`}
         >
           <div className="day-number">{cellDay}</div>
-          {dayEvents.map((event) => {
-            // 根据状态和确认状态设置样式
-            let eventClass = 'calendar-event'
-            if (event.is_confirmed) {
-              eventClass += ' confirmed'
-            } else {
-              if (event.status === '正常') {
-                eventClass += ' normal'
-              } else if (event.status === '请假') {
-                eventClass += ' leave'
-              } else if (event.status === '跑空') {
-                eventClass += ' empty'
+          <div className="calendar-day-events" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '2px' }}>
+            {dayEvents.map((event) => {
+              let eventClass = 'calendar-event'
+              if (event.is_confirmed) {
+                eventClass += ' confirmed'
+              } else {
+                if (event.status === '正常') {
+                  eventClass += ' normal'
+                } else if (event.status === '请假') {
+                  eventClass += ' leave'
+                } else if (event.status === '跑空') {
+                  eventClass += ' empty'
+                }
               }
-            }
 
-            return (
-              <div
-                key={event.id}
-                className={eventClass}
-                onClick={() => showEventDetail(event)}
-                title={`${event.student_name} - ${event.teacher_name} - ${event.classroom || ''} - ${event.is_confirmed ? '已确认' : '未确认'}`}
-              >
-                {event.time_slot || ''} {event.title}
-              </div>
-            )
-          })}
+              return (
+                <div
+                  key={event.id}
+                  className={eventClass}
+                  onClick={() => showEventDetail(event)}
+                  title={`${event.title || ''} - ${event.is_confirmed ? '已确认' : '未确认'}`}
+                >
+                  {event.title || ''}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )
 

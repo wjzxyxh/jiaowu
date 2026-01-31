@@ -1098,6 +1098,27 @@ def create_student_course_default_schedule_table():
         traceback.print_exc()
 
 
+def upgrade_student_course_default_schedule_scheduling_paused():
+    """为学生课程默认排课设置表添加 scheduling_paused 字段（暂停排课）"""
+    try:
+        if not table_exists('student_course_default_schedules'):
+            return
+        if column_exists('student_course_default_schedules', 'scheduling_paused'):
+            print('学生课程默认排课设置表的 scheduling_paused 字段已存在')
+            return
+        if is_sqlite():
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN scheduling_paused BOOLEAN DEFAULT 0'))
+        else:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN scheduling_paused TINYINT(1) DEFAULT 0'))
+        print('已为学生课程默认排课设置表添加 scheduling_paused 字段')
+    except Exception as e:
+        print(f'升级学生课程默认排课设置表时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def create_user_permissions_table():
     """创建用户权限表"""
     try:
@@ -1185,4 +1206,5 @@ def run_migrations():
     upgrade_teacher_resume_table()
     create_user_permissions_table()
     create_student_course_default_schedule_table()
+    upgrade_student_course_default_schedule_scheduling_paused()
     upgrade_user_table_with_session_token()
