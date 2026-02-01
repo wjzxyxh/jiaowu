@@ -831,6 +831,7 @@ class UserPermission(db.Model):
     module = db.Column(db.String(50), nullable=False, comment='功能模块代码')
     module_name = db.Column(db.String(100), nullable=False, comment='功能模块名称')
     is_granted = db.Column(db.Boolean, default=True, comment='是否授权')
+    function_permissions = db.Column(db.JSON, nullable=True, comment='功能权限：{"function_code": true/false}')  # 新增字段
     granted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True, comment='授权人ID')
     granted_at = db.Column(db.DateTime, default=datetime.now, comment='授权时间')
     created_at = db.Column(db.DateTime, default=datetime.now, comment='创建时间')
@@ -850,6 +851,7 @@ class UserPermission(db.Model):
             'module': self.module,
             'module_name': self.module_name,
             'is_granted': self.is_granted,
+            'function_permissions': self.function_permissions or {},  # 返回功能权限字典
             'granted_by': self.granted_by,
             'granted_at': self.granted_at.strftime('%Y-%m-%d %H:%M:%S') if self.granted_at else None,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,

@@ -141,7 +141,32 @@ const Permissions = () => {
       if (existing) {
         return prev.map((p) => (p.module === module ? { ...p, is_granted: newValue } : p))
       } else {
-        return [...prev, { module, is_granted: newValue }]
+        return [...prev, { module, is_granted: newValue, function_permissions: {} }]
+      }
+    })
+  }
+
+  // 切换功能权限（仅更新本地状态，不立即保存）
+  const handleFunctionPermissionToggle = (module, functionCode, currentValue) => {
+    if (!selectedUserId) {
+      alert('请先选择子管理员')
+      return
+    }
+
+    const newValue = !currentValue
+    setLocalPermissions((prev) => {
+      const existing = prev.find((p) => p.module === module)
+      const functionPerms = existing?.function_permissions || {}
+      const updatedFunctionPerms = { ...functionPerms, [functionCode]: newValue }
+      
+      if (existing) {
+        return prev.map((p) => 
+          p.module === module 
+            ? { ...p, function_permissions: updatedFunctionPerms }
+            : p
+        )
+      } else {
+        return [...prev, { module, is_granted: false, function_permissions: updatedFunctionPerms }]
       }
     })
   }
@@ -153,10 +178,20 @@ const Permissions = () => {
       return
     }
 
-    const updatedPermissions = modules.map((module) => ({
-      module: module.code,
-      is_granted: true,
-    }))
+    const updatedPermissions = modules.map((module) => {
+      // 为每个功能也授权
+      const functionPerms = {}
+      if (module.functions && Array.isArray(module.functions)) {
+        module.functions.forEach((func) => {
+          functionPerms[func.code] = true
+        })
+      }
+      return {
+        module: module.code,
+        is_granted: true,
+        function_permissions: functionPerms,
+      }
+    })
 
     setLocalPermissions(updatedPermissions)
   }
@@ -171,6 +206,7 @@ const Permissions = () => {
     const updatedPermissions = modules.map((module) => ({
       module: module.code,
       is_granted: false,
+      function_permissions: {},
     }))
 
     setLocalPermissions(updatedPermissions)
@@ -443,17 +479,21 @@ const Permissions = () => {
                             userPermissions.find((p) => p.module === module.code) || {
                               module: module.code,
                               is_granted: false,
+                              function_permissions: {},
                             }
                           const isGranted = permission.is_granted || false
+                          const functionPerms = permission.function_permissions || {}
                           const selectedUser = users.find((u) => u.id === selectedUserId)
                           const isAdmin = selectedUser?.role === 'admin'
+                          const moduleFunctions = module.functions || []
 
                           return (
                             <div
                               key={module.code}
                               className={`permission-card ${isGranted ? 'granted' : 'denied'}`}
+                              style={{ marginBottom: '20px' }}
                             >
-                              <div className="permission-info">
+                              <div className="permission-info" style={{ marginBottom: '10px' }}>
                                 <div className="permission-name">
                                   <span className="permission-icon">{module.icon}</span>
                                   {module.name}
@@ -463,14 +503,44 @@ const Permissions = () => {
                               {isAdmin ? (
                                 <span className="admin-badge">管理员拥有所有权限</span>
                               ) : (
-                                <label className="permission-toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={isGranted}
-                                    onChange={() => handlePermissionToggle(module.code, isGranted)}
-                                  />
-                                  <span className="permission-toggle-slider"></span>
-                                </label>
+                                <>
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <label className="permission-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={isGranted}
+                                        onChange={() => handlePermissionToggle(module.code, isGranted)}
+                                      />
+                                      <span>模块权限</span>
+                                    </label>
+                                  </div>
+                                  {isGranted && moduleFunctions.length > 0 && (
+                                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e0e0e0' }}>
+                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', fontWeight: 500 }}>
+                                        工具栏功能：
+                                      </div>
+                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                        {moduleFunctions.map((func) => {
+                                          const funcGranted = functionPerms[func.code] !== undefined ? functionPerms[func.code] : true // 默认授权
+                                          return (
+                                            <label
+                                              key={func.code}
+                                              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={funcGranted}
+                                                onChange={() => handleFunctionPermissionToggle(module.code, func.code, funcGranted)}
+                                                style={{ width: '16px', height: '16px' }}
+                                              />
+                                              <span>{func.name}</span>
+                                            </label>
+                                          )
+                                        })}
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
                               )}
                             </div>
                           )

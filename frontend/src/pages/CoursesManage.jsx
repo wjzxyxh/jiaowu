@@ -343,12 +343,14 @@ const CoursesManage = () => {
       {activeTab === 'courses' && (
         <div className="tab-content active">
           <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => {
-              setEditingItem({ type: 'course', data: null })
-              setShowModal(true)
-            }}>
-              新增课程
-            </button>
+            {hasFunctionPermission('courses_manage', 'add') && (
+              <button className="btn btn-primary" onClick={() => {
+                setEditingItem({ type: 'course', data: null })
+                setShowModal(true)
+              }}>
+                新增课程
+              </button>
+            )}
           </div>
           <div className="table-wrapper">
             <table className="data-table">
@@ -378,12 +380,16 @@ const CoursesManage = () => {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-warning" onClick={() => handleEditCourse(course)}>
-                        编辑
-                      </button>
-                      <button className="btn btn-danger" onClick={() => handleDeleteCourse(course.id)}>
-                        删除
-                      </button>
+                      {hasFunctionPermission('courses_manage', 'edit') && (
+                        <button className="btn btn-warning" onClick={() => handleEditCourse(course)}>
+                          编辑
+                        </button>
+                      )}
+                      {hasFunctionPermission('courses_manage', 'delete') && (
+                        <button className="btn btn-danger" onClick={() => handleDeleteCourse(course.id)}>
+                          删除
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

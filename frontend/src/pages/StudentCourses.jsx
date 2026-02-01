@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useLocation } from 'react-router-dom'
 import html2canvas from 'html2canvas'
+import { usePermissions } from '../hooks/usePermissions'
 import { studentCoursesService } from '../services/studentCoursesService'
 import { othersService } from '../services/othersService'
 import { courseService } from '../services/courseService'
@@ -11,6 +12,7 @@ import './StudentCourses.css'
 
 const StudentCourses = () => {
   const queryClient = useQueryClient()
+  const { hasFunctionPermission } = usePermissions()
   const navigate = useNavigate()
   const location = useLocation()
   const [showModal, setShowModal] = useState(false)
@@ -845,23 +847,27 @@ const StudentCourses = () => {
               </div>
               <div className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-actions">
-                <button
-                  type="button"
-                  className="btn btn-secondary toolbar-btn"
-                  onClick={handleToggleSelectAll}
-                  disabled={batchOperating || filteredCourses.length === 0}
-                  title={filteredCourses.length === 0 ? '当前筛选结果为空，无法操作' : ''}
-                >
-                  {batchOperating ? '处理中...' : (isAllMarked ? '取消勾选' : '全部勾选')}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary toolbar-btn toolbar-btn-reset"
-                  onClick={handleReset}
-                  disabled={batchOperating}
-                >
-                  {batchOperating ? '处理中...' : '重置'}
-                </button>
+                {hasFunctionPermission('student_courses', 'batch_select') && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary toolbar-btn"
+                    onClick={handleToggleSelectAll}
+                    disabled={batchOperating || filteredCourses.length === 0}
+                    title={filteredCourses.length === 0 ? '当前筛选结果为空，无法操作' : ''}
+                  >
+                    {batchOperating ? '处理中...' : (isAllMarked ? '取消勾选' : '全部勾选')}
+                  </button>
+                )}
+                {hasFunctionPermission('student_courses', 'reset') && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary toolbar-btn toolbar-btn-reset"
+                    onClick={handleReset}
+                    disabled={batchOperating}
+                  >
+                    {batchOperating ? '处理中...' : '重置'}
+                  </button>
+                )}
               </div>
             </div>
             <div className="table-container">
@@ -909,52 +915,60 @@ const StudentCourses = () => {
                           {course.remaining_hours ? course.remaining_hours.toFixed(1) : '0.0'}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <button
-                            onClick={() => handleGoToSchedule(course.student_id, course.course_id)}
-                            className="btn-link"
-                            style={{
-                              marginRight: '8px',
-                              color: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
-                              borderColor: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
-                              cursor: 'pointer'
-                            }}
-                            title={scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '点击恢复为排课' : '去排课'}
-                          >
-                            {scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '已排课' : '排课'}
-                          </button>
-                          <button
-                            onClick={() => handleCopyCourses(course.student_id)}
-                            className="btn-link"
-                            style={{
-                              marginRight: '8px',
-                              color: copiedStudents.has(course.student_id) ? '#ff9800' : '#28a745',
-                              borderColor: copiedStudents.has(course.student_id) ? '#ff9800' : '#28a745',
-                              cursor: 'pointer'
-                            }}
-                            title={copiedStudents.has(course.student_id) ? "点击恢复为复制" : "复制"}
-                          >
-                            {copiedStudents.has(course.student_id) ? '已复制' : '复制'}
-                          </button>
-                          <button
-                            onClick={() => handleScreenshot(course.student_id, course.student_name, course.grade)}
-                            className="btn-link"
-                            style={{
-                              marginRight: '8px',
-                              color: screenshotStudents.has(course.student_id) ? '#ff9800' : '#17a2b8',
-                              borderColor: screenshotStudents.has(course.student_id) ? '#ff9800' : '#17a2b8',
-                              cursor: 'pointer'
-                            }}
-                            title={screenshotStudents.has(course.student_id) ? '点击恢复为截图' : '截取当周课表（星期模式）'}
-                          >
-                            {screenshotStudents.has(course.student_id) ? '已截图' : '截图'}
-                          </button>
-                          <button 
-                            onClick={() => handleShowEditModal(course)} 
-                            className="btn-link edit-default"
-                            style={{ marginRight: '0' }}
-                          >
-                            编辑
-                          </button>
+                          {hasFunctionPermission('student_courses', 'schedule') && (
+                            <button 
+                              onClick={() => handleGoToSchedule(course.student_id, course.course_id)} 
+                              className="btn-link"
+                              style={{
+                                marginRight: '8px',
+                                color: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
+                                borderColor: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
+                                cursor: 'pointer'
+                              }}
+                              title={scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '点击恢复为排课' : '去排课'}
+                            >
+                              {scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '已排课' : '排课'}
+                            </button>
+                          )}
+                          {hasFunctionPermission('student_courses', 'copy') && (
+                            <button
+                              onClick={() => handleCopyCourses(course.student_id)}
+                              className="btn-link"
+                              style={{
+                                marginRight: '8px',
+                                color: copiedStudents.has(course.student_id) ? '#ff9800' : '#28a745',
+                                borderColor: copiedStudents.has(course.student_id) ? '#ff9800' : '#28a745',
+                                cursor: 'pointer'
+                              }}
+                              title={copiedStudents.has(course.student_id) ? "点击恢复为复制" : "复制"}
+                            >
+                              {copiedStudents.has(course.student_id) ? '已复制' : '复制'}
+                            </button>
+                          )}
+                          {hasFunctionPermission('student_courses', 'screenshot') && (
+                            <button
+                              onClick={() => handleScreenshot(course.student_id, course.student_name, course.grade)}
+                              className="btn-link"
+                              style={{
+                                marginRight: '8px',
+                                color: screenshotStudents.has(course.student_id) ? '#ff9800' : '#17a2b8',
+                                borderColor: screenshotStudents.has(course.student_id) ? '#ff9800' : '#17a2b8',
+                                cursor: 'pointer'
+                              }}
+                              title={screenshotStudents.has(course.student_id) ? '点击恢复为截图' : '截取当周课表（星期模式）'}
+                            >
+                              {screenshotStudents.has(course.student_id) ? '已截图' : '截图'}
+                            </button>
+                          )}
+                          {hasFunctionPermission('student_courses', 'edit_default') && (
+                            <button 
+                              onClick={() => handleShowEditModal(course)} 
+                              className="btn-link edit-default"
+                              style={{ marginRight: '0' }}
+                            >
+                              编辑
+                            </button>
+                          )}
                         </td>
                       </tr>
                     )

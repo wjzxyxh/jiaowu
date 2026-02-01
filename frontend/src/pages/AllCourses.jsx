@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../contexts/AuthContext'
+import { usePermissions } from '../hooks/usePermissions'
 import { allCoursesService } from '../services/allCoursesService'
 import { courseService } from '../services/courseService'
 import { studentService } from '../services/studentService'
@@ -16,6 +17,7 @@ import './AllCourses.css'
 const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { hasFunctionPermission } = usePermissions()
   const isAdmin = user?.role === 'admin'
   const hasOpenedGoToScheduleRef = React.useRef(false)
 
@@ -494,9 +496,11 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     <div className="all-courses-page">
       <div className="page-header">
         <h1>全部排课</h1>
-        <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-          新增排课
-        </button>
+        {hasFunctionPermission('all_courses', 'add') && (
+          <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+            新增排课
+          </button>
+        )}
       </div>
 
       <div className="filter-bar">
@@ -578,26 +582,39 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
           <button className="btn btn-secondary" onClick={handleClearFilters}>
             清除筛选
           </button>
-          <button
-            className="btn btn-success"
-            onClick={handleBatchConfirm}
-            disabled={selectedCoursesInfo.unconfirmed.length === 0}
-          >
-            批量确认 ({selectedCoursesInfo.unconfirmed.length})
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={handleBatchCancel}
-            disabled={selectedCoursesInfo.confirmed.length === 0}
-          >
-            批量取消 ({selectedCoursesInfo.confirmed.length})
-          </button>
-          <button className="btn btn-danger" onClick={handleBatchDelete} disabled={selectedIds.length === 0}>
-            批量删除 ({selectedIds.length})
-          </button>
-          <button className="btn btn-info" onClick={handleShowStatistics}>
-            统计
-          </button>
+          {hasFunctionPermission('all_courses', 'add') && (
+            <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+              新增排课
+            </button>
+          )}
+          {hasFunctionPermission('all_courses', 'batch_confirm') && (
+            <button
+              className="btn btn-success"
+              onClick={handleBatchConfirm}
+              disabled={selectedCoursesInfo.unconfirmed.length === 0}
+            >
+              批量确认 ({selectedCoursesInfo.unconfirmed.length})
+            </button>
+          )}
+          {hasFunctionPermission('all_courses', 'batch_cancel') && (
+            <button
+              className="btn btn-secondary"
+              onClick={handleBatchCancel}
+              disabled={selectedCoursesInfo.confirmed.length === 0}
+            >
+              批量取消 ({selectedCoursesInfo.confirmed.length})
+            </button>
+          )}
+          {hasFunctionPermission('all_courses', 'batch_delete') && (
+            <button className="btn btn-danger" onClick={handleBatchDelete} disabled={selectedIds.length === 0}>
+              批量删除 ({selectedIds.length})
+            </button>
+          )}
+          {hasFunctionPermission('all_courses', 'statistics') && (
+            <button className="btn btn-info" onClick={handleShowStatistics}>
+              统计
+            </button>
+          )}
         </div>
       </div>
 

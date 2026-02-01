@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { othersService } from '../services/othersService'
 import api from '../services/api'
 import Modal from '../components/Modal'
@@ -7,6 +8,7 @@ import './OthersManage.css'
 
 const OthersManage = () => {
   const queryClient = useQueryClient()
+  const { hasFunctionPermission } = usePermissions()
   const [activeTab, setActiveTab] = useState('time-slots')
   const [showModal, setShowModal] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -383,15 +385,17 @@ const OthersManage = () => {
       {activeTab === 'time-slots' && (
         <div className="tab-content active" style={{ display: 'block' }}>
           <div className="toolbar">
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setEditingItem({ type: 'time-slot', data: null })
-                setShowModal(true)
-              }}
-            >
-              新增时段
-            </button>
+            {hasFunctionPermission('others_manage', 'add_time_slot') && (
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setEditingItem({ type: 'time-slot', data: null })
+                  setShowModal(true)
+                }}
+              >
+                新增时段
+              </button>
+            )}
           </div>
           {timeSlotsLoading ? (
             <div className="loading" style={{ textAlign: 'center', padding: '20px' }}>加载中...</div>
@@ -473,12 +477,16 @@ const OthersManage = () => {
                         </span>
                       </td>
                       <td>
-                        <button className="btn btn-warning" onClick={() => handleEditTimeSlot(slot)}>
-                          编辑
-                        </button>
-                        <button className="btn btn-danger" onClick={() => handleDeleteTimeSlot(slot.id)}>
-                          删除
-                        </button>
+                        {hasFunctionPermission('others_manage', 'edit_time_slot') && (
+                          <button className="btn btn-warning" onClick={() => handleEditTimeSlot(slot)}>
+                            编辑
+                          </button>
+                        )}
+                        {hasFunctionPermission('others_manage', 'delete_time_slot') && (
+                          <button className="btn btn-danger" onClick={() => handleDeleteTimeSlot(slot.id)}>
+                            删除
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
@@ -522,15 +530,17 @@ const OthersManage = () => {
       {activeTab === 'classrooms' && (
         <div className="tab-content active">
           <div className="toolbar">
-            <button
-              className="btn btn-primary"
-              onClick={() => {
-                setEditingItem({ type: 'classroom', data: null })
-                setShowModal(true)
-              }}
-            >
-              新增教室
-            </button>
+            {hasFunctionPermission('others_manage', 'add_classroom') && (
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  setEditingItem({ type: 'classroom', data: null })
+                  setShowModal(true)
+                }}
+              >
+                新增教室
+              </button>
+            )}
           </div>
           <div className="table-wrapper">
             <table className="data-table">
@@ -556,12 +566,16 @@ const OthersManage = () => {
                       </span>
                     </td>
                     <td>
-                      <button className="btn btn-warning" onClick={() => handleEditClassroom(classroom)}>
-                        编辑
-                      </button>
-                      <button className="btn btn-danger" onClick={() => handleDeleteClassroom(classroom.id)}>
-                        删除
-                      </button>
+                      {hasFunctionPermission('others_manage', 'edit_classroom') && (
+                        <button className="btn btn-warning" onClick={() => handleEditClassroom(classroom)}>
+                          编辑
+                        </button>
+                      )}
+                      {hasFunctionPermission('others_manage', 'delete_classroom') && (
+                        <button className="btn btn-danger" onClick={() => handleDeleteClassroom(classroom.id)}>
+                          删除
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))

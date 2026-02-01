@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import html2canvas from 'html2canvas'
 import { useAuth } from '../contexts/AuthContext'
+import { usePermissions } from '../hooks/usePermissions'
 import { courseService } from '../services/courseService'
 import { studentService } from '../services/studentService'
 import { teacherService } from '../services/teacherService'
@@ -17,6 +18,7 @@ import './Courses.css'
 const Courses = () => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
+  const { hasFunctionPermission } = usePermissions()
   const isAdmin = user?.role === 'admin'
   const [searchParams, setSearchParams] = useSearchParams()
   const studentIdFromUrl = searchParams.get('student_id')
@@ -801,25 +803,31 @@ const Courses = () => {
           {viewMode === 'list' ? '切换到星期模式' : '切换到列表模式'}
         </button>
         {weekInfoLabel && <span className="week-info-label" style={{ marginLeft: '10px' }}>{weekInfoLabel}</span>}
-        <button className="btn btn-secondary" onClick={() => setShowCopyModal(true)}>
-          复制到指定周
-        </button>
-        <CopyToNextWeekButton
-          courses={validCourses}
-          selectedIds={selectedIds}
-          monthFilter={monthFilter}
-          weekFilter={weekFilter}
-          onSuccess={(nextMonth, nextWeek) => {
-            queryClient.invalidateQueries(['courses'])
-            if (nextMonth != null && nextWeek != null) {
-              setMonthFilter(nextMonth)
-              setWeekFilter(nextWeek)
-            }
-          }}
-        />
-        <button className="btn btn-secondary" onClick={handleScreenshot} title="截取当前周课表（星期模式）为图片" style={{ background: '#28a745', color: '#fff', borderColor: '#28a745' }}>
-          截图
-        </button>
+        {hasFunctionPermission('courses', 'copy') && (
+          <button className="btn btn-secondary" onClick={() => setShowCopyModal(true)}>
+            复制到指定周
+          </button>
+        )}
+        {hasFunctionPermission('courses', 'copy_next') && (
+          <CopyToNextWeekButton
+            courses={validCourses}
+            selectedIds={selectedIds}
+            monthFilter={monthFilter}
+            weekFilter={weekFilter}
+            onSuccess={(nextMonth, nextWeek) => {
+              queryClient.invalidateQueries(['courses'])
+              if (nextMonth != null && nextWeek != null) {
+                setMonthFilter(nextMonth)
+                setWeekFilter(nextWeek)
+              }
+            }}
+          />
+        )}
+        {hasFunctionPermission('courses', 'screenshot') && (
+          <button className="btn btn-secondary" onClick={handleScreenshot} title="截取当前周课表（星期模式）为图片" style={{ background: '#28a745', color: '#fff', borderColor: '#28a745' }}>
+            截图
+          </button>
+        )}
       </div>
 
       {/* 筛选栏 */}
@@ -997,12 +1005,16 @@ const Courses = () => {
                         )}
                         {canEdit ? (
                           <>
-                            <button className="btn btn-warning" onClick={() => handleEditCourse(course)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
-                              编辑
-                            </button>
-                            <button className="btn btn-danger" onClick={() => handleDelete(course.id)} style={{ padding: '4px 8px', fontSize: '12px' }}>
-                              删除
-                            </button>
+                            {hasFunctionPermission('courses', 'edit') && (
+                              <button className="btn btn-warning" onClick={() => handleEditCourse(course)} style={{ marginRight: '8px', padding: '4px 8px', fontSize: '12px' }}>
+                                编辑
+                              </button>
+                            )}
+                            {hasFunctionPermission('courses', 'delete') && (
+                              <button className="btn btn-danger" onClick={() => handleDelete(course.id)} style={{ padding: '4px 8px', fontSize: '12px' }}>
+                                删除
+                              </button>
+                            )}
                           </>
                         ) : (
                           <>
@@ -1058,6 +1070,7 @@ const Courses = () => {
           onSelect={handleSelectCourse}
           selectedIds={selectedIds}
           isAdmin={isAdmin}
+          hasFunctionPermission={hasFunctionPermission}
         />
       )}
 
@@ -1254,7 +1267,7 @@ const Courses = () => {
 }
 
 // 星期视图组件
-const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDelete, onEdit, onSelect, selectedIds, isAdmin }) => {
+const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDelete, onEdit, onSelect, selectedIds, isAdmin, hasFunctionPermission }) => {
   // 计算当前周的日期映射（第一周 = 当月第一个周一，周一到周日；日期用实际年月日）
   const dateMap = useMemo(() => {
     if (!monthFilter || !weekFilter) return {}
@@ -1422,16 +1435,20 @@ const WeekView = ({ courses, timeSlots, monthFilter, weekFilter, onConfirm, onDe
                               />
                               {canEdit ? (
                                 <>
-                                  <button
-                                    className="btn btn-warning"
-                                    onClick={() => onEdit(course)}
-                                    style={{ padding: '1px 4px', fontSize: '10px' }}
-                                  >
-                                    编辑
-                                  </button>
-                                  <button className="btn btn-danger" onClick={() => onDelete(course.id)} style={{ padding: '1px 4px', fontSize: '10px' }}>
-                                    删除
-                                  </button>
+                                  {hasFunctionPermission('courses', 'edit') && (
+                                    <button
+                                      className="btn btn-warning"
+                                      onClick={() => onEdit(course)}
+                                      style={{ padding: '1px 4px', fontSize: '10px' }}
+                                    >
+                                      编辑
+                                    </button>
+                                  )}
+                                  {hasFunctionPermission('courses', 'delete') && (
+                                    <button className="btn btn-danger" onClick={() => onDelete(course.id)} style={{ padding: '1px 4px', fontSize: '10px' }}>
+                                      删除
+                                    </button>
+                                  )}
                                 </>
                               ) : (
                                 <>

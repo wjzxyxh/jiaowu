@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { statsService } from '../services/statsService'
 import { studentService } from '../services/studentService'
 import './Stats.css'
 
 const Stats = () => {
+  const { hasFunctionPermission } = usePermissions()
   const currentMonth = new Date().toISOString().slice(0, 7)
   const [monthFilter, setMonthFilter] = useState(currentMonth)
   const [selectedStudentId, setSelectedStudentId] = useState('')
@@ -229,9 +231,11 @@ const Stats = () => {
               </option>
             ))}
         </select>
-        <button className="btn btn-primary" onClick={handleExport} style={{ marginLeft: '10px' }}>
-          导出Excel
-        </button>
+        {hasFunctionPermission('stats', 'export') && (
+          <button className="btn btn-primary" onClick={handleExport} style={{ marginLeft: '10px' }}>
+            导出Excel
+          </button>
+        )}
       </div>
 
       {/* 表格 */}

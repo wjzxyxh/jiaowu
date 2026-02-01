@@ -2,11 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentService } from '../services/studentService'
 import { marketingService } from '../services/marketingService'
+import { usePermissions } from '../hooks/usePermissions'
 import Modal from '../components/Modal'
 import './Students.css'
 
 const Students = () => {
   const queryClient = useQueryClient()
+  const { hasFunctionPermission } = usePermissions()
     const [page, setPage] = useState(1)
     const [statusFilter, setStatusFilter] = useState('')
     const [gradeFilter, setGradeFilter] = useState('')
@@ -383,15 +385,21 @@ const Students = () => {
 
       <div className="toolbar">
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            新增学生
-          </button>
-          <button className="btn btn-secondary" onClick={exportStudents}>
-            导出Excel
-          </button>
-          <button className="btn btn-secondary" onClick={importStudents}>
-            导入Excel
-          </button>
+          {hasFunctionPermission('students', 'add') && (
+            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+              新增学生
+            </button>
+          )}
+          {hasFunctionPermission('students', 'export') && (
+            <button className="btn btn-secondary" onClick={exportStudents}>
+              导出Excel
+            </button>
+          )}
+          {hasFunctionPermission('students', 'import') && (
+            <button className="btn btn-secondary" onClick={importStudents}>
+              导入Excel
+            </button>
+          )}
           <input
             type="file"
             id="import-file"
@@ -511,12 +519,16 @@ const Students = () => {
                   <td>{student.phone || '-'}</td>
                   <td>{student.parent_name || '-'}</td>
                   <td>
-                    <button className="btn btn-warning" onClick={() => handleEdit(student)}>
-                      编辑
-                    </button>
-                    <button className="btn btn-danger" onClick={() => handleDelete(student)}>
-                      删除
-                    </button>
+                    {hasFunctionPermission('students', 'edit') && (
+                      <button className="btn btn-warning" onClick={() => handleEdit(student)}>
+                        编辑
+                      </button>
+                    )}
+                    {hasFunctionPermission('students', 'delete') && (
+                      <button className="btn btn-danger" onClick={() => handleDelete(student)}>
+                        删除
+                      </button>
+                    )}
                   </td>
                 </tr>
               )

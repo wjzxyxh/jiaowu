@@ -1,10 +1,12 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { teacherHoursService } from '../services/teacherHoursService'
 import { teacherService } from '../services/teacherService'
 import './TeacherHours.css'
 
 const TeacherHours = () => {
+  const { hasFunctionPermission } = usePermissions()
   const currentMonth = new Date().toISOString().slice(0, 7)
   const [currentTab, setCurrentTab] = useState('parttime') // 'fulltime' or 'parttime'
   const [monthFilter, setMonthFilter] = useState(currentMonth)
@@ -603,9 +605,11 @@ const TeacherHours = () => {
             </option>
           ))}
         </select>
-        <button className="btn btn-primary" onClick={handleExport} style={{ marginLeft: '10px' }}>
-          导出Excel
-        </button>
+        {hasFunctionPermission('teacher_hours', 'export') && (
+          <button className="btn btn-primary" onClick={handleExport} style={{ marginLeft: '10px' }}>
+            导出Excel
+          </button>
+        )}
         <button
           className="btn btn-success"
           id="batch-settle-btn"

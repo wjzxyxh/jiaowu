@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { paymentService } from '../services/paymentService'
 import { studentService } from '../services/studentService'
 import { studentCoursesService } from '../services/studentCoursesService'
@@ -11,6 +12,7 @@ import './Payments.css'
 
 const Payments = () => {
   const queryClient = useQueryClient()
+  const { hasFunctionPermission } = usePermissions()
   const [viewMode, setViewMode] = useState('record') // 'record' 或 'reminder'
   const [yearFilter, setYearFilter] = useState('') // 默认全部年份
   const [monthFilter, setMonthFilter] = useState('') // 默认全部月份
@@ -418,9 +420,11 @@ const Payments = () => {
         >
           缴费提醒
         </button>
-        <button className="btn btn-secondary" onClick={handleExportPayments}>
-          导出Excel
-        </button>
+        {hasFunctionPermission('payments', 'export') && (
+          <button className="btn btn-secondary" onClick={handleExportPayments}>
+            导出Excel
+          </button>
+        )}
         <select id="payment-year" value={yearFilter} onChange={(e) => setYearFilter(e.target.value)}>
           <option value="">全部年份</option>
           {yearOptions.map((year) => (
@@ -465,12 +469,16 @@ const Payments = () => {
           清除筛选
         </button>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px' }}>
-          <button className="btn btn-primary" onClick={handleAddPayment}>
-            新增缴费
-          </button>
-          <button className="btn btn-warning" onClick={handleAddRefund}>
-            新增退费
-          </button>
+          {hasFunctionPermission('payments', 'add') && (
+            <button className="btn btn-primary" onClick={handleAddPayment}>
+              新增缴费
+            </button>
+          )}
+          {hasFunctionPermission('payments', 'add') && (
+            <button className="btn btn-warning" onClick={handleAddRefund}>
+              新增退费
+            </button>
+          )}
         </div>
       </div>
 
@@ -604,9 +612,11 @@ const Payments = () => {
                       <td>{statusBadge}</td>
                       <td>{p.remark || '-'}</td>
                       <td>
-                        <button className="btn btn-danger" onClick={() => handleDelete(p.id)}>
-                          删除
-                        </button>
+                        {hasFunctionPermission('payments', 'delete') && (
+                          <button className="btn btn-danger" onClick={() => handleDelete(p.id)}>
+                            删除
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )

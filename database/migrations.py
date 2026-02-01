@@ -94,6 +94,32 @@ def upgrade_student_table_with_default_schedule():
         traceback.print_exc()
 
 
+def upgrade_user_permissions_table():
+    """升级用户权限表，添加功能权限字段"""
+    try:
+        inspector = inspect(db.engine)
+        
+        if 'user_permissions' in inspector.get_table_names():
+            columns = [col['name'] for col in inspector.get_columns('user_permissions')]
+            
+            if 'function_permissions' not in columns:
+                if is_sqlite():
+                    # SQLite不支持JSON类型，使用TEXT存储JSON字符串
+                    with db.engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE user_permissions ADD COLUMN function_permissions TEXT'))
+                else:
+                    # MySQL支持JSON类型
+                    with db.engine.begin() as conn:
+                        conn.execute(text('ALTER TABLE user_permissions ADD COLUMN function_permissions JSON'))
+                print('已为用户权限表添加功能权限字段')
+            else:
+                print('用户权限表的功能权限字段已存在')
+    except Exception as e:
+        print(f'升级用户权限表时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def upgrade_student_table_with_source():
     """升级学生表，添加来源字段（如果不存在）"""
     try:
@@ -1280,6 +1306,7 @@ def run_migrations():
     upgrade_student_course_table_with_marketing_lead()
     upgrade_teacher_resume_table()
     create_user_permissions_table()
+    upgrade_user_permissions_table()  # 添加功能权限字段
     create_student_course_default_schedule_table()
     upgrade_student_course_default_schedule_scheduling_paused()
     upgrade_student_course_default_schedule_default_teacher_id()

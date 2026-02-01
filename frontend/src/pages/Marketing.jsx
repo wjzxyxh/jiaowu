@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import { usePermissions } from '../hooks/usePermissions'
 import { marketingService } from '../services/marketingService'
 import { courseService } from '../services/courseService'
 import { teacherService } from '../services/teacherService'
@@ -19,6 +20,7 @@ const SOURCE_OPTIONS = [
 
 const Marketing = () => {
   const queryClient = useQueryClient()
+  const { hasFunctionPermission } = usePermissions()
   const [showModal, setShowModal] = useState(false)
   const [editingDraft, setEditingDraft] = useState(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
@@ -308,9 +310,11 @@ const Marketing = () => {
       </p>
 
       <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => { setEditingDraft(null); setShowModal(true) }}>
-          新增学生
-        </button>
+        {hasFunctionPermission('marketing', 'add') && (
+          <button className="btn btn-primary" onClick={() => { setEditingDraft(null); setShowModal(true) }}>
+            新增学生
+          </button>
+        )}
       </div>
 
       {/* 待确认列表 */}
@@ -437,19 +441,23 @@ const Marketing = () => {
                       <td>{s.time_slot || '-'}</td>
                       <td>{s.classroom || '-'}</td>
                       <td>
-                        <select
-                          value={s.trial_status || ''}
-                          onChange={(e) => handleUpdateTrialStatus(s.id, e.target.value)}
-                          className="form-control"
-                          style={{ minWidth: '100px' }}
-                          disabled={isStatusLocked}
-                          title={isFormalStudent ? '已转为正式学生，状态不可修改' : isRetry ? '已设为再试，状态不可修改' : ''}
-                        >
-                          <option value="">-- 请选择 --</option>
-                          <option value="成功">成功</option>
-                          <option value="失败">失败</option>
-                          <option value="再试">再试</option>
-                        </select>
+                        {hasFunctionPermission('marketing', 'trial_status') ? (
+                          <select
+                            value={s.trial_status || ''}
+                            onChange={(e) => handleUpdateTrialStatus(s.id, e.target.value)}
+                            className="form-control"
+                            style={{ minWidth: '100px' }}
+                            disabled={isStatusLocked}
+                            title={isFormalStudent ? '已转为正式学生，状态不可修改' : isRetry ? '已设为再试，状态不可修改' : ''}
+                          >
+                            <option value="">-- 请选择 --</option>
+                            <option value="成功">成功</option>
+                            <option value="失败">失败</option>
+                            <option value="再试">再试</option>
+                          </select>
+                        ) : (
+                          <span>{s.trial_status || '-'}</span>
+                        )}
                       </td>
                       <td>
                         <button
@@ -461,15 +469,17 @@ const Marketing = () => {
                         >
                           查看课表
                         </button>
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-danger"
-                          onClick={() => handleDeleteSchedule(s.id)}
-                          title="删除排课记录（不会删除学生信息）"
-                          disabled={deleteScheduleMutation.isLoading}
-                        >
-                          删除
-                        </button>
+                        {hasFunctionPermission('marketing', 'delete') && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-danger"
+                            onClick={() => handleDeleteSchedule(s.id)}
+                            title="删除排课记录（不会删除学生信息）"
+                            disabled={deleteScheduleMutation.isLoading}
+                          >
+                            删除
+                          </button>
+                        )}
                       </td>
                     </tr>
                   )

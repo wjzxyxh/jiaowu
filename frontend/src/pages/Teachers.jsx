@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { teacherService } from '../services/teacherService'
 import { courseManageService } from '../services/courseManageService'
 import api from '../services/api'
@@ -7,6 +8,7 @@ import Modal from '../components/Modal'
 import './Teachers.css'
 
 const Teachers = () => {
+  const { hasFunctionPermission } = usePermissions()
   const [statusFilter, setStatusFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [showBioModal, setShowBioModal] = useState(false)
@@ -128,9 +130,11 @@ const Teachers = () => {
       </div>
 
       <div className="toolbar">
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          新增教师
-        </button>
+        {hasFunctionPermission('teachers', 'add') && (
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
+            新增教师
+          </button>
+        )}
       </div>
 
       <div className="table-wrapper">
@@ -174,12 +178,16 @@ const Teachers = () => {
                     </span>
                   </td>
                   <td>
-                    <button className="btn btn-warning" onClick={() => handleEdit(teacher)}>
-                      编辑
-                    </button>
-                    <button className="btn btn-danger" onClick={() => handleDelete(teacher.id)}>
-                      删除
-                    </button>
+                    {hasFunctionPermission('teachers', 'edit') && (
+                      <button className="btn btn-warning" onClick={() => handleEdit(teacher)}>
+                        编辑
+                      </button>
+                    )}
+                    {hasFunctionPermission('teachers', 'delete') && (
+                      <button className="btn btn-danger" onClick={() => handleDelete(teacher.id)}>
+                        删除
+                      </button>
+                    )}
                   </td>
                 </tr>
               )
