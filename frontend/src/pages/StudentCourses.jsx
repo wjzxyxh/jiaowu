@@ -665,7 +665,7 @@ const StudentCourses = () => {
   }, [copyFallbackModal, fallbackCopyTextToClipboard])
 
   // 截图：获取该学生当周课表（星期模式），渲染后截图为图片，点击后标记为已截图；再次点击已截图则恢复为截图
-  const handleScreenshot = async (studentId, studentName) => {
+  const handleScreenshot = async (studentId, studentName, studentGrade) => {
     if (screenshotStudents.has(studentId)) {
       setScreenshotStudents((prev) => {
         const next = new Set(prev)
@@ -694,6 +694,7 @@ const StudentCourses = () => {
       setScreenshotTarget({
         studentId,
         studentName: studentName || '',
+        studentGrade: studentGrade || '',
         courses: validCourses,
         weekInfoLabel,
         monthFilter: currentMonth,
@@ -935,7 +936,7 @@ const StudentCourses = () => {
                             {copiedStudents.has(course.student_id) ? '已复制' : '复制'}
                           </button>
                           <button
-                            onClick={() => handleScreenshot(course.student_id, course.student_name)}
+                            onClick={() => handleScreenshot(course.student_id, course.student_name, course.grade)}
                             className="btn-link"
                             style={{
                               marginRight: '8px',
@@ -1086,10 +1087,15 @@ const StudentCourses = () => {
                 </tr>
               )
             })
+        // 生成表头：显示"学生姓名·课程表·年级"
+        const headerText = screenshotTarget.studentName
+          ? `${screenshotTarget.studentName}·课程表${screenshotTarget.studentGrade ? `·${screenshotTarget.studentGrade}` : ''}`
+          : screenshotTarget.weekInfoLabel
+
         return (
           <div ref={screenshotCaptureRef} style={wrapStyle}>
             <div style={{ marginBottom: isMobile ? '6px' : '12px', fontWeight: 600, fontSize: isMobile ? '14px' : '16px', textAlign: 'center', color: isMobile ? '#000' : undefined }}>
-              {screenshotTarget.studentName}  {screenshotTarget.weekInfoLabel}
+              {headerText}
             </div>
             <table style={{ borderCollapse: 'collapse', border: '1px solid #dee2e6', tableLayout: 'auto', width: 'auto' }}>
               <thead>

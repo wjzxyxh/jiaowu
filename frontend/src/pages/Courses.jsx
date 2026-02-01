@@ -484,12 +484,18 @@ const Courses = () => {
       alert('请先切换到星期模式后再截图')
       return
     }
+    // 获取当前筛选的学生信息
+    const currentStudentId = studentFilter || studentIdFromUrl
+    const currentStudent = currentStudentId ? students.find((s) => String(s.id) === String(currentStudentId)) : null
     setScreenshotTarget({
       weekInfoLabel,
       monthFilter,
       weekFilter,
       courses: validCourses,
       timeSlots: timeSlots || [],
+      studentId: currentStudentId,
+      studentName: currentStudent?.name || '',
+      studentGrade: currentStudent?.grade || '',
     })
   }
 
@@ -1152,10 +1158,15 @@ const Courses = () => {
                 </tr>
               )
             })
+        // 生成表头：如果有学生信息，显示"学生姓名·课程表·年级"，否则显示原来的weekInfoLabel
+        const headerText = screenshotTarget.studentName
+          ? `${screenshotTarget.studentName}·课程表${screenshotTarget.studentGrade ? `·${screenshotTarget.studentGrade}` : ''}`
+          : screenshotTarget.weekInfoLabel
+
         return (
           <div ref={screenshotCaptureRef} style={wrapStyle}>
             <div style={{ marginBottom: isMobile ? '6px' : '12px', fontWeight: 600, fontSize: isMobile ? '14px' : '16px', textAlign: 'center', color: isMobile ? '#000' : undefined }}>
-              {screenshotTarget.weekInfoLabel}
+              {headerText}
             </div>
             <table style={{ borderCollapse: 'collapse', border: '1px solid #dee2e6', tableLayout: 'auto', width: 'auto' }}>
               <thead>
