@@ -671,6 +671,8 @@ def create_course():
 
             classroom=classroom,
 
+            notes=(data.get('notes') or '').strip() or None,
+
             status='正常',
 
             is_confirmed=False  # 明确设置为未确认状态，只有确认上课后才更新课时统计
@@ -909,9 +911,86 @@ def update_course(course_id):
             course.weekday = data['weekday']
         if 'classroom' in data:
             course.classroom = data['classroom']
+        if 'notes' in data:
+            course.notes = (data.get('notes') or '').strip() or None
     
     # 状态字段总是可以修改
     course.status = data.get('status', course.status)
+    
+    # 试课状态字段处理
+    old_trial_status = course.trial_status
+    if 'trial_status' in data:
+        trial_status = (data.get('trial_status') or '').strip() or None
+        course.trial_status = trial_status
+        
+        # 如果状态设置为"再试"，将营销线索状态改回draft（待确认），以便可以再次排课
+        if trial_status == '再试' and course.marketing_lead_id:
+            lead = MarketingLead.query.get(course.marketing_lead_id)
+            if lead:
+                # 将线索状态改回draft，使其出现在待确认名单中
+                if lead.lead_status != 'draft':
+                    lead.lead_status = 'draft'
+                    lead.submitted_at = None
+                    lead.saved_at = datetime.now()
+                    log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                 f'试课状态设为再试，已恢复至待确认名单')
+        
+        # 如果状态设置为"成功"，且是试课课程（有marketing_lead_id），则创建正式学生并关联所有相关课程
+        if trial_status == '成功' and course.marketing_lead_id:
+            lead = MarketingLead.query.get(course.marketing_lead_id)
+            if lead:
+                # 检查是否已经存在同名同年级的学生
+                existing_student = Student.query.filter_by(
+                    name=lead.name,
+                    grade=lead.grade or None
+                ).first()
+                
+                if existing_student:
+                    # 如果学生已存在，直接关联到该学生
+                    student = existing_student
+                    student_created = False
+                else:
+                    # 创建新学生（确保状态为"在校"，这样会显示在学生列表中）
+                    student = Student(
+                        name=lead.name,
+                        grade=lead.grade or None,
+                        status='在校',  # 确保状态为"在校"，显示在学生管理页面
+                        phone=lead.phone or None,
+                        parent_name=lead.parent_name or None,
+                        parent_phone=lead.parent_phone or None,
+                        address=lead.address or None,
+                        notes=lead.notes or None,
+                        enrollment_date=lead.enrollment_date or None,
+                        source=lead.source or None
+                    )
+                    db.session.add(student)
+                    db.session.flush()  # 获取student.id
+                    student_created = True
+                    # 记录操作日志
+                    log_operation('students', 'create', 'Student', student.id, student.name, 
+                                 f'从营销线索自动创建：{lead.name}')
+                
+                # 将该营销线索下的所有课程都关联到正式学生
+                all_trial_courses = StudentCourse.query.filter_by(
+                    marketing_lead_id=course.marketing_lead_id
+                ).filter(
+                    StudentCourse.status != '删除'
+                ).all()
+                
+                courses_updated = 0
+                for trial_course in all_trial_courses:
+                    # 只更新那些还是占位学生的课程
+                    if not trial_course.student_id or (trial_course.student_id and trial_course.student_name == TRIAL_PLACEHOLDER_NAME):
+                        trial_course.student_id = student.id
+                        trial_course.student_name = student.name
+                        courses_updated += 1
+                
+                # 更新营销线索状态为已提交
+                if lead.lead_status != 'submitted':
+                    lead.lead_status = 'submitted'
+                    lead.submitted_at = datetime.now()
+                    log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                 f'试课成功，已转为正式学生')
     
     # 如果提供了is_confirmed字段，更新确认状态（但通常通过确认按钮修改）
     if 'is_confirmed' in data:

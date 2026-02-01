@@ -7,6 +7,13 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+/* 试课表页面：确保显示所有时段行 */
+.timetable-page.marketing-page {
+  min-height: auto;
+  height: auto;
+  max-height: none;
+}
+
 .marketing-page .page-header {
   display: flex;
   justify-content: space-between;
@@ -148,8 +155,12 @@
   overflow: visible !important;
 }
 
-/* 试课表页面：避免L型布局，确保内容填满 */
+/* 试课表页面：避免L型布局，确保内容填满，显示所有时段行 */
 .timetable-page.marketing-page {
   width: 100%;
   max-width: 100%;
+  height: auto;
+  min-height: auto;
+  max-height: none;
+  overflow: visible;
 }

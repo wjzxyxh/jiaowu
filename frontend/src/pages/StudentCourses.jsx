@@ -1065,7 +1065,19 @@ const StudentCourses = () => {
                               overflow: 'visible',
                             }}
                           >
-                            {[course.course_name || course.subject, course.teacher_name, course.classroom].filter(Boolean).join(' ')}
+                            {(() => {
+                              const courseName = course.course_name || course.subject || ''
+                              const teacherName = course.teacher_name || ''
+                              const classroom = course.classroom || ''
+                              const notes = course.notes || ''
+                              const firstLine = [courseName, teacherName, classroom].filter(Boolean).join(' ')
+                              return (
+                                <>
+                                  <div>{firstLine}</div>
+                                  {notes && <div style={{ fontSize: '11px', color: '#333', fontWeight: 'bold', textAlign: 'center', marginTop: '2px' }}>{notes}</div>}
+                                </>
+                              )
+                            })()}
                           </div>
                         ))}
                       </td>

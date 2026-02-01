@@ -37,15 +37,19 @@
   box-sizing: border-box;
   overflow-x: auto;
   overflow-y: visible;
+  height: auto;
+  min-height: auto;
 }
 
 .timetable-info-row {
   display: flex;
   flex-flow: row wrap;
   align-items: center;
+  justify-content: center;
   gap: 1em;
   margin-bottom: 16px;
   font-weight: 600;
+  text-align: center;
 }
 
 .timetable-week-info {
@@ -60,7 +64,7 @@
   font-weight: 600;
 }
 
-/* 课表网格：与 Courses table-wrapper 一致，确保可以横向滚动 */
+/* 课表网格：与 Courses table-wrapper 一致，确保可以横向滚动和完整显示所有时段行 */
 .timetable-grid-wrapper {
   width: 100%;
   max-width: 100%;
@@ -69,6 +73,9 @@
   -webkit-overflow-scrolling: touch;
   display: block;
   position: relative;
+  height: auto;
+  min-height: auto;
+  max-height: none;
 }
 
 /* 截取时确保完整显示所有时段行和列 */
@@ -107,6 +114,9 @@
   table-layout: auto;
   border-collapse: separate;
   border-spacing: 0;
+  height: auto;
+  min-height: auto;
+  max-height: none;
 }
 
 .timetable-grid thead th {
@@ -219,15 +229,28 @@
     padding: 16px !important;
     width: 100%;
     overflow-x: auto !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
   }
   
   .timetable-grid-wrapper {
     overflow-x: auto !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  
+  .timetable-grid {
+    height: auto !important;
+    max-height: none !important;
   }
 
   .timetable-info-row {
     flex-wrap: wrap;
     padding: 0;
+    justify-content: center;
+    text-align: center;
   }
 
   .timetable-week-info,
@@ -293,14 +316,32 @@
   .timetable-content {
     padding: 12px !important;
     overflow-x: auto !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
   }
   
   .timetable-grid-wrapper {
     overflow-x: auto !important;
+    overflow-y: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  
+  .timetable-grid {
+    height: auto !important;
+    max-height: none !important;
   }
 
   .timetable-info-row {
     padding: 0;
+    justify-content: center;
+    text-align: center;
+  }
+  
+  .timetable-info-left {
+    justify-content: center;
+    flex: 1;
   }
 
   .timetable-grid {

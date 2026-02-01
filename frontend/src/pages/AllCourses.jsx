@@ -375,9 +375,25 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   }
 
   // 显示编辑模态框
-  const handleShowEditModal = (course) => {
-    if (course.is_confirmed && !isAdmin) {
-      alert('无权限编辑已确认上课的排课，只有管理员可以编辑')
+  const handleShowEditModal = async (course) => {
+    // 如果课程已确认，提示需要先取消确认
+    if (course.is_confirmed) {
+      const shouldCancel = window.confirm('该课程已确认上课，需要先取消确认才能编辑。\n\n是否现在取消确认？')
+      if (!shouldCancel) {
+        return
+      }
+      try {
+        // 先取消确认（不显示成功提示）
+        await courseService.confirmCourse(course.id)
+        // 刷新课程数据
+        await queryClient.invalidateQueries(['all-courses'])
+        // 获取最新的课程数据（取消确认后is_confirmed应该为false）
+        const updatedCourse = { ...course, is_confirmed: false }
+        setEditingCourse(updatedCourse)
+        setShowEditModal(true)
+      } catch (error) {
+        alert('取消确认失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      }
       return
     }
     setEditingCourse(course)
@@ -397,10 +413,13 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       course_date: formData.course_date,
       time_slot: formData.time_slot || null,
       classroom: formData.classroom || null,
+      notes: formData.notes || null,
       status: formData.status,
     }
 
     updateCourseMutation.mutate({ id: editingCourse.id, data })
+    setShowEditModal(false)
+    setEditingCourse(null)
   }
 
   // 显示统计
@@ -761,19 +780,40 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   )
 }
 
-// 编辑课程模态框组件
+// 编辑课程模态框组件（可以编辑所有排课信息，但需要先取消确认）
 const EditCourseModal = ({ course, onClose, onSave }) => {
   const [formData, setFormData] = useState({
-    student_id: course.student_id || '',
-    teacher_id: course.teacher_id || '',
-    course_id: course.course_id || '',
-    subject: course.subject || '',
-    weekday: course.weekday || '',
-    course_date: course.course_date ? course.course_date.split('T')[0] : '',
-    time_slot: course.time_slot || '',
-    classroom: course.classroom || '',
-    status: course.status || '正常',
+    student_id: '',
+    course_id: '',
+    subject: '',
+    teacher_id: '',
+    weekday: '',
+    course_date: '',
+    time_slot: '',
+    classroom: '',
+    notes: '',
+    status: '正常',
   })
+  const [conflicts, setConflicts] = useState([])
+
+  // 当模态框打开或课程数据变化时，初始化表单数据
+  useEffect(() => {
+    if (course) {
+      setFormData({
+        student_id: String(course.student_id || ''),
+        course_id: course.course_id ? String(course.course_id) : '',
+        subject: course.subject || '',
+        teacher_id: String(course.teacher_id || ''),
+        weekday: course.weekday || '',
+        course_date: course.course_date ? (course.course_date.includes('T') ? course.course_date.split('T')[0] : course.course_date) : '',
+        time_slot: course.time_slot || '',
+        classroom: course.classroom || '',
+        notes: course.notes || '',
+        status: course.status || '正常',
+      })
+      setConflicts([])
+    }
+  }, [course])
 
   const { data: students } = useQuery({
     queryKey: ['students', '在校'],
@@ -801,9 +841,105 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
     queryFn: () => othersService.getClassrooms({ status: '启用' }),
   })
 
+  // 检查课程冲突
+  useEffect(() => {
+    if (!formData.course_date || !formData.time_slot || !formData.teacher_id || !formData.student_id) {
+      setConflicts([])
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      courseService
+        .checkConflicts({
+          course_date: formData.course_date,
+          time_slot: formData.time_slot,
+          teacher_id: formData.teacher_id,
+          classroom: formData.classroom || '',
+          student_id: formData.student_id,
+          exclude_course_id: course?.id, // 排除当前课程
+        })
+        .then((data) => {
+          if (data.has_conflict && data.conflicts) {
+            setConflicts(data.conflicts)
+          } else {
+            setConflicts([])
+          }
+        })
+        .catch((err) => {
+          console.error('检查冲突失败:', err)
+          setConflicts([])
+        })
+    }, 500) // 防抖
+
+    return () => clearTimeout(timeoutId)
+  }, [formData.course_date, formData.time_slot, formData.teacher_id, formData.classroom, formData.student_id, course?.id])
+
+  // 日期变化时，更新星期
+  const handleDateChange = (date) => {
+    if (date) {
+      const d = new Date(date + 'T00:00:00')
+      const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+      setFormData({
+        ...formData,
+        course_date: date,
+        weekday: weekdays[d.getDay()],
+      })
+    } else {
+      setFormData({
+        ...formData,
+        course_date: date,
+      })
+    }
+  }
+
+  // 星期变化时，更新日期（如果已有日期，则找到该日期所在周的对应星期）
+  const handleWeekdayChange = (weekday) => {
+    setFormData({
+      ...formData,
+      weekday,
+    })
+
+    // 如果已有日期，尝试找到该日期所在周的对应星期
+    if (formData.course_date && weekday) {
+      const currentDate = new Date(formData.course_date + 'T00:00:00')
+      const weekdayMap = { 周日: 0, 周一: 1, 周二: 2, 周三: 3, 周四: 4, 周五: 5, 周六: 6 }
+      const targetDay = weekdayMap[weekday]
+      const currentDay = currentDate.getDay()
+      const diff = targetDay - currentDay
+      const newDate = new Date(currentDate)
+      newDate.setDate(currentDate.getDate() + diff)
+      setFormData((prev) => ({
+        ...prev,
+        course_date: formatDate(newDate),
+      }))
+    }
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
+
+    if (conflicts.length > 0) {
+      alert('存在课程冲突，无法保存。请修改排课信息后再试。')
+      return
+    }
+
     onSave(formData)
+  }
+
+  // 如果课程已确认，显示提示（虽然handleShowEditModal已经处理了，但这里作为兜底）
+  if (course?.is_confirmed) {
+    return (
+      <Modal isOpen={true} onClose={onClose} title="编辑排课">
+        <div style={{ padding: '20px', textAlign: 'center' }}>
+          <p style={{ color: '#856404', marginBottom: '20px' }}>
+            该课程已确认上课，需要先取消确认才能编辑。
+          </p>
+          <button type="button" className="btn btn-primary" onClick={onClose}>
+            知道了
+          </button>
+        </div>
+      </Modal>
+    )
   }
 
   return (
@@ -820,23 +956,23 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
             <option value="">-- 请选择学生 --</option>
             {(students || []).map((s) => (
               <option key={s.id} value={s.id}>
-                {s.name} ({s.grade || ''})
+                {s.name} {s.grade ? `(${s.grade})` : ''}
               </option>
             ))}
           </select>
         </div>
         <div className="form-group">
-          <label>课程（已报名课程）</label>
+          <label>课程（可选）</label>
           <select
             name="course_id"
             value={formData.course_id}
             onChange={(e) => setFormData({ ...formData, course_id: e.target.value })}
           >
-            <option value="">-- 选择课程（可选）--</option>
+            <option value="">-- 请选择课程（可选）--</option>
             {(courses || [])
               .filter((c) => c.status === '启用')
               .map((c) => (
-                <option key={c.id} value={c.id} data-subject={c.subject}>
+                <option key={c.id} value={c.id}>
                   {c.name} ({c.subject})
                 </option>
               ))}
@@ -863,7 +999,7 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
             <option value="">-- 请选择老师 --</option>
             {(teachers || []).map((t) => (
               <option key={t.id} value={t.id}>
-                {t.name} ({t.subject || ''})
+                {t.name} {t.subject ? `(${t.subject})` : ''}
               </option>
             ))}
           </select>
@@ -873,7 +1009,7 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
           <select
             name="weekday"
             value={formData.weekday}
-            onChange={(e) => setFormData({ ...formData, weekday: e.target.value })}
+            onChange={(e) => handleWeekdayChange(e.target.value)}
             required
           >
             <option value="">-- 请选择星期 --</option>
@@ -892,7 +1028,7 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
             type="date"
             name="course_date"
             value={formData.course_date}
-            onChange={(e) => setFormData({ ...formData, course_date: e.target.value })}
+            onChange={(e) => handleDateChange(e.target.value)}
             required
           />
         </div>
@@ -906,8 +1042,8 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
           >
             <option value="">-- 请选择时段 --</option>
             {(timeSlots || []).map((slot) => (
-              <option key={slot.name} value={slot.name}>
-                {slot.name}
+              <option key={slot.id} value={slot.name}>
+                {slot.name} {slot.start_time && slot.end_time ? `(${slot.start_time}-${slot.end_time})` : ''}
               </option>
             ))}
           </select>
@@ -921,12 +1057,23 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
             required
           >
             <option value="">-- 请选择教室 --</option>
-            {(classrooms || []).map((room) => (
-              <option key={room.name} value={room.name}>
-                {room.name}
+            {(classrooms || []).map((classroom) => (
+              <option key={classroom.id} value={classroom.name}>
+                {classroom.name}
               </option>
             ))}
           </select>
+        </div>
+        <div className="form-group">
+          <label>备注</label>
+          <input
+            type="text"
+            name="notes"
+            value={formData.notes}
+            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            placeholder="请输入备注（可选）"
+            maxLength={200}
+          />
         </div>
         <div className="form-group">
           <label>状态 *</label>
@@ -941,17 +1088,35 @@ const EditCourseModal = ({ course, onClose, onSave }) => {
             <option value="跑空">跑空</option>
           </select>
         </div>
+        {conflicts.length > 0 && (
+          <div id="conflict-warning" style={{ display: 'block', margin: '15px 0', padding: '12px', background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '4px', color: '#856404' }}>
+            <strong>⚠️ 检测到课程冲突：</strong>
+            <ul id="conflict-list" style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+              {conflicts.map((conflict, index) => (
+                <li key={index}>{conflict.message}</li>
+              ))}
+            </ul>
+          </div>
+        )}
         <div className="form-actions">
           <button type="button" className="btn" onClick={onClose}>
             取消
           </button>
-          <button type="submit" className="btn btn-primary">
+          <button type="submit" className="btn btn-primary" disabled={conflicts.length > 0}>
             保存
           </button>
         </div>
       </form>
     </Modal>
   )
+}
+
+// 辅助函数：格式化日期
+function formatDate(date) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 // 统计模态框组件

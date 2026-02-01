@@ -264,6 +264,22 @@ def upgrade_student_course_table():
                 print('已为学生课程表添加教室字段')
             else:
                 print('学生课程表的教室字段已存在')
+            
+            if 'trial_status' not in columns:
+                # 添加试课状态字段
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE student_courses ADD COLUMN trial_status VARCHAR(20)'))
+                print('已为学生课程表添加试课状态字段')
+            else:
+                print('学生课程表的试课状态字段已存在')
+            
+            if 'notes' not in columns:
+                # 添加备注字段
+                with db.engine.begin() as conn:
+                    conn.execute(text('ALTER TABLE student_courses ADD COLUMN notes VARCHAR(200)'))
+                print('已为学生课程表添加备注字段')
+            else:
+                print('学生课程表的备注字段已存在')
     except Exception as e:
         print(f'升级学生课程表时出错: {e}')
         import traceback

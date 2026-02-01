@@ -197,7 +197,9 @@ class StudentCourse(db.Model):
     weekday = db.Column(db.String(10), comment='星期')
     time_slot = db.Column(db.String(20), comment='时段，如8:10-9:30')
     classroom = db.Column(db.String(10), comment='教室，如A1、A2等')
+    notes = db.Column(db.String(200), nullable=True, comment='备注')
     status = db.Column(db.String(20), default='正常', comment='状态：正常/请假/跑空')
+    trial_status = db.Column(db.String(20), nullable=True, comment='试课状态：成功/失败/再试')
     is_confirmed = db.Column(db.Boolean, default=False, comment='是否已确认上课')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
@@ -229,7 +231,9 @@ class StudentCourse(db.Model):
             'weekday': self.weekday,
             'time_slot': self.time_slot,
             'classroom': self.classroom,
+            'notes': self.notes,
             'status': self.status,
+            'trial_status': self.trial_status,
             'is_confirmed': self.is_confirmed if self.is_confirmed is not None else False,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
         }

@@ -30,16 +30,34 @@ const Marketing = () => {
     queryFn: marketingService.getDrafts,
   })
 
-  const draftIds = useMemo(() => drafts.map((d) => d.id).filter(Boolean), [drafts])
+  const { data: trials = [], isLoading: trialsLoading } = useQuery({
+    queryKey: ['marketing-trials'],
+    queryFn: marketingService.getTrials,
+  })
+
+  const { data: submitted = [], isLoading: submittedLoading } = useQuery({
+    queryKey: ['marketing-submitted'],
+    queryFn: marketingService.getSubmitted,
+  })
+
+  // 合并所有状态的线索ID（draft、trial、submitted），用于查询排课名单
+  // 确保不论状态选什么，都能显示在排课名单中
+  const allLeadIds = useMemo(() => {
+    const draftIds = drafts.map((d) => d.id).filter(Boolean)
+    const trialIds = trials.map((t) => t.id).filter(Boolean)
+    const submittedIds = submitted.map((s) => s.id).filter(Boolean)
+    return [...new Set([...draftIds, ...trialIds, ...submittedIds])]
+  }, [drafts, trials, submitted])
 
   const { data: scheduleList = [], isLoading: scheduleLoading } = useQuery({
-    queryKey: ['marketing-schedules', draftIds],
+    queryKey: ['marketing-schedules', allLeadIds],
     queryFn: () =>
       courseService.getCourses({
-        trial_lead_ids: draftIds.join(','),
+        trial_lead_ids: allLeadIds.length > 0 ? allLeadIds.join(',') : '',
         scope: 'leads',
       }),
-    enabled: draftIds.length > 0,
+    // 确保始终查询排课记录，不论线索状态如何
+    enabled: true,
   })
 
   const { data: teachers = [] } = useQuery({
@@ -80,6 +98,29 @@ const Marketing = () => {
     },
   })
 
+  const createTrialMutation = useMutation({
+    mutationFn: (data) =>
+      marketingService.createLead({
+        ...data,
+        lead_status: 'trial',
+        saved_at: new Date().toISOString(),
+      }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-trials'])
+      queryClient.invalidateQueries(['marketing-schedules'])
+      setShowModal(false)
+      setEditingDraft(null)
+      // 自动打开排课弹窗
+      setScheduleDraft(data)
+      setShowScheduleModal(true)
+      return data
+    },
+    onError: (error) => {
+      alert('保存失败：' + (error?.error || error?.message || '未知错误'))
+    },
+  })
+
   const updateDraftMutation = useMutation({
     mutationFn: ({ id, data }) => marketingService.updateLead(id, data),
     onSuccess: (data) => {
@@ -107,6 +148,9 @@ const Marketing = () => {
     mutationFn: courseService.createCourse,
     onSuccess: () => {
       queryClient.invalidateQueries(['marketing-schedules'])
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-trials'])
+      queryClient.invalidateQueries(['marketing-submitted'])
       setShowScheduleModal(false)
       setScheduleDraft(null)
       alert('排课保存成功')
@@ -115,6 +159,47 @@ const Marketing = () => {
       alert('排课保存失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
+
+  const updateTrialStatusMutation = useMutation({
+    mutationFn: ({ id, trial_status }) => courseService.updateCourse(id, { trial_status }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['marketing-schedules'])
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-trials'])
+      queryClient.invalidateQueries(['marketing-submitted'])
+      if (data.trial_status === '成功') {
+        alert('状态已更新为成功！\n学生信息已自动添加到学生管理页面（/students），该学员的所有试课课程已转为正式课程。')
+      } else if (data.trial_status === '再试') {
+        alert('状态已更新为再试！\n该记录已恢复至待确认名单，原排课记录保留，可以在待确认名单中再次进行排课。')
+      } else {
+        alert('状态更新成功')
+      }
+    },
+    onError: (error) => {
+      alert('状态更新失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+  })
+
+  const handleUpdateTrialStatus = (courseId, trialStatus) => {
+    updateTrialStatusMutation.mutate({ id: courseId, trial_status: trialStatus })
+  }
+
+  const deleteScheduleMutation = useMutation({
+    mutationFn: courseService.deleteCourse,
+    onSuccess: () => {
+      queryClient.invalidateQueries(['marketing-schedules'])
+      alert('排课记录已删除（学生信息不受影响）')
+    },
+    onError: (error) => {
+      alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+  })
+
+  const handleDeleteSchedule = (courseId) => {
+    if (window.confirm('确定要删除这条排课记录吗？\n注意：删除排课记录不会影响学生管理页面的学生信息。')) {
+      deleteScheduleMutation.mutate(courseId)
+    }
+  }
 
   const handleCloseModal = () => {
     setShowModal(false)
@@ -149,6 +234,41 @@ const Marketing = () => {
       updateDraftMutation.mutate({ id: editingDraft.id, data })
     } else {
       createDraftMutation.mutate(data)
+    }
+  }
+
+  const updateToTrialMutation = useMutation({
+    mutationFn: ({ id, data }) => marketingService.updateLead(id, { ...data, lead_status: 'trial' }),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-trials'])
+      queryClient.invalidateQueries(['marketing-schedules'])
+      setShowModal(false)
+      setEditingDraft(null)
+      // 自动打开排课弹窗
+      setScheduleDraft(data)
+      setShowScheduleModal(true)
+    },
+    onError: (error) => {
+      alert('保存失败：' + (error?.error || error?.message || '未知错误'))
+    },
+  })
+
+  const handleSaveToSchedule = (e) => {
+    e.preventDefault()
+    const form = e.target.closest('form')
+    if (!form) return
+    const data = collectFormData(form)
+    if (!data.name?.trim()) {
+      alert('请至少填写姓名')
+      return
+    }
+    if (editingDraft) {
+      // 编辑时，更新为trial状态，然后打开排课弹窗
+      updateToTrialMutation.mutate({ id: editingDraft.id, data })
+    } else {
+      // 新建时，创建trial状态的线索，然后自动打开排课弹窗
+      createTrialMutation.mutate(data)
     }
   }
 
@@ -275,22 +395,39 @@ const Marketing = () => {
                 <th>日期</th>
                 <th>时段</th>
                 <th>教室</th>
+                <th>状态</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {scheduleLoading ? (
                 <tr>
-                  <td colSpan="10" className="empty-tip">加载中...</td>
+                  <td colSpan="11" className="empty-tip">加载中...</td>
                 </tr>
               ) : scheduleList.length === 0 ? (
                 <tr>
-                  <td colSpan="10" className="empty-tip">暂无排课记录</td>
+                  <td colSpan="11" className="empty-tip">暂无排课记录</td>
                 </tr>
               ) : (
-                scheduleList.map((s) => (
-                    <tr key={s.id}>
-                      <td>{s.student_name || '-'}</td>
+                scheduleList.map((s) => {
+                  const isFormalStudent = s.trial_status === '成功'
+                  const isRetry = s.trial_status === '再试'
+                  const isStatusLocked = isFormalStudent || isRetry
+                  return (
+                    <tr key={s.id} style={isFormalStudent ? { backgroundColor: '#f0f9ff' } : {}}>
+                      <td>
+                        {s.student_name || '-'}
+                        {isFormalStudent && (
+                          <span style={{ marginLeft: '5px', color: '#28a745', fontSize: '12px' }} title="已转为正式学生">
+                            ✓
+                          </span>
+                        )}
+                        {isRetry && (
+                          <span style={{ marginLeft: '5px', color: '#ffc107', fontSize: '12px' }} title="已设为再试">
+                            ↻
+                          </span>
+                        )}
+                      </td>
                       <td>{s.grade || '-'}</td>
                       <td>{s.subject || '-'}</td>
                       <td>{s.course_name || '-'}</td>
@@ -300,17 +437,43 @@ const Marketing = () => {
                       <td>{s.time_slot || '-'}</td>
                       <td>{s.classroom || '-'}</td>
                       <td>
+                        <select
+                          value={s.trial_status || ''}
+                          onChange={(e) => handleUpdateTrialStatus(s.id, e.target.value)}
+                          className="form-control"
+                          style={{ minWidth: '100px' }}
+                          disabled={isStatusLocked}
+                          title={isFormalStudent ? '已转为正式学生，状态不可修改' : isRetry ? '已设为再试，状态不可修改' : ''}
+                        >
+                          <option value="">-- 请选择 --</option>
+                          <option value="成功">成功</option>
+                          <option value="失败">失败</option>
+                          <option value="再试">再试</option>
+                        </select>
+                      </td>
+                      <td>
                         <button
                           type="button"
                           className="btn btn-sm btn-info"
                           onClick={() => handleViewTimetable(s)}
                           title="点击查看课表"
+                          style={{ marginRight: '5px' }}
                         >
                           查看课表
                         </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-danger"
+                          onClick={() => handleDeleteSchedule(s.id)}
+                          title="删除排课记录（不会删除学生信息）"
+                          disabled={deleteScheduleMutation.isLoading}
+                        >
+                          删除
+                        </button>
                       </td>
                     </tr>
-                ))
+                  )
+                })
               )}
             </tbody>
           </table>
@@ -398,12 +561,17 @@ const Marketing = () => {
               type="button"
               className="btn btn-secondary"
               onClick={handleSaveDraft}
-              disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading}
+              disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading}
             >
               暂存
             </button>
-            <button type="submit" className="btn btn-primary" disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading}>
-              {(createDraftMutation.isLoading || updateDraftMutation.isLoading) ? '保存中...' : '保存'}
+            <button 
+              type="button" 
+              className="btn btn-primary" 
+              onClick={handleSaveToSchedule}
+              disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading || updateToTrialMutation.isLoading}
+            >
+              {(createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading || updateToTrialMutation.isLoading) ? '保存中...' : '保存'}
             </button>
           </div>
         </form>

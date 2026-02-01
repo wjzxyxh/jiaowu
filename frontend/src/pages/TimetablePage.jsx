@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react'
+import React, { useMemo, useRef, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import html2canvas from 'html2canvas'
@@ -74,7 +74,7 @@ const TimetablePage = () => {
 
     const clone = el.cloneNode(true)
     clone.style.cssText =
-      'position:fixed;left:-9999px;top:0;overflow:visible!important;z-index:-9999;visibility:visible;width:max-content;min-width:fit-content;padding:24px;padding-bottom:60px;background:#fff;'
+      'position:fixed;left:-9999px;top:0;overflow:visible!important;z-index:-9999;visibility:visible;width:max-content;min-width:fit-content;padding:24px;padding-bottom:200px;background:#fff;height:auto;max-height:none;'
     
     // 确保表格容器完全展开
     const grid = clone.querySelector('.timetable-grid-wrapper')
@@ -123,7 +123,7 @@ const TimetablePage = () => {
     // 强制触发重排，确保所有列和行都渲染
     clone.offsetHeight
     
-    // 等待布局完成，确保所有时段行和列都渲染（增加等待时间确保所有行渲染）
+    // 等待布局完成，确保所有时段行和列都渲染
     setTimeout(() => {
       // 检查表格，确保所有行都渲染
       table = clone.querySelector('.timetable-grid')
@@ -133,44 +133,55 @@ const TimetablePage = () => {
         return
       }
       
-      const ths = table.querySelectorAll('thead th')
       const trs = table.querySelectorAll('tbody tr')
       
-      // 强制所有行渲染
+      // 强制所有行渲染，确保所有时段行都显示
       trs.forEach((tr) => {
         tr.style.display = 'table-row'
-        tr.offsetHeight // 强制重排
+        tr.style.visibility = 'visible'
+        tr.style.height = 'auto'
       })
       
-      // 计算表格实际需要的宽度和高度
-      // 宽度：8列（时段+周一到周日）
-      const tableWidth = Math.max(table.scrollWidth || 0, table.offsetWidth || 0, 1000)
-      
-      // 高度：计算所有行的实际高度
-      let totalRowHeight = 0
-      trs.forEach((tr) => {
-        totalRowHeight += tr.offsetHeight || 0
-      })
-      const headerHeight = table.querySelector('thead')?.offsetHeight || 50
-      const tableHeight = headerHeight + totalRowHeight + 100 // 表头 + 所有时段行 + 底部padding（增加以确保完整）
-      
-      const w = Math.max(clone.scrollWidth || 0, clone.offsetWidth || 0, tableWidth, 1)
-      const h = Math.max(clone.scrollHeight || 0, clone.offsetHeight || 0, tableHeight, (clone.offsetHeight || 0) + 80, 1)
+      // 使用双重 requestAnimationFrame 确保所有内容完全渲染（参考 Courses.jsx）
+      const doCapture = () => {
+        // 强制触发重排，确保所有行的高度都计算完成
+        void clone.offsetHeight
+        void clone.scrollHeight
+        void table.offsetHeight
+        void table.scrollHeight
+        const tbody = table.querySelector('tbody')
+        if (tbody) {
+          void tbody.offsetHeight
+          void tbody.scrollHeight
+        }
+        
+        // 计算实际尺寸，使用 scrollHeight 确保包含所有内容
+        const actualWidth = Math.max(clone.scrollWidth || 0, clone.offsetWidth || 0, table.scrollWidth || 0, 1000)
+        // 计算所有行的总高度，确保包含最后一个时段行
+        let totalRowsHeight = 0
+        trs.forEach((tr) => {
+          totalRowsHeight += Math.max(tr.scrollHeight || 0, tr.offsetHeight || 0, 40) // 每行至少40px
+        })
+        const headerHeight = table.querySelector('thead')?.scrollHeight || 50
+        const calculatedHeight = headerHeight + totalRowsHeight + 200 // 表头 + 所有时段行 + 底部padding
+        const actualHeight = Math.max(clone.scrollHeight || 0, clone.offsetHeight || 0, table.scrollHeight || 0, calculatedHeight, 1)
 
         html2canvas(clone, {
           scale: 2,
           useCORS: true,
           backgroundColor: '#ffffff',
-          width: w,
-          height: h,
-          windowWidth: Math.max(w, 1200), // 确保视口足够宽
-          windowHeight: Math.max(h, 2000), // 确保视口足够高，包含所有时段行
+          width: actualWidth,
+          height: actualHeight,
+          windowWidth: Math.max(actualWidth, 1200),
+          windowHeight: Math.max(actualHeight, 3500), // 确保视口足够高，包含所有时段行（包括最后一个时段）
           scrollX: 0,
           scrollY: 0,
           logging: false,
         onclone: (clonedDoc, clonedEl) => {
           // 在克隆文档中确保表格完全展开，包含所有时段行和列
-          clonedEl.style.paddingBottom = '80px' // 增加底部padding，确保所有时段行都显示
+          clonedEl.style.paddingBottom = '200px' // 增加底部padding，确保最后一个时段行完全显示
+          clonedEl.style.height = 'auto'
+          clonedEl.style.maxHeight = 'none'
           const clonedGrid = clonedEl.querySelector('.timetable-grid-wrapper')
           if (clonedGrid) {
             clonedGrid.style.overflow = 'visible'
@@ -191,18 +202,27 @@ const TimetablePage = () => {
               th.style.visibility = 'visible'
               th.style.width = 'auto'
             })
-            // 确保所有行都显示（包括所有时段行）
+            // 确保所有行都显示（包括所有时段行，直到20:10-21:30）
             const clonedTrs = clonedTable.querySelectorAll('tbody tr')
             clonedTrs.forEach((tr) => {
               tr.style.display = 'table-row'
               tr.style.visibility = 'visible'
+              tr.style.height = 'auto'
               const clonedTds = tr.querySelectorAll('td')
               clonedTds.forEach((td) => {
                 td.style.display = 'table-cell'
                 td.style.visibility = 'visible'
                 td.style.width = 'auto'
+                td.style.height = 'auto'
               })
             })
+            // 确保 tbody 完全展开
+            const clonedTbody = clonedTable.querySelector('tbody')
+            if (clonedTbody) {
+              clonedTbody.style.height = 'auto'
+              clonedTbody.style.maxHeight = 'none'
+              clonedTbody.style.overflow = 'visible'
+            }
           }
         },
       })
@@ -210,7 +230,7 @@ const TimetablePage = () => {
           document.body.removeChild(clone)
           const name = (studentName || '课表').replace(/\s/g, '')
           const link = document.createElement('a')
-          link.download = `排课表_${name}.png`
+          link.download = `${name}(试课表).png`
           link.href = canvas.toDataURL('image/png')
           link.click()
         })
@@ -219,8 +239,20 @@ const TimetablePage = () => {
           console.error('截图失败:', err)
           alert('截图失败，请重试')
         })
-    }, 200) // 增加延迟时间，确保所有时段行都完全渲染
+      }
+      
+      // 使用双重 requestAnimationFrame 确保渲染完成（参考 Courses.jsx）
+      requestAnimationFrame(() => requestAnimationFrame(doCapture))
+    }, 300) // 增加延迟时间，确保所有时段行都完全渲染（包括20:10-21:30）
   }
+
+  // 将handleCapture暴露到window对象，供Layout组件调用
+  useEffect(() => {
+    window.timetableCaptureHandler = handleCapture
+    return () => {
+      delete window.timetableCaptureHandler
+    }
+  }, [])
 
   if (!leadId) {
     return (
@@ -238,17 +270,6 @@ const TimetablePage = () => {
 
   return (
     <div className="marketing-page timetable-page">
-      <div className="page-header">
-        <div className="page-header-actions">
-          <button type="button" className="btn" onClick={() => navigate('/marketing')}>
-            返回营销
-          </button>
-          <button type="button" className="btn btn-primary" onClick={handleCapture}>
-            截取课表
-          </button>
-        </div>
-      </div>
-
       <div
         ref={captureRef}
         className="marketing-timetable-capture timetable-content"
@@ -300,11 +321,16 @@ const TimetablePage = () => {
                             return (
                               <td key={wd}>
                                 {matched.length > 0 ? (
-                                  matched.map((c) => (
-                                    <div key={c.id} className="course-cell-inner" style={{ background: '#f0f9ff' }}>
-                                      {[c.subject || c.course_name, c.teacher_name, c.classroom].filter(Boolean).join(' · ')}
-                                    </div>
-                                  ))
+                                  matched.map((c) => {
+                                    const baseText = [c.subject || c.course_name, c.teacher_name, c.classroom].filter(Boolean).join(' · ')
+                                    const notes = c.notes || ''
+                                    return (
+                                      <div key={c.id} className="course-cell-inner" style={{ background: '#f0f9ff', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                        <div>{baseText}</div>
+                                        {notes && <div style={{ fontSize: '11px', color: '#333', fontWeight: 'bold', textAlign: 'center' }}>{notes}</div>}
+                                      </div>
+                                    )
+                                  })
                                 ) : null}
                               </td>
                             )

@@ -263,6 +263,49 @@ const Layout = () => {
               <span>{location.pathname === '/marketing/timetable' ? '返回营销' : fromStudentCourses && location.pathname === '/courses' ? '返回学生课程' : '返回首页'}</span>
             </Link>
           )}
+          {location.pathname === '/marketing/timetable' && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                if (window.timetableCaptureHandler) {
+                  window.timetableCaptureHandler()
+                }
+              }}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 18px',
+                background: 'rgba(13, 110, 253, 0.9)',
+                color: 'white',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                borderRadius: '25px',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.3s',
+                backdropFilter: 'blur(10px)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+                position: 'relative',
+                zIndex: 1,
+                textDecoration: 'none',
+                marginLeft: '0',
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.background = 'rgba(13, 110, 253, 1)'
+                e.target.style.transform = 'translateY(-1px)'
+                e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.15)'
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.background = 'rgba(13, 110, 253, 0.9)'
+                e.target.style.transform = 'translateY(0)'
+                e.target.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.1)'
+              }}
+            >
+              截取课表
+            </button>
+          )}
         </div>
         <div className="header-actions">
           {/* 刷新按钮 */}
