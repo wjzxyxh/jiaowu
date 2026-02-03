@@ -530,7 +530,7 @@ const TeacherHours = () => {
   return (
     <div className="teacher-hours-page" style={{ width: '100%' }}>
       <div className="page-header">
-        <h1>老师课时</h1>
+        <h1>教师课时</h1>
       </div>
 
       {/* 标签页 */}

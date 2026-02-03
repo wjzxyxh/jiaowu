@@ -45,4 +45,14 @@ export const permissionService = {
   deleteUser: async (userId) => {
     return api.delete(`/users/${userId}`)
   },
+
+  // 获取用户权限变更历史
+  getUserPermissionHistory: async (userId) => {
+    return api.get(`/permissions/users/${userId}/history`)
+  },
+
+  // 保存权限模板配置
+  savePermissionTemplates: async (templateData) => {
+    return api.put('/permissions/templates', templateData)
+  },
 }

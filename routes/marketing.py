@@ -74,7 +74,12 @@ def list_leads():
     lead_status = (request.args.get('lead_status') or '').strip().lower()
     if lead_status not in ('draft', 'trial', 'submitted'):
         return jsonify({'error': '请提供 lead_status=draft、trial 或 submitted'}), 400
+    
     items = MarketingLead.query.filter_by(lead_status=lead_status).order_by(MarketingLead.updated_at.desc()).all()
+    
+    # 待确认名单：只按 lead_status 筛选，只要状态未改为试课/已提交就保留在待确认名单（不因有排课或试课状态而排除）
+    # 不再额外过滤：之前会排除“有排课但试课状态不是再试”的线索，导致推送后有排课的学生从待确认名单消失
+    
     return jsonify({'items': [x.to_dict() for x in items]})
 
 
@@ -110,6 +115,17 @@ def create_lead():
     db.session.commit()
     log_operation('marketing', 'create', 'MarketingLead', lead.id, lead.name)
     return jsonify(lead.to_dict()), 201
+
+
+@bp.route('/api/marketing/leads/trial-status-map', methods=['GET'])
+@login_required
+@handle_db_errors
+def get_trial_status_map():
+    """返回所有设置了试课状态的线索的 name+grade+trial_status（学生名单页无排课时展示用）"""
+    items = MarketingLead.query.filter(MarketingLead.trial_status.isnot(None)).filter(MarketingLead.trial_status != '').all()
+    return jsonify({
+        'items': [{'name': x.name, 'grade': x.grade or '', 'trial_status': x.trial_status} for x in items]
+    })
 
 
 @bp.route('/api/marketing/leads/<int:lead_id>', methods=['PUT'])
@@ -155,8 +171,20 @@ def delete_lead(lead_id):
     lead = MarketingLead.query.get_or_404(lead_id)
     if lead.lead_status != 'draft':
         return jsonify({'error': '仅待确认记录可删除；试课/已提交记录请使用恢复至待确认'}), 403
+    
     name = lead.name
-    db.session.delete(lead)  # 物理删除，从数据库彻底移除
+    
+    # 处理相关的排课记录：将未确认的排课记录的 marketing_lead_id 设置为 NULL
+    # 这样删除线索后，这些排课记录仍然存在，但不再关联到营销线索
+    from models import StudentCourse
+    related_courses = StudentCourse.query.filter_by(marketing_lead_id=lead_id).all()
+    for course in related_courses:
+        # 只处理未确认的排课记录，已确认的保持关联（可能需要保留历史记录）
+        if not course.is_confirmed:
+            course.marketing_lead_id = None
+    
+    # 物理删除营销线索
+    db.session.delete(lead)
     db.session.commit()
     log_operation('marketing', 'delete', 'MarketingLead', lead_id, name)
     return jsonify({'message': '已删除'})

@@ -17,7 +17,16 @@ const TimetablePage = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const leadId = searchParams.get('lead_id')
+  const dateParam = searchParams.get('date')
   const captureRef = useRef(null)
+  
+  useEffect(() => {
+    console.log('[调试] TimetablePage 初始化:', {
+      leadId,
+      dateParam,
+      searchParams: Object.fromEntries(searchParams.entries())
+    })
+  }, [leadId, dateParam, searchParams])
 
   const { data: timeSlots = [] } = useQuery({
     queryKey: ['time-slots'],
@@ -26,47 +35,158 @@ const TimetablePage = () => {
 
   const { data: scheduleList = [], isLoading } = useQuery({
     queryKey: ['marketing-schedules', leadId],
-    queryFn: () =>
-      courseService.getCourses({
-        trial_lead_ids: leadId || '',
+    queryFn: async () => {
+      // 先获取所有试课排课，然后在前端按 leadId 过滤
+      // 如果按 leadId 过滤后数量较少，再按学生姓名+年级匹配，确保获取到该学生的所有排课
+      const params = {
         scope: 'leads',
-      }),
+      }
+      console.log('[调试] 调用 getCourses API，参数:', params)
+      const result = await courseService.getCourses(params)
+      console.log('[调试] API 返回结果:', result, '数量:', result?.length)
+      if (result && result.length > 0) {
+        console.log('[调试] API 返回的排课详情:', result.map(c => ({
+          id: c.id,
+          marketing_lead_id: c.marketing_lead_id,
+          course_date: c.course_date,
+          time_slot: c.time_slot,
+          subject: c.subject,
+          student_name: c.student_name,
+          grade: c.grade
+        })))
+        // 先按 marketing_lead_id 过滤
+        let filtered = result.filter(c => String(c.marketing_lead_id) === String(leadId))
+        console.log('[调试] 过滤后（marketing_lead_id=' + leadId + '）:', filtered.length, '条')
+        
+        // 如果过滤后有数据，获取学生姓名和年级
+        if (filtered.length > 0) {
+          const studentName = filtered[0].student_name
+          const grade = filtered[0].grade || ''
+          console.log('[调试] 学生信息:', { studentName, grade })
+          
+          // 再按学生姓名+年级匹配，确保获取到该学生的所有排课（即使 marketing_lead_id 不同）
+          const byNameGrade = result.filter(c => {
+            const nameMatch = c.student_name === studentName
+            const gradeMatch = (c.grade || '') === grade
+            return nameMatch && gradeMatch
+          })
+          console.log('[调试] 按姓名+年级匹配:', byNameGrade.length, '条')
+          console.log('[调试] 按姓名+年级匹配的排课:', byNameGrade.map(c => ({
+            id: c.id,
+            marketing_lead_id: c.marketing_lead_id,
+            course_date: c.course_date,
+            time_slot: c.time_slot,
+            subject: c.subject
+          })))
+          
+          // 使用按姓名+年级匹配的结果（包含所有该学生的排课）
+          filtered = byNameGrade
+        }
+        
+        return filtered
+      }
+      return []
+    },
     enabled: !!leadId,
   })
 
-  const studentCourses = useMemo(() => {
+  const studentCoursesAll = useMemo(() => {
     if (!leadId) return []
-    return scheduleList.filter((c) => String(c.marketing_lead_id) === String(leadId))
+    console.log('[调试] scheduleList 原始数据:', scheduleList)
+    console.log('[调试] scheduleList 中每条排课的 marketing_lead_id:', scheduleList.map(c => ({
+      id: c.id,
+      marketing_lead_id: c.marketing_lead_id,
+      course_date: c.course_date,
+      subject: c.subject
+    })))
+    // scheduleList 已经在 API 查询中按姓名+年级过滤过了，直接使用即可
+    // 不再需要按 marketing_lead_id 过滤，因为我们已经通过姓名+年级匹配到了该学生的所有排课
+    const filtered = scheduleList
+    console.log('[调试] leadId:', leadId, '总排课数:', scheduleList.length, '该学生排课数:', filtered.length)
+    console.log('[调试] 该学生所有排课:', filtered.map(c => ({
+      id: c.id,
+      marketing_lead_id: c.marketing_lead_id,
+      course_date: c.course_date,
+      time_slot: c.time_slot,
+      weekday: c.weekday,
+      subject: c.subject,
+      student_name: c.student_name
+    })))
+    return filtered
   }, [scheduleList, leadId])
 
-  const studentName = studentCourses[0]?.student_name || '学员'
-  const grade = studentCourses[0]?.grade || ''
+  const studentName = studentCoursesAll[0]?.student_name || '学员'
+  const grade = studentCoursesAll[0]?.grade || ''
 
   const titleText = useMemo(() => {
-    const subjects = [...new Set(studentCourses.map((c) => c.subject).filter(Boolean))]
-    const subjectStr = subjects.length > 0 ? subjects.join('、') : ''
-    const parts = [studentName, grade, subjectStr].filter(Boolean)
+    const parts = [studentName, grade].filter(Boolean)
     return parts.length > 0 ? `${parts.join('-')}(试课表)` : '试课表'
-  }, [studentName, grade, studentCourses])
+  }, [studentName, grade])
 
-  const sortedTimeSlots = useMemo(() => sortTimeSlots(timeSlots), [timeSlots])
+  const sortedTimeSlots = useMemo(() => {
+    const sorted = sortTimeSlots(timeSlots)
+    console.log('[调试] 时段列表:', sorted.map(s => ({
+      name: s.name || s,
+      raw: s
+    })))
+    return sorted
+  }, [timeSlots])
 
-  const { dateMap, weekInfo } = useMemo(() => {
+  const normDate = (d) => {
+    if (d == null || d === '') return ''
+    const str = typeof d === 'string' ? d.trim() : (d.toISOString ? d.toISOString().slice(0, 10) : String(d).trim())
+    return str.slice(0, 10)
+  }
+  const normSlot = (s) => (s != null && String(s).trim() ? String(s).trim().replace(/\s+/g, '') : '')
+
+  const { dateMap, weekInfo, studentCourses } = useMemo(() => {
     try {
-      const dates = studentCourses.map((c) => c.course_date).filter(Boolean)
-      if (dates.length === 0) return { dateMap: {}, weekInfo: '' }
-      const minDate = new Date(Math.min(...dates.map((d) => new Date(d + 'T00:00:00').getTime())))
-      if (isNaN(minDate.getTime())) return { dateMap: {}, weekInfo: '' }
-      const { currentMonth, currentWeek } = getMonthAndWeekContainingDate(minDate)
+      const dates = studentCoursesAll.map((c) => normDate(c.course_date)).filter(Boolean)
+      console.log('[调试] 规范化后的日期列表:', dates)
+      if (dates.length === 0) return { dateMap: {}, weekInfo: '', studentCourses: [] }
+      let refDate
+      const dateStr = dateParam && String(dateParam).trim().slice(0, 10)
+      console.log('[调试] URL dateParam:', dateParam, '解析后 dateStr:', dateStr)
+      if (dateStr && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        refDate = new Date(dateStr + 'T00:00:00')
+        if (isNaN(refDate.getTime())) refDate = null
+        console.log('[调试] 使用URL日期参数作为参考日期:', dateStr, 'refDate:', refDate)
+      }
+      if (!refDate) {
+        refDate = new Date(Math.min(...dates.map((d) => new Date(d + 'T00:00:00').getTime())))
+        console.log('[调试] 使用最早排课日期作为参考日期:', refDate)
+      }
+      if (isNaN(refDate.getTime())) return { dateMap: {}, weekInfo: '', studentCourses: [] }
+      const { currentMonth, currentWeek } = getMonthAndWeekContainingDate(refDate)
+      console.log('[调试] 计算的月份和周:', currentMonth, '第', currentWeek, '周')
       const map = getWeekDateMap(currentMonth, currentWeek)
+      const weekDates = new Set(Object.values(map))
+      console.log('[调试] 当周日期范围:', Array.from(weekDates).sort())
+      console.log('[调试] dateMap (星期->日期):', map)
+      const inWeek = studentCoursesAll.filter((c) => {
+        const d = normDate(c.course_date)
+        const inRange = d && weekDates.has(d)
+        if (!inRange) {
+          console.log('[调试] 排课不在当周:', c.id, '日期:', c.course_date, '规范化后:', d, '是否在weekDates:', weekDates.has(d))
+        }
+        return inRange
+      })
+      console.log('[调试] 当周排课数量:', inWeek.length, '排课详情:', inWeek.map(c => ({
+        id: c.id,
+        course_date: c.course_date,
+        norm_date: normDate(c.course_date),
+        time_slot: c.time_slot,
+        norm_slot: normSlot(c.time_slot),
+        weekday: c.weekday
+      })))
       const [y, m] = currentMonth.split('-')
       const info = `${y}年${m}月 第${currentWeek}周`
-      return { dateMap: map, weekInfo: info }
+      return { dateMap: map, weekInfo: info, studentCourses: inWeek }
     } catch (err) {
       console.error('计算日期映射失败:', err)
-      return { dateMap: {}, weekInfo: '' }
+      return { dateMap: {}, weekInfo: '', studentCourses: [] }
     }
-  }, [studentCourses])
+  }, [studentCoursesAll, dateParam])
 
   const handleCapture = () => {
     const el = captureRef.current
@@ -273,7 +393,7 @@ const TimetablePage = () => {
       <div
         ref={captureRef}
         className="marketing-timetable-capture timetable-content"
-        style={{ background: '#fff', overflow: 'visible' }}
+        style={{ background: '#fff', overflowX: 'auto', overflowY: 'visible' }}
       >
         {(weekInfo || titleText) && (
           <div className="timetable-info-row">
@@ -315,9 +435,28 @@ const TimetablePage = () => {
                         <tr key={slotName}>
                           <td>{slotName}</td>
                           {WEEKDAYS.map((wd) => {
-                            const matched = studentCourses.filter(
-                              (c) => (c.time_slot || '').trim() === String(slotName).trim() && (c.weekday || '').trim() === wd
-                            )
+                            const cellDate = dateMap[wd] || ''
+                            const matched = studentCourses.filter((c) => {
+                              const cDate = normDate(c.course_date)
+                              const cSlot = normSlot(c.time_slot)
+                              const sSlot = normSlot(slotName)
+                              const dateMatch = cDate === cellDate
+                              const slotMatch = cSlot === sSlot
+                              if (dateMatch && slotMatch) {
+                                console.log('[调试] 匹配成功:', {
+                                  weekday: wd,
+                                  cellDate,
+                                  course_id: c.id,
+                                  course_date: c.course_date,
+                                  norm_date: cDate,
+                                  time_slot: c.time_slot,
+                                  norm_slot: cSlot,
+                                  slotName,
+                                  norm_slotName: sSlot
+                                })
+                              }
+                              return dateMatch && slotMatch
+                            })
                             return (
                               <td key={wd}>
                                 {matched.length > 0 ? (

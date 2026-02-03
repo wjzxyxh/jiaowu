@@ -75,6 +75,7 @@ const Layout = () => {
       '/student-courses': ['paid-courses-need-scheduling'],
       '/marketing': ['marketing-drafts', 'marketing-schedules'],
       '/marketing/timetable': ['marketing-schedules'],
+      '/student-list': ['student-list'],
       '/permissions': ['users', 'permission-modules'],
     }
 
@@ -260,7 +261,7 @@ const Layout = () => {
               }}
             >
               <span>←</span>
-              <span>{location.pathname === '/marketing/timetable' ? '返回营销' : fromStudentCourses && location.pathname === '/courses' ? '返回学生课程' : '返回首页'}</span>
+              <span>{location.pathname === '/marketing/timetable' ? '返回试课系统' : fromStudentCourses && location.pathname === '/courses' ? '返回预排课' : '返回首页'}</span>
             </Link>
           )}
           {location.pathname === '/marketing/timetable' && (

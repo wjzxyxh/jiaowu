@@ -70,9 +70,21 @@ export const studentService = {
     return api.put(`/students/${id}`, data)
   },
 
-  // 删除学生
+  // 删除学生（彻底删除，仅学生名单页使用）
   deleteStudent: async (id) => {
     return api.delete(`/students/${id}`)
+  },
+
+  // 仅从学生管理页移除（不删库），学生仍保留在学生名单页
+  removeFromManagement: async (id) => {
+    return api.post(`/students/${id}/remove-from-management`)
+  },
+
+  // 设置学生试课状态（有排课则更新排课；无排课时写入线索的 trial_status）
+  setTrialStatus: async (id, trialStatus) => {
+    return api.post(`/students/${id}/set-trial-status`, {
+      trial_status: trialStatus === '未选择' || trialStatus == null ? null : trialStatus,
+    })
   },
 
   // 上传学生照片
@@ -84,5 +96,13 @@ export const studentService = {
         'Content-Type': 'multipart/form-data',
       },
     })
+  },
+
+  // 获取指定学生+课程的剩余课时（与缴费页一致：总缴费－已确认消耗）
+  getRemainingHours: async (studentId, courseId) => {
+    const response = await api.get(`/students/${studentId}/remaining-hours`, {
+      params: { course_id: courseId },
+    })
+    return response.remaining_hours ?? 0
   },
 }

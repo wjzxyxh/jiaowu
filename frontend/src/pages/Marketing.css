@@ -159,8 +159,14 @@
 .timetable-page.marketing-page {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   height: auto;
   min-height: auto;
   max-height: none;
-  overflow: visible;
+  overflow-x: auto !important; /* 允许横向滚动，避免溢出 */
+  overflow-y: visible !important;
+  padding: 0 !important; /* 移除 padding，让内容可以完全展开 */
+  box-shadow: none; /* 移除阴影，避免视觉上的 L 型 */
+  border-radius: 0; /* 移除圆角，避免视觉上的 L 型 */
+  -webkit-overflow-scrolling: touch; /* 移动端平滑滚动 */
 }

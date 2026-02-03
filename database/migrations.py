@@ -1200,6 +1200,27 @@ def upgrade_student_course_default_schedule_default_teacher_id():
         traceback.print_exc()
 
 
+def upgrade_student_course_default_schedule_default_classroom():
+    """为学生课程默认排课设置表添加 default_classroom 字段（默认教室）"""
+    try:
+        if not table_exists('student_course_default_schedules'):
+            return
+        if column_exists('student_course_default_schedules', 'default_classroom'):
+            print('学生课程默认排课设置表的 default_classroom 字段已存在')
+            return
+        if is_sqlite():
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN default_classroom VARCHAR(20)'))
+        else:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE student_course_default_schedules ADD COLUMN default_classroom VARCHAR(20) NULL'))
+        print('已为学生课程默认排课设置表添加 default_classroom 字段')
+    except Exception as e:
+        print(f'升级学生课程默认排课设置表 default_classroom 时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def create_user_permissions_table():
     """创建用户权限表"""
     try:
@@ -1286,6 +1307,25 @@ def upgrade_user_table_with_session_token():
         traceback.print_exc()
 
 
+def upgrade_marketing_lead_table_with_trial_status():
+    """营销线索表增加试课状态字段（无排课时也可直接设置）"""
+    try:
+        inspector = inspect(db.engine)
+        if 'marketing_leads' not in inspector.get_table_names():
+            return
+        columns = [col['name'] for col in inspector.get_columns('marketing_leads')]
+        if 'trial_status' not in columns:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE marketing_leads ADD COLUMN trial_status VARCHAR(20)'))
+            print('已为营销线索表添加 trial_status 字段')
+        else:
+            print('营销线索表的 trial_status 字段已存在')
+    except Exception as e:
+        print(f'升级营销线索表（trial_status）时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def run_migrations():
     """运行所有数据库迁移"""
     upgrade_student_table()
@@ -1310,4 +1350,6 @@ def run_migrations():
     create_student_course_default_schedule_table()
     upgrade_student_course_default_schedule_scheduling_paused()
     upgrade_student_course_default_schedule_default_teacher_id()
+    upgrade_student_course_default_schedule_default_classroom()
     upgrade_user_table_with_session_token()
+    upgrade_marketing_lead_table_with_trial_status()

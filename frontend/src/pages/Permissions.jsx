@@ -5,12 +5,16 @@ import Modal from '../components/Modal'
 import './Permissions.css'
 
 const Permissions = () => {
-  const [activeTab, setActiveTab] = useState('users')
   const [selectedUserId, setSelectedUserId] = useState(null)
   const [showAddUserModal, setShowAddUserModal] = useState(false)
   const [showEditUserModal, setShowEditUserModal] = useState(false)
+  const [showPermissionModal, setShowPermissionModal] = useState(false)
+  const [showPermissionDetailModal, setShowPermissionDetailModal] = useState(false)
+  const [viewingUserId, setViewingUserId] = useState(null)
   const [editingUser, setEditingUser] = useState(null)
   const [localPermissions, setLocalPermissions] = useState([])
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [roleFilter, setRoleFilter] = useState('all')
   const queryClient = useQueryClient()
   const prevPermissionsKeyRef = useRef(null)
   const prevSelectedUserIdRef = useRef(null)
@@ -103,29 +107,41 @@ const Permissions = () => {
   // 权限管理 mutations
   const batchUpdatePermissionsMutation = useMutation({
     mutationFn: ({ userId, permissions }) => permissionService.batchUpdateUserPermissions(userId, permissions),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['user-permissions', selectedUserId])
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries(['user-permissions', variables.userId])
       alert('权限保存成功！')
       // 重新加载权限以同步状态
-      queryClient.refetchQueries(['user-permissions', selectedUserId])
+      queryClient.refetchQueries(['user-permissions', variables.userId])
     },
     onError: (error) => {
       alert('保存权限失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
 
-  // 切换标签页
-  const handleTabChange = (tab) => {
-    setActiveTab(tab)
-    if (tab === 'users') {
-      queryClient.invalidateQueries(['users'])
-    }
+  // 打开权限授权模态框
+  const handleOpenPermissionModal = (userId) => {
+    setSelectedUserId(userId)
+    setShowPermissionModal(true)
+    setLocalPermissions([])
   }
 
-  // 用户选择变化
-  const handleUserSelect = (userId) => {
-    setSelectedUserId(userId)
+  // 关闭权限授权模态框
+  const handleClosePermissionModal = () => {
+    setShowPermissionModal(false)
+    setSelectedUserId(null)
     setLocalPermissions([])
+  }
+
+  // 打开授权状态详情模态框
+  const handleOpenPermissionDetailModal = (userId) => {
+    setViewingUserId(userId)
+    setShowPermissionDetailModal(true)
+  }
+
+  // 关闭授权状态详情模态框
+  const handleClosePermissionDetailModal = () => {
+    setShowPermissionDetailModal(false)
+    setViewingUserId(null)
   }
 
   // 切换单个权限（仅更新本地状态，不立即保存）
@@ -171,46 +187,6 @@ const Permissions = () => {
     })
   }
 
-  // 全部授权
-  const handleGrantAll = () => {
-    if (!selectedUserId) {
-      alert('请先选择子管理员')
-      return
-    }
-
-    const updatedPermissions = modules.map((module) => {
-      // 为每个功能也授权
-      const functionPerms = {}
-      if (module.functions && Array.isArray(module.functions)) {
-        module.functions.forEach((func) => {
-          functionPerms[func.code] = true
-        })
-      }
-      return {
-        module: module.code,
-        is_granted: true,
-        function_permissions: functionPerms,
-      }
-    })
-
-    setLocalPermissions(updatedPermissions)
-  }
-
-  // 全部撤销
-  const handleRevokeAll = () => {
-    if (!selectedUserId) {
-      alert('请先选择子管理员')
-      return
-    }
-
-    const updatedPermissions = modules.map((module) => ({
-      module: module.code,
-      is_granted: false,
-      function_permissions: {},
-    }))
-
-    setLocalPermissions(updatedPermissions)
-  }
 
   // 保存权限
   const handleSavePermissions = () => {
@@ -226,6 +202,12 @@ const Permissions = () => {
     batchUpdatePermissionsMutation.mutate({
       userId: selectedUserId,
       permissions: localPermissions,
+    }, {
+      onSuccess: () => {
+        handleClosePermissionModal()
+        // 刷新用户权限查询
+        queryClient.invalidateQueries(['user-permissions'])
+      }
     })
   }
 
@@ -304,6 +286,56 @@ const Permissions = () => {
     }
   }
 
+  // 获取用户授权状态摘要
+  const getUserPermissionSummary = (userId) => {
+    // 使用缓存的权限数据
+    const userPerms = queryClient.getQueryData(['user-permissions', userId])
+    if (!userPerms || userPerms.length === 0) {
+      return { granted: 0, total: modules.length, text: '未授权' }
+    }
+    const grantedCount = userPerms.filter((p) => p.is_granted).length
+    if (grantedCount === 0) {
+      return { granted: 0, total: modules.length, text: '未授权' }
+    }
+    if (grantedCount === modules.length) {
+      return { granted: grantedCount, total: modules.length, text: '全部授权' }
+    }
+    return { granted: grantedCount, total: modules.length, text: `${grantedCount}/${modules.length}` }
+  }
+
+  // 预加载所有用户的权限信息（用于在列表中显示）
+  useEffect(() => {
+    users.forEach((user) => {
+      if (user.role !== 'admin') {
+        queryClient.prefetchQuery({
+          queryKey: ['user-permissions', user.id],
+          queryFn: () => permissionService.getUserPermissions(user.id),
+          staleTime: 5 * 60 * 1000, // 5分钟
+        })
+      }
+    })
+  }, [users, queryClient])
+
+  // 过滤用户列表
+  const filteredUsers = useMemo(() => {
+    return users.filter((user) => {
+      // 搜索关键词过滤
+      if (searchKeyword) {
+        const keyword = searchKeyword.toLowerCase()
+        const matchUsername = user.username?.toLowerCase().includes(keyword)
+        const matchRealName = user.real_name?.toLowerCase().includes(keyword)
+        if (!matchUsername && !matchRealName) {
+          return false
+        }
+      }
+      // 角色过滤
+      if (roleFilter !== 'all' && user.role !== roleFilter) {
+        return false
+      }
+      return true
+    })
+  }, [users, searchKeyword, roleFilter])
+
   if (usersLoading) return <div className="loading">加载中...</div>
 
   return (
@@ -313,251 +345,134 @@ const Permissions = () => {
       </div>
 
       <div className="admin-container">
-        {/* 标签页 */}
-        <div className="admin-tabs">
-          <button
-            className={`admin-tab ${activeTab === 'users' ? 'active' : ''}`}
-            onClick={() => handleTabChange('users')}
-          >
-            子管理员管理
-          </button>
-          <button
-            className={`admin-tab ${activeTab === 'permissions' ? 'active' : ''}`}
-            onClick={() => handleTabChange('permissions')}
-          >
-            权限授权
-          </button>
-        </div>
-
-        {/* 用户管理标签页 */}
-        {activeTab === 'users' && (
-          <div className="tab-content active">
-            <div className="users-section">
-              <div className="users-toolbar">
-                <div>
-                  <h2 style={{ margin: 0 }}>子管理员管理</h2>
-                  <p style={{ margin: '5px 0 0 0', color: '#666', fontSize: '14px' }}>
-                    管理子管理员账号，子管理员需要授权后才能访问功能模块
-                  </p>
-                </div>
-                <button className="btn btn-primary" onClick={() => setShowAddUserModal(true)}>
-                  新增子管理员
-                </button>
-              </div>
-              <div className="table-wrapper">
-                <table className="users-table">
-                <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>用户名</th>
-                    <th>真实姓名</th>
-                    <th>角色</th>
-                    <th>状态</th>
-                    <th>创建时间</th>
-                    <th>最后登录</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.length === 0 ? (
-                    <tr>
-                      <td colSpan="8" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                        暂无用户
-                      </td>
-                    </tr>
-                  ) : (
-                    users.map((user) => {
-                      const roleInfo = roleMap[user.role] || { name: user.role, class: '' }
-                      const isAdmin = user.role === 'admin'
-                      return (
-                        <tr key={user.id}>
-                          <td>{user.id}</td>
-                          <td>{user.username}</td>
-                          <td>{user.real_name || '-'}</td>
-                          <td>
-                            <span className={`role-badge ${roleInfo.class}`}>{roleInfo.name}</span>
-                          </td>
-                          <td>
-                            <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
-                              {user.is_active ? '启用' : '禁用'}
-                            </span>
-                          </td>
-                          <td>{formatDate(user.created_at)}</td>
-                          <td>{formatDate(user.last_login)}</td>
-                          <td>
-                            <button
-                              className="btn btn-warning btn-sm"
-                              onClick={() => handleShowEditUser(user)}
-                              disabled={isAdmin}
-                              title={isAdmin ? '不能编辑管理员' : ''}
-                            >
-                              编辑
-                            </button>
-                            <button
-                              className="btn btn-danger btn-sm"
-                              onClick={() => handleDeleteUser(user)}
-                              disabled={isAdmin}
-                              title={isAdmin ? '不能删除管理员' : ''}
-                            >
-                              删除
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* 权限管理标签页 */}
-        {activeTab === 'permissions' && (
-          <div className="tab-content active">
-            <div className="permissions-container">
-              <div
+        <div className="users-section">
+          <div className="users-toolbar">
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              <input
+                type="text"
+                placeholder="搜索用户名或姓名..."
+                value={searchKeyword}
+                onChange={(e) => setSearchKeyword(e.target.value)}
                 style={{
-                  marginBottom: '20px',
-                  padding: '15px',
-                  background: '#f0f7ff',
-                  borderRadius: '8px',
-                  borderLeft: '4px solid #667eea',
+                  padding: '8px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                  width: '200px',
+                }}
+              />
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  fontSize: '14px',
                 }}
               >
-                <h3 style={{ margin: '0 0 5px 0', color: '#333' }}>子管理员权限授权</h3>
-                <p style={{ margin: 0, color: '#666', fontSize: '14px' }}>
-                  为子管理员授权功能模块访问权限，未授权的模块将不会显示在首页
-                </p>
-              </div>
-
-              <div className="user-selector">
-                <label style={{ display: 'block', marginBottom: '10px', fontWeight: 500 }}>
-                  选择子管理员：
-                </label>
-                <select
-                  id="user-select"
-                  value={selectedUserId || ''}
-                  onChange={(e) => handleUserSelect(e.target.value ? parseInt(e.target.value) : null)}
-                >
-                  <option value="">-- 请选择子管理员 --</option>
-                  {users.map((user) => {
-                    const roleText = user.role === 'admin' ? '系统管理员' : '子管理员'
-                    return (
-                      <option key={user.id} value={user.id}>
-                        {user.real_name || user.username} ({roleText})
-                      </option>
-                    )
-                  })}
-                </select>
-              </div>
-
-              {selectedUserId ? (
-                <>
-                  {permsLoading ? (
-                    <div className="loading">加载权限中...</div>
-                  ) : (
-                    <>
-                      <div className="batch-actions">
-                        <button className="btn btn-primary" onClick={handleGrantAll}>
-                          全部授权
-                        </button>
-                        <button className="btn btn-secondary" onClick={handleRevokeAll}>
-                          全部撤销
-                        </button>
-                        <button className="btn btn-success" onClick={handleSavePermissions}>
-                          保存更改
-                        </button>
-                      </div>
-
-                      <div className="permissions-grid">
-                        {modules.map((module) => {
-                          // 优先使用 localPermissions（本地修改），否则使用 userPermissions（服务器数据）
-                          const permission =
-                            localPermissions.find((p) => p.module === module.code) ||
-                            userPermissions.find((p) => p.module === module.code) || {
-                              module: module.code,
-                              is_granted: false,
-                              function_permissions: {},
-                            }
-                          const isGranted = permission.is_granted || false
-                          const functionPerms = permission.function_permissions || {}
-                          const selectedUser = users.find((u) => u.id === selectedUserId)
-                          const isAdmin = selectedUser?.role === 'admin'
-                          const moduleFunctions = module.functions || []
-
-                          return (
-                            <div
-                              key={module.code}
-                              className={`permission-card ${isGranted ? 'granted' : 'denied'}`}
-                              style={{ marginBottom: '20px' }}
-                            >
-                              <div className="permission-info" style={{ marginBottom: '10px' }}>
-                                <div className="permission-name">
-                                  <span className="permission-icon">{module.icon}</span>
-                                  {module.name}
-                                </div>
-                                <div className="permission-code">{module.code}</div>
-                              </div>
-                              {isAdmin ? (
-                                <span className="admin-badge">管理员拥有所有权限</span>
-                              ) : (
-                                <>
-                                  <div style={{ marginBottom: '10px' }}>
-                                    <label className="permission-toggle" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <input
-                                        type="checkbox"
-                                        checked={isGranted}
-                                        onChange={() => handlePermissionToggle(module.code, isGranted)}
-                                      />
-                                      <span>模块权限</span>
-                                    </label>
-                                  </div>
-                                  {isGranted && moduleFunctions.length > 0 && (
-                                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e0e0e0' }}>
-                                      <div style={{ fontSize: '12px', color: '#666', marginBottom: '8px', fontWeight: 500 }}>
-                                        工具栏功能：
-                                      </div>
-                                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                        {moduleFunctions.map((func) => {
-                                          const funcGranted = functionPerms[func.code] !== undefined ? functionPerms[func.code] : true // 默认授权
-                                          return (
-                                            <label
-                                              key={func.code}
-                                              style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}
-                                            >
-                                              <input
-                                                type="checkbox"
-                                                checked={funcGranted}
-                                                onChange={() => handleFunctionPermissionToggle(module.code, func.code, funcGranted)}
-                                                style={{ width: '16px', height: '16px' }}
-                                              />
-                                              <span>{func.name}</span>
-                                            </label>
-                                          )
-                                        })}
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </>
-                  )}
-                </>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-state-icon">🔐</div>
-                  <div>请选择一个子管理员来管理权限</div>
-                </div>
-              )}
+                <option value="all">所有角色</option>
+                <option value="teacher">教务</option>
+                <option value="finance">财务</option>
+                <option value="readonly">只读</option>
+              </select>
+              <button className="btn btn-primary" onClick={() => setShowAddUserModal(true)}>
+                新增子管理员
+              </button>
             </div>
           </div>
-        )}
+          <div className="table-wrapper">
+            <table className="users-table">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>用户名</th>
+                <th>真实姓名</th>
+                <th>角色</th>
+                <th>状态</th>
+                <th>授权状态</th>
+                <th>创建时间</th>
+                <th>最后登录</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredUsers.length === 0 ? (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                    {users.length === 0 ? '暂无用户' : '没有找到匹配的用户'}
+                  </td>
+                </tr>
+              ) : (
+                filteredUsers.map((user) => {
+                  const roleInfo = roleMap[user.role] || { name: user.role, class: '' }
+                  const isAdmin = user.role === 'admin'
+                  const permissionSummary = isAdmin ? { granted: modules.length, total: modules.length, text: '全部授权' } : getUserPermissionSummary(user.id)
+                  return (
+                    <tr key={user.id}>
+                      <td>{user.id}</td>
+                      <td>{user.username}</td>
+                      <td>{user.real_name || '-'}</td>
+                      <td>
+                        <span className={`role-badge ${roleInfo.class}`}>{roleInfo.name}</span>
+                      </td>
+                      <td>
+                        <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
+                          {user.is_active ? '启用' : '禁用'}
+                        </span>
+                      </td>
+                      <td>
+                        <span
+                          className="permission-status-link"
+                          onClick={() => handleOpenPermissionDetailModal(user.id)}
+                          style={{
+                            color: permissionSummary.granted > 0 ? '#667eea' : '#999',
+                            cursor: 'pointer',
+                            textDecoration: 'underline',
+                            fontWeight: 500
+                          }}
+                        >
+                          {permissionSummary.text}
+                        </span>
+                      </td>
+                      <td>{formatDate(user.created_at)}</td>
+                      <td>{formatDate(user.last_login)}</td>
+                      <td>
+                        <button
+                          className="btn btn-info btn-sm"
+                          onClick={() => handleOpenPermissionModal(user.id)}
+                          disabled={isAdmin}
+                          title={isAdmin ? '管理员拥有所有权限' : '设置权限'}
+                          style={{ marginRight: '5px' }}
+                        >
+                          权限
+                        </button>
+                        <button
+                          className="btn btn-warning btn-sm"
+                          onClick={() => handleShowEditUser(user)}
+                          disabled={isAdmin}
+                          title={isAdmin ? '不能编辑管理员' : ''}
+                          style={{ marginRight: '5px' }}
+                        >
+                          编辑
+                        </button>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          onClick={() => handleDeleteUser(user)}
+                          disabled={isAdmin}
+                          title={isAdmin ? '不能删除管理员' : ''}
+                        >
+                          删除
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+          </div>
+        </div>
       </div>
 
       {/* 新增用户模态框 */}
@@ -579,6 +494,34 @@ const Permissions = () => {
           onSave={(formData) => handleSaveUser(formData, editingUser.id)}
         />
       )}
+
+      {/* 权限授权模态框（按模块与功能自行勾选） */}
+      {showPermissionModal && selectedUserId && (
+        <PermissionModal
+          userId={selectedUserId}
+          users={users}
+          modules={modules}
+          userPermissions={userPermissions}
+          localPermissions={localPermissions}
+          setLocalPermissions={setLocalPermissions}
+          permsLoading={permsLoading}
+          onClose={handleClosePermissionModal}
+          onSave={handleSavePermissions}
+          onPermissionToggle={handlePermissionToggle}
+          onFunctionPermissionToggle={handleFunctionPermissionToggle}
+        />
+      )}
+
+      {/* 授权状态详情模态框 */}
+      {showPermissionDetailModal && viewingUserId && (
+        <PermissionDetailModal
+          userId={viewingUserId}
+          users={users}
+          modules={modules}
+          onClose={handleClosePermissionDetailModal}
+        />
+      )}
+
     </div>
   )
 }
@@ -748,6 +691,233 @@ const EditUserModal = ({ user, onClose, onSave }) => {
           </button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+// 权限授权模态框组件（按模块与功能自行勾选）
+const PermissionModal = ({
+  userId,
+  users,
+  modules,
+  userPermissions,
+  localPermissions,
+  setLocalPermissions,
+  permsLoading,
+  onClose,
+  onSave,
+  onPermissionToggle,
+  onFunctionPermissionToggle,
+}) => {
+  const selectedUser = useMemo(() => users.find((u) => u.id === userId), [users, userId])
+  const isAdmin = selectedUser?.role === 'admin'
+
+  return (
+    <Modal
+      isOpen={true}
+      onClose={onClose}
+      title={`权限授权 - ${selectedUser?.real_name || selectedUser?.username}`}
+      style={{ maxWidth: '90%', width: '1200px' }}
+      headerActions={
+        !permsLoading ? (
+          <button type="button" className="perm-modal__save" onClick={onSave}>
+            保存更改
+          </button>
+        ) : null
+      }
+    >
+      <div className="permissions-modal-content perm-modal">
+        {permsLoading ? (
+          <div className="loading">加载权限中...</div>
+        ) : (
+          <>
+            <div className="perm-modal__list">
+              {modules.map((module) => {
+                const permission =
+                  localPermissions.find((p) => p.module === module.code) ||
+                  userPermissions.find((p) => p.module === module.code) || {
+                    module: module.code,
+                    is_granted: false,
+                    function_permissions: {},
+                  }
+                const isGranted = permission.is_granted || false
+                const functionPerms = permission.function_permissions || {}
+                const moduleFunctions = module.functions || []
+
+                return (
+                  <div
+                    key={module.code}
+                    className={`perm-module-card ${isGranted || isAdmin ? 'is-granted' : ''}`}
+                  >
+                    <div className="perm-module-card__head">
+                      <div className="perm-module-card__title-wrap">
+                        <span className="perm-module-card__icon">{module.icon}</span>
+                        <div>
+                          <div className="perm-module-card__name">{module.name}</div>
+                          <div className="perm-module-card__code">{module.code}</div>
+                        </div>
+                      </div>
+                      {isAdmin ? (
+                        <div className="perm-modal__admin-badge">
+                          👑 管理员拥有所有权限
+                        </div>
+                      ) : (
+                        <label className="perm-module-card__toggle">
+                          <input
+                            type="checkbox"
+                            checked={isGranted}
+                            onChange={() => onPermissionToggle(module.code, isGranted)}
+                          />
+                          <span>模块权限</span>
+                        </label>
+                      )}
+                    </div>
+                    {!isAdmin && isGranted && moduleFunctions.length > 0 && (
+                      <div className="perm-module-card__body">
+                        <div className="perm-module-card__functions">
+                          <div className="perm-module-card__functions-label">工具栏功能</div>
+                          <div className="perm-module-card__functions-grid">
+                            {moduleFunctions.map((func) => {
+                              const funcGranted = functionPerms[func.code] !== undefined ? functionPerms[func.code] : true
+                              return (
+                                <label
+                                  key={func.code}
+                                  className={`perm-func-item ${funcGranted ? 'is-checked' : ''}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={funcGranted}
+                                    onChange={() => onFunctionPermissionToggle(module.code, func.code, funcGranted)}
+                                  />
+                                  <span>{func.name}</span>
+                                </label>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
+// 授权状态详情模态框组件
+const PermissionDetailModal = ({ userId, users, modules, onClose }) => {
+  const queryClient = useQueryClient()
+  const { data: userPermissions = [], isLoading } = useQuery({
+    queryKey: ['user-permissions', userId],
+    queryFn: () => permissionService.getUserPermissions(userId),
+    enabled: !!userId,
+  })
+
+  const selectedUser = users.find((u) => u.id === userId)
+  const isAdmin = selectedUser?.role === 'admin'
+
+  if (isLoading) {
+    return (
+      <Modal isOpen={true} onClose={onClose} title={`授权状态详情 - ${selectedUser?.real_name || selectedUser?.username}`}>
+        <div className="loading">加载中...</div>
+      </Modal>
+    )
+  }
+
+  return (
+    <Modal isOpen={true} onClose={onClose} title={`授权状态详情 - ${selectedUser?.real_name || selectedUser?.username}`} style={{ maxWidth: '90%', width: '1000px' }}>
+      <div className="permission-detail-content">
+        {isAdmin ? (
+          <div style={{ 
+            padding: '20px', 
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            borderRadius: '12px',
+            color: 'white',
+            textAlign: 'center',
+            fontSize: '16px',
+            fontWeight: 600
+          }}>
+            👑 管理员拥有所有权限
+          </div>
+        ) : (
+          <div className="permissions-grid">
+            {modules.map((module) => {
+              const permission = userPermissions.find((p) => p.module === module.code) || {
+                module: module.code,
+                is_granted: false,
+                function_permissions: {},
+              }
+              const isGranted = permission.is_granted || false
+              const functionPerms = permission.function_permissions || {}
+              const moduleFunctions = module.functions || []
+
+              return (
+                <div
+                  key={module.code}
+                  className={`permission-card ${isGranted ? 'granted' : 'denied'}`}
+                  style={{ marginBottom: '20px' }}
+                >
+                  <div className="permission-info" style={{ marginBottom: '15px' }}>
+                    <div className="permission-name">
+                      <span className="permission-icon">{module.icon}</span>
+                      {module.name}
+                    </div>
+                    <div className="permission-code">{module.code}</div>
+                  </div>
+                  <div style={{ marginBottom: '15px' }}>
+                    <span style={{ 
+                      fontWeight: 600, 
+                      color: isGranted ? '#28a745' : '#dc3545',
+                      fontSize: '14px'
+                    }}>
+                      {isGranted ? '✓ 已授权' : '✗ 未授权'}
+                    </span>
+                  </div>
+                  {isGranted && moduleFunctions.length > 0 && (
+                    <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '2px solid #e8ecf0' }}>
+                      <div style={{ fontSize: '13px', color: '#667eea', marginBottom: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                        🔧 工具栏功能
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {moduleFunctions.map((func) => {
+                          const funcGranted = functionPerms[func.code] !== undefined ? functionPerms[func.code] : true
+                          return (
+                            <div
+                              key={func.code}
+                              style={{ 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '10px', 
+                                fontSize: '14px',
+                                padding: '8px 12px',
+                                borderRadius: '6px',
+                                background: funcGranted ? '#f0f7ff' : '#f8f9fa',
+                              }}
+                            >
+                              <span style={{ 
+                                color: funcGranted ? '#28a745' : '#dc3545',
+                                fontWeight: 600,
+                                fontSize: '16px'
+                              }}>
+                                {funcGranted ? '✓' : '✗'}
+                              </span>
+                              <span style={{ color: '#333', fontWeight: 500 }}>{func.name}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </Modal>
   )
 }

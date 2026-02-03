@@ -354,9 +354,8 @@ def export_stats():
 
     student_id = request.args.get('student_id', type=int)
 
-    
-
-    query = ClassHoursStats.query.filter_by(month=month)
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    query = ClassHoursStats.query.filter_by(month=month).filter(ClassHoursStats.student_name != TRIAL_PLACEHOLDER_NAME)
 
     if student_id:
 

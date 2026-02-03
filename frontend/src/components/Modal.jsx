@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './Modal.css'
 
-const Modal = ({ isOpen, onClose, title, titleCenter, contentStyle, draggable, children }) => {
+const Modal = ({ isOpen, onClose, title, titleCenter, contentStyle, draggable, headerActions, children }) => {
   const [pos, setPos] = useState({ x: 0, y: 0 })
   const [initDone, setInitDone] = useState(false)
   const dragRef = useRef({ startX: 0, startY: 0, startPosX: 0, startPosY: 0 })
@@ -74,9 +74,12 @@ const Modal = ({ isOpen, onClose, title, titleCenter, contentStyle, draggable, c
           onMouseDown={handleDragStart}
         >
           <h2>{title}</h2>
-          <button className="modal-close" onClick={onClose}>
-            ×
-          </button>
+          <div className="modal-header-right">
+            {headerActions}
+            <button className="modal-close" onClick={onClose}>
+              ×
+            </button>
+          </div>
         </div>
         <div className="modal-body">{children}</div>
       </div>

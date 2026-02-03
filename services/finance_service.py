@@ -15,8 +15,9 @@ def get_finance_config(key, default_value):
     return config.value if config else default_value
 
 
-def calculate_remaining_hours_from_payments(student_id, course_id, month=None):
-    """从缴费记录计算剩余课时（只由缴费记录计算，按课程，过滤已删除的学生）"""
+def calculate_remaining_hours_from_payments(student_id, course_id, month=None, course_name=None):
+    """从缴费记录计算剩余课时（只由缴费记录计算，按课程，过滤已删除的学生）。
+    course_name 可选：当提供时，会同时计入 course_id 为空但 course_name 匹配的缴费（兼容旧数据）。"""
     if month is None:
         month = get_current_month()
     
@@ -27,10 +28,26 @@ def calculate_remaining_hours_from_payments(student_id, course_id, month=None):
         return 0  # 如果学生已被删除，返回0
     
     # 获取指定课程的所有缴费记录（按时间顺序，从早到晚）
-    all_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-        Payment.student_id == student_id,
-        Payment.course_id == course_id
-    ).order_by(
+    # 包含：course_id 匹配 或 (course_id 为空且 course_name 匹配)
+    base = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+        Payment.student_id == student_id
+    )
+    if course_name:
+        from sqlalchemy import or_, and_
+        if course_id is not None:
+            base = base.filter(
+                or_(
+                    Payment.course_id == course_id,
+                    and_(Payment.course_id.is_(None), Payment.course_name == course_name)
+                )
+            )
+        else:
+            base = base.filter(
+                and_(Payment.course_id.is_(None), Payment.course_name == course_name)
+            )
+    else:
+        base = base.filter(Payment.course_id == course_id)
+    all_payments = base.order_by(
         Payment.payment_date.asc(),
         Payment.id.asc()
     ).all()

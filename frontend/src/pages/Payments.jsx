@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePermissions } from '../hooks/usePermissions'
 import { paymentService } from '../services/paymentService'
@@ -26,6 +26,13 @@ const Payments = () => {
 
   const perPage = 20
 
+  // 同一学生+课程的分组键：course_id 为空时用 course_name 区分不同课程，避免合并剩余课时
+  const getPaymentGroupKey = useCallback((p) => {
+    if (p.course_id != null && p.course_id !== '') return `${p.student_id}_${p.course_id}`
+    const name = (p.course_name || '').trim()
+    return name ? `${p.student_id}_null_${name}` : `${p.student_id}_null`
+  }, [])
+
   // 构建查询参数
   const paymentParams = useMemo(() => {
     const params = {}
@@ -41,11 +48,11 @@ const Payments = () => {
     return params
   }, [yearFilter, monthFilter, studentFilter, typeFilter])
 
-  // 获取缴费列表
+  // 获取缴费列表（缴费记录与缴费提醒共用，需始终拉取以正确显示剩余课时与提醒）
   const { data: paymentsData = [], isLoading: paymentsLoading } = useQuery({
     queryKey: ['payments', paymentParams],
     queryFn: () => paymentService.getPayments(paymentParams),
-    enabled: viewMode === 'record',
+    enabled: true,
   })
 
   const payments = Array.isArray(paymentsData) ? paymentsData : paymentsData.payments || []
@@ -82,10 +89,10 @@ const Payments = () => {
     return map
   }, [statsData])
 
-  // 获取学生列表
+  // 获取学生列表（只显示 /students 页面中的学生，即试课状态为成功的学生）
   const { data: studentsData } = useQuery({
     queryKey: ['students', 'all'],
-    queryFn: () => studentService.getStudents({ per_page: 1000 }),
+    queryFn: () => studentService.getStudents({ per_page: 1000, trial_success_only: true }),
     staleTime: 10 * 60 * 1000,
   })
 
@@ -102,8 +109,9 @@ const Payments = () => {
   const processedPayments = useMemo(() => {
     let processed = payments.map((p) => {
       const status = p.status || '进行中'
-      const key = `${p.student_id}_${p.course_id || 'null'}`
-      const remainingHours = p.remaining_hours !== undefined ? p.remaining_hours : remainingHoursMap[key] || 0
+      const groupKey = getPaymentGroupKey(p)
+      const legacyKey = `${p.student_id}_${p.course_id || 'null'}`
+      const remainingHours = p.remaining_hours !== undefined ? p.remaining_hours : (remainingHoursMap[groupKey] ?? remainingHoursMap[legacyKey] ?? 0)
       const remainingCost = p.remaining_cost !== undefined ? p.remaining_cost : remainingHours * (p.unit_price || 0)
       const schedulingPaused = !!p.scheduling_paused
 
@@ -116,22 +124,23 @@ const Payments = () => {
       }
     })
 
-    // 应用状态筛选（进行中 / 暂停排课 / 结束）
+    // 应用状态筛选（欠费 / 进行中 / 暂停排课 / 结束）
     if (statusFilter) {
       if (statusFilter === '暂停排课') {
         processed = processed.filter((p) => p._status === '进行中' && p._schedulingPaused)
+      } else if (statusFilter === '进行中') {
+        processed = processed.filter((p) => p._status === '进行中' && !p._schedulingPaused)
       } else {
-        processed = processed.filter((p) => {
-          if (statusFilter === '进行中') return p._status === '进行中' && !p._schedulingPaused
-          return p._status === statusFilter
-        })
+        processed = processed.filter((p) => p._status === statusFilter)
       }
     }
 
-    // 排序：进行中的按剩余课时升序，结束的放在后面
+    // 排序：欠费最前，其次进行中/暂停排课按剩余课时升序，结束放最后
     processed.sort((a, b) => {
       if (a._status === '结束' && b._status !== '结束') return 1
       if (a._status !== '结束' && b._status === '结束') return -1
+      if (a._status === '欠费' && b._status !== '欠费') return -1
+      if (a._status !== '欠费' && b._status === '欠费') return 1
       if (a._status !== '结束' && b._status !== '结束') {
         return a._remainingHours - b._remainingHours
       }
@@ -139,7 +148,7 @@ const Payments = () => {
     })
 
     return processed
-  }, [payments, remainingHoursMap, statusFilter])
+  }, [payments, remainingHoursMap, statusFilter, getPaymentGroupKey])
 
   // 计算合计（所有筛选后的数据）
   const totals = useMemo(() => {
@@ -173,7 +182,7 @@ const Payments = () => {
     const byKey = {}
     for (const p of processedPayments) {
       if (p.type !== '缴费' || p._status === '结束') continue
-      const key = `${p.student_id}_${p.course_id ?? 'null'}`
+      const key = getPaymentGroupKey(p)
       if (!byKey[key]) byKey[key] = []
       byKey[key].push(p)
     }
@@ -183,21 +192,21 @@ const Payments = () => {
       map[key] = list.reduce((sum, p) => sum + (p._remainingHours || 0), 0)
     }
     return map
-  }, [processedPayments])
+  }, [processedPayments, getPaymentGroupKey])
 
   // 分页
   const totalPages = Math.ceil(processedPayments.length / perPage)
   const startIndex = (currentPage - 1) * perPage
   const paginatedPayments = processedPayments.slice(startIndex, startIndex + perPage)
 
-  // 缴费提醒：仅当同一学生同一课程的累计剩余课时 <= 阈值时展示
+  // 缴费提醒：同一学生同一课程累计剩余课时 <= 阈值时展示（含欠费，需补足欠费）
   const reminderData = useMemo(() => {
     if (viewMode !== 'reminder') return []
     const list = []
     const seen = new Set()
     for (const p of processedPayments) {
       if (p.type !== '缴费' || p._status === '结束') continue
-      const key = `${p.student_id}_${p.course_id ?? 'null'}`
+      const key = getPaymentGroupKey(p)
       if (seen.has(key)) continue
       const cumulative = cumulativeRemainingByKey[key] ?? 0
       if (cumulative > reminderThreshold) continue
@@ -205,12 +214,13 @@ const Payments = () => {
       list.push({
         student_id: p.student_id,
         course_id: p.course_id,
+        course_name: p.course_name,
         student_name: p.student_name,
         remaining_hours: cumulative,
       })
     }
     return list
-  }, [viewMode, processedPayments, cumulativeRemainingByKey, reminderThreshold])
+  }, [viewMode, processedPayments, cumulativeRemainingByKey, reminderThreshold, getPaymentGroupKey])
 
   // Mutations
   const createMutation = useMutation({
@@ -253,7 +263,7 @@ const Payments = () => {
   })
 
   const handleToggleSchedulingPaused = (p) => {
-    if (p.type !== '缴费' || !p.course_id || p._status === '结束') return
+    if (p.type !== '缴费' || !p.course_id || p._status === '结束' || p._status === '欠费') return
     const newPaused = !p._schedulingPaused
     toggleSchedulingPausedMutation.mutate({
       studentId: p.student_id,
@@ -461,6 +471,7 @@ const Payments = () => {
         </select>
         <select id="payment-status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
           <option value="">全部状态</option>
+          <option value="欠费">欠费</option>
           <option value="进行中">进行中</option>
           <option value="暂停排课">暂停排课</option>
           <option value="结束">结束</option>
@@ -531,7 +542,11 @@ const Payments = () => {
 
                   const canToggleScheduling = type === '缴费' && p.course_id && status === '进行中'
                   const statusBadge =
-                    status === '结束' ? (
+                    status === '欠费' ? (
+                      <span className="status-badge" style={{ background: '#dc3545', color: 'white' }}>
+                        欠费
+                      </span>
+                    ) : status === '结束' ? (
                       <span className="status-badge" style={{ background: '#6c757d', color: 'white' }}>
                         结束
                       </span>
@@ -577,13 +592,14 @@ const Payments = () => {
                   const remainingCostColor = remainingCost < 0 ? { color: '#dc3545', fontWeight: 'bold' } : {}
                   const remainingCostPrefix = remainingCost < 0 ? '-' : ''
 
-                  const cumulativeKey = `${p.student_id}_${p.course_id ?? 'null'}`
+                  const cumulativeKey = getPaymentGroupKey(p)
                   const cumulativeHours = type === '缴费' && status !== '结束' ? (cumulativeRemainingByKey[cumulativeKey] ?? 0) : 0
                   const hoursLow = cumulativeHours <= reminderThreshold && type === '缴费' && status !== '结束'
+                  const isArrears = status === '欠费'
                   const rowStyle =
                     status === '结束'
                       ? { color: '#999', opacity: 0.7 }
-                      : hoursLow
+                      : isArrears || hoursLow
                         ? { color: '#dc3545', backgroundColor: 'rgba(220, 53, 69, 0.08)' }
                         : {}
 
@@ -677,6 +693,7 @@ const Payments = () => {
             <thead>
               <tr>
                 <th>学生</th>
+                <th>课程</th>
                 <th>年级</th>
                 <th>剩余课时</th>
                 <th>联系电话</th>
@@ -697,17 +714,18 @@ const Payments = () => {
                         : { color: '#ff9800', fontWeight: 'bold' }
                   const urgencyText =
                     remainingHours < 0
-                      ? '（紧急！）'
+                      ? '（需要补足欠费）'
                       : remainingHours < 1
                         ? '（急需缴费）'
                         : '（建议缴费）'
 
                   return (
-                    <tr key={`${s.student_id}_${s.course_id || 'null'}`}>
+                    <tr key={`${s.student_id}_${s.course_id ?? 'null'}_${(s.course_name || '').trim()}`}>
                       <td style={urgencyStyle}>
                         {s.student_name}
                         {urgencyText}
                       </td>
+                      <td>{(s.course_name || '').trim() || '-'}</td>
                       <td>{student.grade || '-'}</td>
                       <td style={urgencyStyle}>{remainingHours.toFixed(2)}</td>
                       <td>{student.phone || '-'}</td>
@@ -725,7 +743,7 @@ const Payments = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="6" style={{ textAlign: 'center', padding: '20px' }}>
+                  <td colSpan="7" style={{ textAlign: 'center', padding: '20px' }}>
                     暂无需要缴费提醒的学生
                   </td>
                 </tr>
@@ -944,7 +962,7 @@ const PaymentModal = ({
               let displayText = s.name
               if (studentStats.length > 0) {
                 const hoursList = studentStats
-                  .map((st) => `${st.course_name || '未命名课程'}: ${st.remaining_hours || 0}`)
+                  .map((st) => `${st.course_name || '未命名课程'}(${st.remaining_hours || 0})`)
                   .join('; ')
                 displayText += ` - 剩余课时: ${hoursList}`
               } else {

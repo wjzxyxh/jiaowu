@@ -18,6 +18,7 @@ import OthersManage from './pages/OthersManage'
 import Permissions from './pages/Permissions'
 import Marketing from './pages/Marketing'
 import TimetablePage from './pages/TimetablePage'
+import StudentList from './pages/StudentList'
 import Layout from './components/Layout'
 import CoursesLayout from './components/CoursesLayout'
 
@@ -57,6 +58,7 @@ function App() {
         <Route path="others-manage" element={<OthersManage />} />
         <Route path="marketing" element={<Marketing />} />
         <Route path="marketing/timetable" element={<TimetablePage />} />
+        <Route path="student-list" element={<StudentList />} />
         <Route path="permissions" element={<Permissions />} />
       </Route>
       <Route

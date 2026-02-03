@@ -17,6 +17,7 @@ from utils import (
     get_client_ip, log_operation, require_permission, get_current_month,
     get_weekday, check_course_conflicts
 )
+from utils.error_handlers import handle_db_errors
 from services import (
     create_notification, check_and_create_notifications,
     update_class_hours_stats, update_teacher_hours,
@@ -26,7 +27,7 @@ from services import (
 from config import Config
 import os
 from datetime import datetime, date, timedelta
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -42,6 +43,63 @@ bp = Blueprint('courses', __name__)
 
 # 试课排课占位学生名称（用于试课学员，不显示在学生列表中）
 TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+
+
+def cleanup_invalid_student_courses(courses):
+    """
+    清理不在 /students 页面中的学生的排课记录
+    返回：清理后的课程列表
+    """
+    try:
+        from routes.students import get_valid_student_ids_for_management_page
+        from models import Student
+        
+        # 获取有效学生ID列表
+        valid_student_ids = get_valid_student_ids_for_management_page()
+        
+        # 进一步验证：检查这些学生是否真的会在 /students 页面显示（考虑状态等筛选）
+        # 但为了简化，我们直接使用 valid_student_ids，因为清理的目的是删除不在列表中的学生数据
+        # 如果学生不在 valid_student_ids 中，说明不符合 /students 页面的显示条件
+        
+        invalid_courses = []
+        for c in courses:
+            # 只清理正式排课（非试课），试课排课不清理
+            # 注意：删除所有不在 /students 页面中的学生的排课记录，无论是否确认（is_confirmed）
+            if not c.marketing_lead_id and c.student_id:
+                # 检查学生是否在有效列表中
+                if c.student_id not in valid_student_ids:
+                    invalid_courses.append(c)
+                    print(f"[DEBUG] 发现无效排课记录: course_id={c.id}, student_id={c.student_id}, student_name={c.student_name}, is_confirmed={c.is_confirmed}, marketing_lead_id={c.marketing_lead_id}")
+        
+        # 彻底删除这些无效的排课记录
+        if invalid_courses:
+            print(f"[DEBUG] /api/courses API: 准备删除 {len(invalid_courses)} 条不在 /students 页面中的学生的排课记录")
+            print(f"[DEBUG] 有效学生ID列表（前10个）: {sorted(list(valid_student_ids))[:10]}")
+            deleted_count = 0
+            for c in invalid_courses:
+                try:
+                    print(f"[DEBUG] 删除排课记录: course_id={c.id}, student_id={c.student_id}, student_name={c.student_name}, course_date={c.course_date}, is_confirmed={c.is_confirmed}")
+                    db.session.delete(c)
+                    deleted_count += 1
+                except Exception as del_error:
+                    print(f"[WARN] 删除排课记录失败: course_id={c.id}, error={str(del_error)}")
+                    continue
+            
+            if deleted_count > 0:
+                db.session.commit()
+                print(f"[DEBUG] /api/courses API: 成功删除了 {deleted_count} 条不在 /students 页面中的学生的排课记录")
+            else:
+                db.session.rollback()
+                print(f"[WARN] /api/courses API: 没有成功删除任何记录")
+            
+            # 从结果中移除已删除的记录
+            courses = [c for c in courses if c not in invalid_courses]
+    except Exception as cleanup_error:
+        import traceback
+        print(f"[WARN] /api/courses API 清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+        db.session.rollback()
+    
+    return courses
 
 
 def _get_or_create_trial_placeholder_student():
@@ -104,25 +162,88 @@ def get_courses():
 
     
 
-    # 营销模块：按多个线索ID查询排课（不限月份）
-    if filter_trial_lead_ids and scope_leads:
-        try:
-            lead_ids = [int(x.strip()) for x in filter_trial_lead_ids.split(',') if x.strip()]
-        except (ValueError, AttributeError):
-            lead_ids = []
-        if lead_ids:
-            from models import Student
-            query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-                joinedload(StudentCourse.course)
-            ).filter(
-                StudentCourse.marketing_lead_id.in_(lead_ids),
+    # 营销模块：按多个线索ID查询排课，或返回全部试课排课（不限月份）
+    if scope_leads:
+        from models import Student
+        query = (
+            StudentCourse.query.join(Student, StudentCourse.student_id == Student.id)
+            .options(joinedload(StudentCourse.course))
+            .filter(
+                StudentCourse.marketing_lead_id.isnot(None),
                 StudentCourse.status != '删除'
-            ).order_by(StudentCourse.course_date.desc(), StudentCourse.time_slot)
-            courses = query.all()
-            return jsonify([c.to_dict() for c in courses])
-        return jsonify([])
+            )
+            .order_by(StudentCourse.course_date.desc(), StudentCourse.time_slot)
+        )
+        if filter_trial_lead_ids and (filter_trial_lead_ids or '').strip():
+            try:
+                lead_ids = [int(x.strip()) for x in filter_trial_lead_ids.split(',') if x.strip()]
+                print(f"[调试] scope_leads=True, filter_trial_lead_ids={filter_trial_lead_ids}, 解析后 lead_ids={lead_ids}")
+            except (ValueError, AttributeError):
+                lead_ids = []
+                print(f"[调试] lead_ids 解析失败")
+            if lead_ids:
+                query = query.filter(StudentCourse.marketing_lead_id.in_(lead_ids))
+                print(f"[调试] 应用过滤条件: marketing_lead_id.in_({lead_ids})")
+            else:
+                print(f"[调试] lead_ids 为空，返回全部试课排课")
+        else:
+            print(f"[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课")
+        courses = query.all()
+        print(f"[调试] 查询结果数量: {len(courses)}")
+        if len(courses) > 0:
+            print(f"[调试] 查询结果详情: {[(c.id, c.marketing_lead_id, c.course_date, c.time_slot, c.subject) for c in courses]}")
+        return jsonify([c.to_dict() for c in courses])
 
     
+
+    # 先清理不在 /students 页面中的学生的排课记录（在查询前统一清理一次，避免查询到无效数据）
+    # 注意：这里使用与 get_students(trial_success_only=true) 完全一致的逻辑
+    try:
+        from routes.students import get_valid_student_ids_for_management_page
+        from models import MarketingLead
+        
+        # 获取有效学生ID列表（与 /students 页面逻辑一致）
+        valid_student_ids = get_valid_student_ids_for_management_page()
+        
+        # 查找所有正式排课记录（非试课），包括已确认和未确认的
+        all_formal_courses = StudentCourse.query.filter(
+            StudentCourse.marketing_lead_id.is_(None),
+            StudentCourse.student_id.isnot(None),
+            StudentCourse.status != '删除'
+            # 注意：不限制 is_confirmed，删除所有不在 /students 页面中的学生的排课记录（无论是否确认）
+        ).all()
+        
+        # 找出不在有效学生列表中的排课记录
+        invalid_courses = []
+        for c in all_formal_courses:
+            if c.student_id and c.student_id not in valid_student_ids:
+                invalid_courses.append(c)
+        
+        if invalid_courses:
+            print(f"[DEBUG] /api/courses API: 查询前清理，发现 {len(invalid_courses)} 条不在 /students 页面中的学生的排课记录")
+            print(f"[DEBUG] 有效学生ID数量: {len(valid_student_ids)}")
+            deleted_count = 0
+            for c in invalid_courses:
+                try:
+                    student = Student.query.get(c.student_id)
+                    student_name = student.name if student else f"ID_{c.student_id}"
+                    print(f"[DEBUG] 删除排课记录: course_id={c.id}, student_id={c.student_id}, student_name={student_name}, course_date={c.course_date}, is_confirmed={c.is_confirmed}")
+                    db.session.delete(c)
+                    deleted_count += 1
+                except Exception as del_error:
+                    print(f"[WARN] 删除排课记录失败: course_id={c.id}, error={str(del_error)}")
+                    continue
+            
+            if deleted_count > 0:
+                db.session.commit()
+                print(f"[DEBUG] /api/courses API: 查询前成功删除了 {deleted_count} 条不在 /students 页面中的学生的排课记录")
+            else:
+                db.session.rollback()
+                print(f"[WARN] /api/courses API: 没有成功删除任何记录")
+    except Exception as cleanup_error:
+        import traceback
+        print(f"[WARN] /api/courses API 查询前清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+        db.session.rollback()
 
     # 构建基础查询过滤器
 
@@ -152,10 +273,7 @@ def get_courses():
 
             query = query.filter(StudentCourse.marketing_lead_id == filter_trial_lead_id)
 
-        # 营销模块排课为独立排课，不显示在其它地方；非营销查询时排除 marketing_lead_id
-        else:
-
-            query = query.filter(StudentCourse.marketing_lead_id.is_(None))
+        # 不再排除试课排课：/courses 页按 month/week 查询时也显示试课学生，试课独立存在、不参与确认操作
 
         return query
 
@@ -193,9 +311,18 @@ def get_courses():
 
                 # 查询整个月的记录（过滤已删除的学生）
                 from models import Student
+                # 先获取有效学生ID列表，在查询时直接过滤
+                try:
+                    from routes.students import get_valid_student_ids_for_management_page
+                    valid_student_ids = get_valid_student_ids_for_management_page()
+                except Exception:
+                    valid_student_ids = set()
+                
                 query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
-                    joinedload(StudentCourse.course)
+                    joinedload(StudentCourse.course),
+
+                    joinedload(StudentCourse.marketing_lead),
 
                 ).filter(
 
@@ -206,6 +333,18 @@ def get_courses():
                     StudentCourse.status != '删除'
 
                 )
+                
+                # 如果是正式排课（非试课），只查询在有效学生列表中的学生的排课
+                if valid_student_ids:
+                    query = query.filter(
+                        or_(
+                            StudentCourse.marketing_lead_id.isnot(None),  # 试课排课保留
+                            StudentCourse.student_id.in_(valid_student_ids)  # 正式排课只保留有效学生的
+                        )
+                    )
+                else:
+                    # 如果没有有效学生，只保留试课排课
+                    query = query.filter(StudentCourse.marketing_lead_id.isnot(None))
 
                 # 应用筛选条件（包括student_id）
 
@@ -213,7 +352,8 @@ def get_courses():
 
                 courses = query.all()
 
-                
+                # 再次清理不在 /students 页面中的学生的排课记录（双重保险）
+                courses = cleanup_invalid_student_courses(courses)
 
                 # 调试信息
 
@@ -256,9 +396,18 @@ def get_courses():
 
             # 按周范围查询（不限制在当月内，以便包含跨周的日期如2月1日）
             from models import Student
+            # 先获取有效学生ID列表，在查询时直接过滤
+            try:
+                from routes.students import get_valid_student_ids_for_management_page
+                valid_student_ids = get_valid_student_ids_for_management_page()
+            except Exception:
+                valid_student_ids = set()
+            
             query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
-                joinedload(StudentCourse.course)
+                joinedload(StudentCourse.course),
+
+                joinedload(StudentCourse.marketing_lead),
 
             ).filter(
 
@@ -269,6 +418,19 @@ def get_courses():
                 StudentCourse.status != '删除'
 
             )
+            
+            # 如果是正式排课（非试课），只查询在有效学生列表中的学生的排课
+            # 试课排课（marketing_lead_id 不为 None）不受此限制
+            if valid_student_ids:
+                query = query.filter(
+                    or_(
+                        StudentCourse.marketing_lead_id.isnot(None),  # 试课排课保留
+                        StudentCourse.student_id.in_(valid_student_ids)  # 正式排课只保留有效学生的
+                    )
+                )
+            else:
+                # 如果没有有效学生，只保留试课排课
+                query = query.filter(StudentCourse.marketing_lead_id.isnot(None))
 
             # 应用筛选条件
 
@@ -276,7 +438,8 @@ def get_courses():
 
             courses = query.all()
 
-            
+            # 再次清理不在 /students 页面中的学生的排课记录（双重保险）
+            courses = cleanup_invalid_student_courses(courses)
 
             # 调试信息
 
@@ -302,15 +465,37 @@ def get_courses():
             end_date = start_date + timedelta(days=6)
 
             from models import Student
+            # 先获取有效学生ID列表，在查询时直接过滤
+            try:
+                from routes.students import get_valid_student_ids_for_management_page
+                valid_student_ids = get_valid_student_ids_for_management_page()
+            except Exception:
+                valid_student_ids = set()
+            
             query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-                joinedload(StudentCourse.course)
+                joinedload(StudentCourse.course),
+                joinedload(StudentCourse.marketing_lead),
             ).filter(
                 StudentCourse.course_date >= start_date,
                 StudentCourse.course_date <= end_date,
                 StudentCourse.status != '删除'
             )
+            
+            # 如果是正式排课（非试课），只查询在有效学生列表中的学生的排课
+            if valid_student_ids:
+                query = query.filter(
+                    or_(
+                        StudentCourse.marketing_lead_id.isnot(None),  # 试课排课保留
+                        StudentCourse.student_id.in_(valid_student_ids)  # 正式排课只保留有效学生的
+                    )
+                )
+            else:
+                query = query.filter(StudentCourse.marketing_lead_id.isnot(None))
+            
             query = apply_filters(query)
             courses = query.all()
+            # 再次清理不在 /students 页面中的学生的排课记录（双重保险）
+            courses = cleanup_invalid_student_courses(courses)
             return jsonify([c.to_dict() for c in courses])
 
     elif month:
@@ -327,9 +512,18 @@ def get_courses():
 
         # 过滤已删除的学生
         from models import Student
+        # 先获取有效学生ID列表，在查询时直接过滤
+        try:
+            from routes.students import get_valid_student_ids_for_management_page
+            valid_student_ids = get_valid_student_ids_for_management_page()
+        except Exception:
+            valid_student_ids = set()
+        
         query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
 
-            joinedload(StudentCourse.course)
+            joinedload(StudentCourse.course),
+
+            joinedload(StudentCourse.marketing_lead),
 
         ).filter(
 
@@ -340,12 +534,26 @@ def get_courses():
             StudentCourse.status != '删除'
 
         )
+        
+        # 如果是正式排课（非试课），只查询在有效学生列表中的学生的排课
+        if valid_student_ids:
+            query = query.filter(
+                or_(
+                    StudentCourse.marketing_lead_id.isnot(None),  # 试课排课保留
+                    StudentCourse.student_id.in_(valid_student_ids)  # 正式排课只保留有效学生的
+                )
+            )
+        else:
+            query = query.filter(StudentCourse.marketing_lead_id.isnot(None))
 
         # 应用筛选条件
 
         query = apply_filters(query)
 
         courses = query.all()
+
+        # 再次清理不在 /students 页面中的学生的排课记录（双重保险）
+        courses = cleanup_invalid_student_courses(courses)
 
         return jsonify([c.to_dict() for c in courses])
 
@@ -358,7 +566,8 @@ def get_courses():
 
         from models import Student
         query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-            joinedload(StudentCourse.course)
+            joinedload(StudentCourse.course),
+            joinedload(StudentCourse.marketing_lead),
         ).filter(
             StudentCourse.course_date >= start_date,
             StudentCourse.course_date <= end_date,
@@ -366,6 +575,8 @@ def get_courses():
         )
         query = apply_filters(query)
         courses = query.all()
+        # 清理不在 /students 页面中的学生的排课记录
+        courses = cleanup_invalid_student_courses(courses)
         return jsonify([c.to_dict() for c in courses])
 
 
@@ -851,176 +1062,286 @@ def check_course_conflicts_api():
 @bp.route('/api/courses/<int:course_id>', methods=['PUT'])
 @csrf.exempt  # JSON API 端点豁免 CSRF 检查
 @login_required
+@handle_db_errors
 def update_course(course_id):
 
     """更新课程（修改状态）"""
 
-    course = StudentCourse.query.get_or_404(course_id)
+    try:
+        course = StudentCourse.query.get_or_404(course_id)
 
-    data = request.json
+        data = request.json
+        if not data:
+            return jsonify({'error': '请求数据为空'}), 400
 
-    # 权限检查：已确认上课的排课只有管理员可以编辑
-    if course.is_confirmed and not current_user.is_admin():
-        return jsonify({'error': '无权限编辑已确认上课的排课，只有管理员可以编辑'}), 403
+        # 权限检查：已确认上课的排课只有管理员可以编辑
+        if course.is_confirmed and not current_user.is_admin():
+            return jsonify({'error': '无权限编辑已确认上课的排课，只有管理员可以编辑'}), 403
 
-    # 如果课程已确认上课，不允许修改关键字段（只有管理员可以编辑，但即使是管理员也不允许修改关键字段）
-    # 关键字段包括：course_date, time_slot, weekday, classroom, teacher_id, course_id, student_id, subject
-    if course.is_confirmed:
-        restricted_fields = ['course_date', 'time_slot', 'weekday', 'classroom', 'teacher_id', 'course_id', 'student_id', 'subject']
-        for field in restricted_fields:
-            if field in data:
-                return jsonify({
-                    'error': f'课程已确认上课，不允许修改{field}字段。如需修改，请先取消确认。'
-                }), 400
+        # 如果课程已确认上课，不允许修改关键字段（只有管理员可以编辑，但即使是管理员也不允许修改关键字段）
+        # 关键字段包括：course_date, time_slot, weekday, classroom, teacher_id, course_id, student_id, subject
+        if course.is_confirmed:
+            restricted_fields = ['course_date', 'time_slot', 'weekday', 'classroom', 'teacher_id', 'course_id', 'student_id', 'subject']
+            for field in restricted_fields:
+                if field in data:
+                    return jsonify({
+                        'error': f'课程已确认上课，不允许修改{field}字段。如需修改，请先取消确认。'
+                    }), 400
 
-    
-
-    old_status = course.status
-    old_is_confirmed = course.is_confirmed
-    
-    # 如果课程未确认，允许修改所有字段（除了is_confirmed需要通过确认按钮修改）
-    if not course.is_confirmed:
-        # 允许修改所有字段
-        if 'student_id' in data:
-            student = Student.query.get(data['student_id'])
-            if student:
-                course.student_id = data['student_id']
-                course.student_name = student.name
-        if 'course_id' in data:
-            course.course_id = data['course_id']
-            if data['course_id']:
-                course_obj = Course.query.get(data['course_id'])
-                if course_obj:
-                    course.course_name = course_obj.name
-                    course.subject = course_obj.subject or data.get('subject', course.subject)
-        if 'subject' in data:
-            course.subject = data['subject']
-        if 'teacher_id' in data:
-            teacher = Teacher.query.get(data['teacher_id'])
-            if teacher:
-                course.teacher_id = data['teacher_id']
-                course.teacher_name = teacher.name
-        if 'course_date' in data:
-            try:
-                course.course_date = datetime.strptime(data['course_date'], '%Y-%m-%d').date()
-            except ValueError:
-                return jsonify({'error': '日期格式错误'}), 400
-        if 'time_slot' in data:
-            course.time_slot = data['time_slot']
-        if 'weekday' in data:
-            course.weekday = data['weekday']
-        if 'classroom' in data:
-            course.classroom = data['classroom']
-        if 'notes' in data:
-            course.notes = (data.get('notes') or '').strip() or None
-    
-    # 状态字段总是可以修改
-    course.status = data.get('status', course.status)
-    
-    # 试课状态字段处理
-    old_trial_status = course.trial_status
-    if 'trial_status' in data:
-        trial_status = (data.get('trial_status') or '').strip() or None
-        course.trial_status = trial_status
+        old_status = course.status
+        old_is_confirmed = course.is_confirmed
         
-        # 如果状态设置为"再试"，将营销线索状态改回draft（待确认），以便可以再次排课
-        if trial_status == '再试' and course.marketing_lead_id:
-            lead = MarketingLead.query.get(course.marketing_lead_id)
-            if lead:
-                # 将线索状态改回draft，使其出现在待确认名单中
-                if lead.lead_status != 'draft':
-                    lead.lead_status = 'draft'
-                    lead.submitted_at = None
-                    lead.saved_at = datetime.now()
-                    log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
-                                 f'试课状态设为再试，已恢复至待确认名单')
+        # 如果课程未确认，允许修改所有字段（除了is_confirmed需要通过确认按钮修改）
+        if not course.is_confirmed:
+            # 允许修改所有字段
+            if 'student_id' in data:
+                student = Student.query.get(data['student_id'])
+                if student:
+                    course.student_id = data['student_id']
+                    course.student_name = student.name
+            if 'course_id' in data:
+                if data['course_id'] is None:
+                    course.course_id = None
+                else:
+                    try:
+                        course_id = int(data['course_id'])
+                        course.course_id = course_id
+                        course_obj = Course.query.get(course_id)
+                        if course_obj:
+                            course.course_name = course_obj.name
+                            course.subject = course_obj.subject or data.get('subject', course.subject)
+                        else:
+                            return jsonify({'error': f'课程ID {course_id} 不存在'}), 400
+                    except (ValueError, TypeError):
+                        return jsonify({'error': '无效的课程ID'}), 400
+            if 'subject' in data:
+                course.subject = data['subject']
+            if 'teacher_id' in data:
+                try:
+                    teacher_id = int(data['teacher_id'])
+                    teacher = Teacher.query.get(teacher_id)
+                    if teacher:
+                        course.teacher_id = teacher_id
+                        course.teacher_name = teacher.name
+                    else:
+                        return jsonify({'error': f'老师ID {teacher_id} 不存在'}), 400
+                except (ValueError, TypeError):
+                    return jsonify({'error': '无效的老师ID'}), 400
+            if 'course_date' in data:
+                try:
+                    course.course_date = datetime.strptime(data['course_date'], '%Y-%m-%d').date()
+                except ValueError:
+                    return jsonify({'error': '日期格式错误'}), 400
+            if 'time_slot' in data:
+                course.time_slot = data['time_slot']
+            if 'weekday' in data:
+                course.weekday = data['weekday']
+            if 'classroom' in data:
+                course.classroom = data['classroom']
+            if 'notes' in data:
+                course.notes = (data.get('notes') or '').strip() or None
+
+        # 状态字段总是可以修改
+        course.status = data.get('status', course.status)
         
-        # 如果状态设置为"成功"，且是试课课程（有marketing_lead_id），则创建正式学生并关联所有相关课程
-        if trial_status == '成功' and course.marketing_lead_id:
-            lead = MarketingLead.query.get(course.marketing_lead_id)
-            if lead:
-                # 检查是否已经存在同名同年级的学生
-                existing_student = Student.query.filter_by(
+        # 试课状态字段处理
+        old_trial_status = course.trial_status
+        if 'trial_status' in data:
+            trial_status = (data.get('trial_status') or '').strip() or None
+            course.trial_status = trial_status
+            
+            # 如果状态设置为"再试"，将营销线索状态改回draft（待确认），以便可以再次排课
+            if trial_status == '再试' and course.marketing_lead_id:
+                lead = MarketingLead.query.get(course.marketing_lead_id)
+                if lead:
+                    # 将线索状态改回draft，使其出现在待确认名单中
+                    if lead.lead_status != 'draft':
+                        lead.lead_status = 'draft'
+                        lead.submitted_at = None
+                        lead.saved_at = datetime.now()
+                        log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                     f'试课状态设为再试，已恢复至待确认名单')
+            
+            # 如果状态从"再试"改为其他状态（成功、失败或清空），检查该线索是否还有其他"再试"状态的排课记录
+            # 如果没有，将线索从待确认名单中移除（改为trial状态）
+            if old_trial_status == '再试' and trial_status != '再试' and course.marketing_lead_id:
+                lead = MarketingLead.query.get(course.marketing_lead_id)
+                if lead and lead.lead_status == 'draft':
+                    # 检查该线索是否还有其他"再试"状态的排课记录（StudentCourse 使用文件顶部导入）
+                    other_retry_courses = StudentCourse.query.filter(
+                        StudentCourse.marketing_lead_id == course.marketing_lead_id,
+                        StudentCourse.id != course.id,
+                        StudentCourse.trial_status == '再试',
+                        StudentCourse.status != '删除'
+                    ).count()
+                    # 如果没有其他"再试"状态的排课记录，将线索从待确认名单中移除
+                    if other_retry_courses == 0:
+                        lead.lead_status = 'trial'
+                        log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                     f'试课状态从再试改为{trial_status or "空"}，已从待确认名单移除')
+            
+            # 如果状态从"成功"改为"失败"，删除对应的学生（如果该学生的所有课程都是这个营销线索的）
+            if old_trial_status == '成功' and trial_status == '失败' and course.marketing_lead_id:
+                lead = MarketingLead.query.get(course.marketing_lead_id)
+                if lead:
+                    # 找到该营销线索关联的学生（通过查找同名同年级的学生）
+                    student_to_delete = Student.query.filter_by(
                     name=lead.name,
                     grade=lead.grade or None
                 ).first()
                 
-                if existing_student:
-                    # 如果学生已存在，直接关联到该学生
-                    student = existing_student
-                    student_created = False
-                else:
-                    # 创建新学生（确保状态为"在校"，这样会显示在学生列表中）
-                    student = Student(
-                        name=lead.name,
-                        grade=lead.grade or None,
-                        status='在校',  # 确保状态为"在校"，显示在学生管理页面
-                        phone=lead.phone or None,
-                        parent_name=lead.parent_name or None,
-                        parent_phone=lead.parent_phone or None,
-                        address=lead.address or None,
-                        notes=lead.notes or None,
-                        enrollment_date=lead.enrollment_date or None,
-                        source=lead.source or None
+                if student_to_delete:
+                    # 检查该学生的所有课程是否都是这个营销线索的
+                    all_student_courses = StudentCourse.query.filter_by(
+                        student_id=student_to_delete.id
+                    ).filter(
+                        StudentCourse.status != '删除'
+                    ).all()
+                    
+                    # 检查是否所有课程都属于这个营销线索
+                    all_courses_from_lead = all(
+                        sc.marketing_lead_id == course.marketing_lead_id 
+                        for sc in all_student_courses
                     )
-                    db.session.add(student)
-                    db.session.flush()  # 获取student.id
-                    student_created = True
-                    # 记录操作日志
-                    log_operation('students', 'create', 'Student', student.id, student.name, 
-                                 f'从营销线索自动创建：{lead.name}')
-                
-                # 将该营销线索下的所有课程都关联到正式学生
-                all_trial_courses = StudentCourse.query.filter_by(
-                    marketing_lead_id=course.marketing_lead_id
-                ).filter(
-                    StudentCourse.status != '删除'
-                ).all()
-                
-                courses_updated = 0
-                for trial_course in all_trial_courses:
-                    # 只更新那些还是占位学生的课程
-                    if not trial_course.student_id or (trial_course.student_id and trial_course.student_name == TRIAL_PLACEHOLDER_NAME):
-                        trial_course.student_id = student.id
-                        trial_course.student_name = student.name
-                        courses_updated += 1
-                
-                # 更新营销线索状态为已提交
-                if lead.lead_status != 'submitted':
-                    lead.lead_status = 'submitted'
-                    lead.submitted_at = datetime.now()
-                    log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
-                                 f'试课成功，已转为正式学生')
-    
-    # 如果提供了is_confirmed字段，更新确认状态（但通常通过确认按钮修改）
-    if 'is_confirmed' in data:
-        course.is_confirmed = bool(data['is_confirmed'])
+                    
+                    if all_courses_from_lead and len(all_student_courses) > 0:
+                        # 该学生的所有课程都是这个营销线索的，可以删除学生
+                        # 先将该营销线索下的所有课程恢复为占位学生（这样删除学生时不会删除这些课程）
+                        placeholder = _get_or_create_trial_placeholder_student()
+                        all_trial_courses = StudentCourse.query.filter_by(
+                            marketing_lead_id=course.marketing_lead_id
+                        ).filter(
+                            StudentCourse.status != '删除'
+                        ).all()
+                        
+                        # 收集需要重新计算老师课时的信息（在恢复为占位学生之前）
+                        from models import ClassHoursStats, Payment, StudentCourseDefaultSchedule
+                        affected_teacher_courses = set()
+                        affected_months = set()
+                        
+                        for sc in all_student_courses:
+                            if sc.teacher_id and sc.course_id and sc.course_date:
+                                month = sc.course_date.strftime('%Y-%m')
+                                affected_teacher_courses.add((sc.teacher_id, sc.course_id, month))
+                                affected_months.add(month)
+                        
+                        # 将课程恢复为占位学生
+                        for trial_course in all_trial_courses:
+                            trial_course.student_id = placeholder.id
+                            trial_course.student_name = TRIAL_PLACEHOLDER_NAME
+                        
+                        # 删除学生（这会级联删除所有相关数据，但不会删除已经恢复为占位学生的课程）
+                        student_name = student_to_delete.name
+                        student_id = student_to_delete.id
+                        
+                        # 删除默认排课设置
+                        default_schedules = StudentCourseDefaultSchedule.query.filter_by(
+                            student_id=student_id
+                        ).all()
+                        for schedule in default_schedules:
+                            db.session.delete(schedule)
+                        
+                        # 删除课时统计
+                        stats_records = ClassHoursStats.query.filter_by(student_id=student_id).all()
+                        for stat in stats_records:
+                            if stat.month:
+                                affected_months.add(stat.month)
+                            db.session.delete(stat)
+                        
+                        # 删除缴费记录
+                        payment_records = Payment.query.filter_by(student_id=student_id).all()
+                        for payment in payment_records:
+                            if payment.payment_date:
+                                affected_months.add(payment.payment_date.strftime('%Y-%m'))
+                            db.session.delete(payment)
+                        
+                        # 删除学生（注意：排课记录已经恢复为占位学生，不会被删除）
+                        db.session.delete(student_to_delete)
+                        
+                        # 重新计算受影响老师的课时
+                        # ... (继续原有逻辑)
+                        for teacher_id, course_id, month in affected_teacher_courses:
+                            try:
+                                update_teacher_hours(teacher_id, month=month, course_id=course_id)
+                            except Exception as e:
+                                print(f'更新老师课时失败 (teacher_id={teacher_id}, course_id={course_id}, month={month}): {e}')
+                        
+                        # 重新计算受影响月份的财务记录
+                        for month in affected_months:
+                            try:
+                                update_finance_record(month)
+                            except Exception as e:
+                                print(f'更新财务记录失败 (month={month}): {e}')
+                        
+                        # 记录操作日志
+                        log_operation('students', 'delete', 'Student', student_id, student_name, 
+                                     f'试课状态从成功改为失败，已删除学生')
+                        log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                     f'试课状态从成功改为失败，已删除对应学生')
+                    else:
+                        # 该学生还有其他非营销线索的课程，只将营销线索的课程恢复为占位学生
+                        placeholder = _get_or_create_trial_placeholder_student()
+                        all_trial_courses = StudentCourse.query.filter_by(
+                            marketing_lead_id=course.marketing_lead_id
+                        ).filter(
+                            StudentCourse.status != '删除'
+                        ).all()
+                        
+                        for trial_course in all_trial_courses:
+                            trial_course.student_id = placeholder.id
+                            trial_course.student_name = TRIAL_PLACEHOLDER_NAME
+                        
+                        log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name, 
+                                     f'试课状态从成功改为失败，已恢复课程为占位学生（学生有其他课程，未删除）')
+            
+            # 状态改为「成功」时：若学生名单中已有同名同年级学生，则自动关联试课并更新到学生管理页；不创建新学生
+            if trial_status == '成功' and course.marketing_lead_id:
+                lead = MarketingLead.query.get(course.marketing_lead_id)
+                if lead:
+                    lead_grade_normalized = (lead.grade or '').strip() or None
+                    candidates = Student.query.filter(Student.name == lead.name).all()
+                    existing_student = next(
+                        (s for s in candidates if ((s.grade or '').strip() or None) == lead_grade_normalized and s.name != TRIAL_PLACEHOLDER_NAME),
+                        None
+                    )
+                    if existing_student:
+                        student = existing_student
+                        all_trial_courses = StudentCourse.query.filter_by(
+                            marketing_lead_id=course.marketing_lead_id
+                        ).filter(StudentCourse.status != '删除').all()
+                        for trial_course in all_trial_courses:
+                            if not trial_course.student_id or (trial_course.student_id and trial_course.student_name == TRIAL_PLACEHOLDER_NAME):
+                                trial_course.student_id = student.id
+                                trial_course.student_name = student.name
+                        if lead.lead_status != 'submitted':
+                            lead.lead_status = 'submitted'
+                            lead.submitted_at = datetime.now()
+                            log_operation('marketing', 'update', 'MarketingLead', lead.id, lead.name,
+                                         f'试课成功，已关联学生名单中的学生并更新到学生管理页')
+        
+        # 如果提供了is_confirmed字段，更新确认状态（但通常通过确认按钮修改）
+        if 'is_confirmed' in data:
+            course.is_confirmed = bool(data['is_confirmed'])
 
-    
+        db.session.commit()
 
-    db.session.commit()
+        # 只有在确认状态发生变化时才更新课时统计
+        # 课时统计只在确认上课时进行增减
+        if 'is_confirmed' in data and old_is_confirmed != course.is_confirmed:
+            month = course.course_date.strftime('%Y-%m')
+            if course.course_id:
+                if not course.marketing_lead_id:
+                    update_class_hours_stats(course.student_id, month, course.course_id)
+                    update_teacher_hours(course.teacher_id, month, course.course_id)
 
-    
-
-    # 只有在确认状态发生变化时才更新课时统计
-
-    # 课时统计只在确认上课时进行增减
-
-    if 'is_confirmed' in data and old_is_confirmed != course.is_confirmed:
-
-        month = course.course_date.strftime('%Y-%m')
-
-        if course.course_id:
-
-            if not course.marketing_lead_id:
-
-                update_class_hours_stats(course.student_id, month, course.course_id)
-
-                update_teacher_hours(course.teacher_id, month, course.course_id)
-
-    
-
-    return jsonify(course.to_dict())
+        return jsonify(course.to_dict())
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_trace = traceback.format_exc()
+        print(f"更新排课失败: {str(e)}")
+        print(f"错误堆栈: {error_trace}")
+        return jsonify({'error': f'更新排课失败: {str(e)}'}), 500
 
 
 
@@ -1147,7 +1468,7 @@ def batch_confirm_courses():
         if not courses:
             return jsonify({'error': '未找到要确认的课程'}), 404
 
-        # 确认只能从前往后：对每条要确认的记录，检查同学生同课程下是否有更早未确认的
+        # 确认只能从前往后：对每条要确认的记录，检查同学生同课程下是否有更早未确认的（仅计正式排课，与全部排课列表一致，试课不阻挡）
         for course in courses:
             if course.is_confirmed:
                 continue
@@ -1157,7 +1478,8 @@ def batch_confirm_courses():
                 course_id_match,
                 StudentCourse.course_date < course.course_date,
                 StudentCourse.is_confirmed == False,
-                StudentCourse.status != '删除'
+                StudentCourse.status != '删除',
+                StudentCourse.marketing_lead_id.is_(None)
             ).order_by(StudentCourse.course_date.asc()).all()
             if earlier_list:
                 required = [{'course_date': c.course_date.strftime('%Y-%m-%d'), 'time_slot': c.time_slot or ''} for c in earlier_list]

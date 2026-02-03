@@ -10,7 +10,7 @@ from models import (
     TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
     TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
     TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
-    OperationLog, Notification, StudentCourseDefaultSchedule
+    OperationLog, Notification, StudentCourseDefaultSchedule, MarketingLead
 )
 from utils import (
     allowed_file, get_original_filename, get_safe_storage_filename,
@@ -26,7 +26,7 @@ from services import (
 from config import Config
 import os
 from datetime import datetime, date, timedelta
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_, and_
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -58,8 +58,103 @@ def get_payments():
     
 
     # 只查询存在学生的缴费记录（过滤已删除的学生）
+    # 只返回 /students 页面中存在的学生（即试课状态为成功的学生）的缴费记录
     from models import Student
-    query = Payment.query.join(Student, Payment.student_id == Student.id)
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    
+    # 获取符合 /students 页面条件的学生ID列表（与 get_students 中 trial_success_only=true 的逻辑一致）
+    # 来源1：至少有一条试课状态为「成功」且未删除的排课记录（已关联到该学生）
+    student_ids_from_courses = db.session.query(StudentCourse.student_id).filter(
+        StudentCourse.trial_status == '成功',
+        StudentCourse.student_id.isnot(None),
+        StudentCourse.status != '删除'
+    ).distinct()
+    ids_from_courses = [r[0] for r in student_ids_from_courses.all()]
+    
+    # 来源2：与已提交且试课状态为「成功」的营销线索姓名+年级一致的学生
+    # 注意：这要与 /api/students 中 trial_success_only=true 的逻辑保持一致，
+    # 这样当试课状态被改为「失败/再试」时，这里就不会再把该学生算进缴费管理页。
+    submitted_leads = MarketingLead.query.filter_by(lead_status='submitted', trial_status='成功').all()
+    ids_from_leads = []
+    for lead in submitted_leads:
+        lead_grade_n = (lead.grade or '').strip() or None
+        candidates = Student.query.filter(Student.name == lead.name).all()
+        for s in candidates:
+            if s.name == TRIAL_PLACEHOLDER_NAME:
+                continue
+            s_grade_n = (s.grade or '').strip() or None
+            if s_grade_n == lead_grade_n:
+                ids_from_leads.append(s.id)
+                break
+    
+    # 来源3：有试课状态为「成功」的排课对应的线索，按姓名+年级匹配学生
+    lead_ids_with_success = db.session.query(StudentCourse.marketing_lead_id).filter(
+        StudentCourse.trial_status == '成功',
+        StudentCourse.marketing_lead_id.isnot(None),
+        StudentCourse.status != '删除'
+    ).distinct().all()
+    ids_from_success_leads = []
+    for (lead_id,) in lead_ids_with_success:
+        if not lead_id:
+            continue
+        lead = MarketingLead.query.get(lead_id)
+        if not lead:
+            continue
+        lead_grade_n = (lead.grade or '').strip() or None
+        candidates = Student.query.filter(Student.name == lead.name).all()
+        for s in candidates:
+            if s.name == TRIAL_PLACEHOLDER_NAME:
+                continue
+            s_grade_n = (s.grade or '').strip() or None
+            if s_grade_n == lead_grade_n:
+                ids_from_success_leads.append(s.id)
+                break
+    
+    # 来源4：线索的 trial_status 为「成功」但无排课的情况，按姓名+年级匹配学生
+    leads_with_trial_success = MarketingLead.query.filter_by(trial_status='成功').all()
+    ids_from_trial_status_leads = []
+    for lead in leads_with_trial_success:
+        lead_grade_n = (lead.grade or '').strip() or None
+        candidates = Student.query.filter(Student.name == lead.name).all()
+        for s in candidates:
+            if s.name == TRIAL_PLACEHOLDER_NAME:
+                continue
+            s_grade_n = (s.grade or '').strip() or None
+            if s_grade_n == lead_grade_n:
+                ids_from_trial_status_leads.append(s.id)
+                break
+    
+    # 合并所有符合条件的学生ID（与 /students 页面一致：只包含试课状态为「成功」的正式学生）
+    valid_student_ids = list(set(ids_from_courses) | set(ids_from_leads) | set(ids_from_success_leads) | set(ids_from_trial_status_leads))
+
+    # 先执行一次清理：删除不再属于正式学生的缴费记录（例如试课状态改为失败/再试的学生）
+    try:
+        cleanup_q = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+            Student.name != TRIAL_PLACEHOLDER_NAME
+        )
+        if valid_student_ids:
+            cleanup_q = cleanup_q.filter(~Student.id.in_(valid_student_ids))
+        # 无 valid_student_ids 时，表示当前没有任何正式学生，则会清理所有非占位学生的缴费记录
+        deleted_count = 0
+        for pay in cleanup_q.all():
+            db.session.delete(pay)
+            deleted_count += 1
+        if deleted_count:
+            db.session.commit()
+            print(f"[DEBUG] /api/payments 清理了 {deleted_count} 条不再属于正式学生的缴费记录")
+    except Exception as e:
+        db.session.rollback()
+        print(f"[WARN] /api/payments 清理历史缴费记录失败: {e}")
+    
+    # 只查询当前正式学生（排除占位学生）的缴费记录
+    query = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+        Student.name != TRIAL_PLACEHOLDER_NAME
+    )
+    if valid_student_ids:
+        query = query.filter(Student.id.in_(valid_student_ids))
+    else:
+        # 当前无正式学生，直接返回空结果
+        query = query.filter(Student.id == -1)
 
     if student_id:
 
@@ -79,7 +174,7 @@ def get_payments():
 
     # 3. 如果 year 参数为空字符串（用户选择了"全部年份"），不添加年度筛选，显示所有年份
 
-    # 4. 如果既没有年度也没有月份，且没有学生筛选，默认使用当前年份
+    # 4. 未传年份/月份时不按日期筛选，显示全部（便于缴费提醒看到所有有余额的缴费）
 
     if month and month.strip():
 
@@ -93,33 +188,15 @@ def get_payments():
 
         query = query.filter(Payment.payment_date >= start_date, Payment.payment_date <= end_date)
 
-    elif year is not None:
+    elif year is not None and year and str(year).strip():
 
-        # year 参数存在（可能是空字符串或有效值）
+        # 仅当 year 参数存在且非空时使用年度筛选
 
-        if year and year.strip():  # 不是空字符串，使用年度筛选
+        year_int = int(year)
 
-            year_int = int(year)
+        start_date = date(year_int, 1, 1)
 
-            start_date = date(year_int, 1, 1)
-
-            end_date = date(year_int, 12, 31)
-
-            query = query.filter(Payment.payment_date >= start_date, Payment.payment_date <= end_date)
-
-        # 如果 year 是空字符串，不添加筛选，显示所有年份
-
-    elif not student_id:
-
-        # 如果既没有年度也没有月份，且没有学生筛选，默认使用当前年份
-
-        # 注意：这种情况是 year 参数不存在（初始状态），不是用户选择了"全部年份"
-
-        current_year = datetime.now().year
-
-        start_date = date(current_year, 1, 1)
-
-        end_date = date(current_year, 12, 31)
+        end_date = date(year_int, 12, 31)
 
         query = query.filter(Payment.payment_date >= start_date, Payment.payment_date <= end_date)
 
@@ -139,7 +216,7 @@ def get_payments():
 
     
 
-    # 按学生和课程分组处理
+    # 按学生和课程分组处理（与预排课/财务一致：有 course_id 按 course_id，无则按 course_name 解析课程）
 
     student_course_payments = {}
 
@@ -147,87 +224,82 @@ def get_payments():
 
         student_id = payment.student_id
 
-        course_id = payment.course_id  # 可能为None，需要处理
+        course_id = payment.course_id
 
-        # 使用 (student_id, course_id) 作为分组键
-
-        key = (student_id, course_id)
+        # 分组键：有 course_id 用 (student_id, course_id)；无则按 course_name 解析为课程 id，或 (student_id, 'name:'+course_name)
+        if course_id:
+            key = (student_id, course_id)
+        elif payment.course_name:
+            course = Course.query.filter_by(name=payment.course_name, status='启用').first()
+            key = (student_id, course.id) if course else (student_id, 'name:' + (payment.course_name or ''))
+        else:
+            key = (student_id, None)
 
         if key not in student_course_payments:
-
             student_course_payments[key] = []
-
         student_course_payments[key].append(payment)
 
-    
-
-    for (student_id, course_id), payment_list in student_course_payments.items():
-
-        # 获取该学生该课程的所有缴费记录（按时间顺序，从早到晚）
+    for key, payment_list in student_course_payments.items():
+        student_id = key[0]
+        k = key[1]
+        # 解析 course_id、course_name（与预排课逻辑一致）
+        if isinstance(k, int):
+            course_id = k
+            course_obj = Course.query.get(k)
+            course_name = (course_obj.name if course_obj else '') or ''
+        elif isinstance(k, str) and k.startswith('name:'):
+            course_name = k[5:]
+            course_obj = Course.query.filter_by(name=course_name, status='启用').first()
+            course_id = course_obj.id if course_obj else None
+        else:
+            course_id = None
+            course_name = ''
 
         # 检查学生是否存在（过滤已删除的学生）
         student_exists = Student.query.filter_by(id=student_id).first()
         if not student_exists:
-            # 如果学生已被删除，跳过该学生的缴费记录
             continue
-        
+
+        # 该学生该课程的所有缴费记录（含 course_id 匹配或 course_id 为空且 course_name 匹配，与财务/预排课一致）
         if course_id:
-
             all_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-
                 Payment.student_id == student_id,
-
-                Payment.course_id == course_id
-
-            ).order_by(
-
-                Payment.payment_date.asc(),
-
-                Payment.id.asc()
-
-            ).all()
-
-        else:
-
-            # 如果course_id为None，只按student_id查询（兼容旧数据）
-
+                or_(
+                    Payment.course_id == course_id,
+                    and_(Payment.course_id.is_(None), Payment.course_name == course_name)
+                )
+            ).order_by(Payment.payment_date.asc(), Payment.id.asc()).all()
+        elif course_name:
             all_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-
-                Payment.student_id == student_id
-
-            ).filter(Payment.course_id.is_(None)).order_by(
-
-                Payment.payment_date.asc(),
-
-                Payment.id.asc()
-
-            ).all()
-
-        
-
-        # 获取当前月份的剩余课时（按课程）
-
-        current_month = get_current_month()
-
-        if course_id:
-
-            current_stats = ClassHoursStats.query.filter_by(
-
-                student_id=student_id,
-
-                course_id=course_id,
-
-                month=current_month
-
-            ).first()
-
+                Payment.student_id == student_id,
+                Payment.course_id.is_(None),
+                Payment.course_name == course_name
+            ).order_by(Payment.payment_date.asc(), Payment.id.asc()).all()
         else:
+            all_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+                Payment.student_id == student_id,
+                Payment.course_id.is_(None)
+            ).order_by(Payment.payment_date.asc(), Payment.id.asc()).all()
 
-            # 如果course_id为None，尝试查找（可能找不到）
-
-            current_stats = None
-
-        total_remaining_hours = current_stats.remaining_hours if current_stats else 0
+        # 剩余课时：总缴费课时 − 总已消耗课时（所有已确认排课），不依赖当前月统计，确认任意月份后缴费页都会更新
+        total_paid_hours = calculate_remaining_hours_from_payments(student_id, course_id, course_name=course_name if course_name else None)
+        if course_id:
+            consumed_courses = StudentCourse.query.filter(
+                StudentCourse.student_id == student_id,
+                StudentCourse.course_id == course_id,
+                StudentCourse.status != '删除',
+                StudentCourse.is_confirmed == True
+            ).all()
+            consumed_hours = 0
+            for cr in consumed_courses:
+                if cr.status == '正常':
+                    consumed_hours += 1
+                elif cr.status == '跑空':
+                    consumed_hours += 0.5
+                # 请假不消耗课时
+            total_remaining_hours = total_paid_hours - consumed_hours
+        else:
+            total_remaining_hours = total_paid_hours
 
         
 
@@ -319,63 +391,9 @@ def get_payments():
 
         
 
-        # 第二遍：处理负数情况，用后续缴费补足
-
-        # 如果某个缴费记录的剩余课时为负数，需要用后续缴费补足
-
-        negative_deficit = 0  # 累计负数缺口
-
-        for stack in payment_stacks:
-
-            payment_id = stack['payment'].id
-
-            remaining_hours = payment_remaining_map.get(payment_id, 0)
-
-            
-
-            if remaining_hours < 0:
-
-                # 这个缴费记录的课时已经被消耗完，还有负数缺口
-
-                negative_deficit += abs(remaining_hours)
-
-                payment_remaining_map[payment_id] = 0  # 补足后设为0
-
-                payment_status_map[payment_id] = '结束'
-
-            elif negative_deficit > 0 and remaining_hours > 0:
-
-                # 有负数缺口，用这个缴费记录的课时补足
-
-                if remaining_hours >= negative_deficit:
-
-                    # 这个缴费记录可以完全补足缺口
-
-                    payment_remaining_map[payment_id] = remaining_hours - negative_deficit
-
-                    negative_deficit = 0
-
-                    # 如果补足后剩余课时为0，标记为结束
-
-                    if payment_remaining_map[payment_id] == 0:
-
-                        payment_status_map[payment_id] = '结束'
-
-                else:
-
-                    # 这个缴费记录只能部分补足缺口
-
-                    negative_deficit -= remaining_hours
-
-                    payment_remaining_map[payment_id] = 0
-
-                    payment_status_map[payment_id] = '结束'
-
-        
+        # 允许剩余课时为负数：不再用后续缴费补足，负数时状态为「欠费」、出现在缴费提醒中需补足
 
         # 为每条缴费记录设置剩余课时和剩余费用
-
-        # 注意：剩余课时显示的是每个缴费记录的剩余课时，已消耗完的显示为0
 
         for payment in payment_list:
 
@@ -385,57 +403,56 @@ def get_payments():
 
             if payment.type == '缴费':
 
-                # 缴费记录：计算该缴费记录的剩余课时（基于FIFO）
+                # 缴费记录：计算该缴费记录的剩余课时（基于FIFO，可为负数）
 
                 payment_remaining_hours = payment_remaining_map.get(payment.id, 0)
 
                 status = payment_status_map.get(payment.id, '进行中')
 
-                
+                if payment_remaining_hours < 0:
 
-                # 确保剩余课时不为负数（已经用后续缴费补足）
+                    status = '欠费'
 
-                payment_remaining_hours = max(0, payment_remaining_hours)
-
-                
-
-                # 如果剩余课时为0，标记为结束
-
-                if payment_remaining_hours == 0:
+                elif payment_remaining_hours == 0:
 
                     status = '结束'
 
                 
 
-                # 计算剩余费用（基于该缴费记录的剩余课时）
+                # 计算剩余费用（可为负数，表示欠费金额）
 
                 unit_price = payment.unit_price if payment.unit_price else 0.0
 
                 if unit_price == 0:
 
-                    # 如果没有单价，尝试获取最近一次该课程的缴费的单价
+                    # 如果没有单价，尝试获取最近一次该学生该课程（含 course_name 匹配）的缴费单价
 
                     if course_id:
 
-                        latest_payment = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-
+                        q = Payment.query.join(Student, Payment.student_id == Student.id).filter(
                             Payment.student_id == payment.student_id,
-
-                            Payment.course_id == course_id,
-
                             Payment.type == '缴费'
-
-                        ).order_by(Payment.payment_date.desc()).first()
-
+                        )
+                        if course_name:
+                            q = q.filter(
+                                or_(
+                                    Payment.course_id == course_id,
+                                    and_(Payment.course_id.is_(None), Payment.course_name == course_name)
+                                )
+                            )
+                        else:
+                            q = q.filter(Payment.course_id == course_id)
+                        latest_payment = q.order_by(Payment.payment_date.desc()).first()
                     else:
 
-                        latest_payment = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-
+                        q = Payment.query.join(Student, Payment.student_id == Student.id).filter(
                             Payment.student_id == payment.student_id,
-
-                            Payment.type == '缴费'
-
-                        ).filter(Payment.course_id.is_(None)).order_by(Payment.payment_date.desc()).first()
+                            Payment.type == '缴费',
+                            Payment.course_id.is_(None)
+                        )
+                        if course_name:
+                            q = q.filter(Payment.course_name == course_name)
+                        latest_payment = q.order_by(Payment.payment_date.desc()).first()
 
                     if latest_payment and latest_payment.unit_price:
 
@@ -455,12 +472,11 @@ def get_payments():
 
                 payment_dict['remaining_cost'] = round(remaining_cost, 2)
 
-                # 该学生-课程是否暂停排课（仅缴费且指定课程时有效）
-
-                if payment.course_id:
+                # 该学生-课程是否暂停排课（使用分组解析出的 course_id，与预排课一致）
+                if course_id:
                     default_schedule = StudentCourseDefaultSchedule.query.filter_by(
                         student_id=payment.student_id,
-                        course_id=payment.course_id
+                        course_id=course_id
                     ).first()
                     payment_dict['scheduling_paused'] = default_schedule.scheduling_paused if default_schedule and getattr(default_schedule, 'scheduling_paused', None) else False
                 else:

@@ -70,6 +70,31 @@ def get_calendar_courses():
 
         courses = query.order_by(StudentCourse.course_date, StudentCourse.time_slot).all()
 
+        # 清理不在 /students 页面中的学生的排课记录
+        try:
+            from routes.students import get_valid_student_ids_for_management_page
+            valid_student_ids = get_valid_student_ids_for_management_page()
+            
+            invalid_courses = []
+            for c in courses:
+                # 如果学生不在 /students 页面中，则标记为删除
+                # 注意：删除所有不在 /students 页面中的学生的排课记录，无论是否确认（is_confirmed）
+                if c.student_id and c.student_id not in valid_student_ids:
+                    invalid_courses.append(c)
+            
+            # 彻底删除这些无效的排课记录
+            if invalid_courses:
+                for c in invalid_courses:
+                    db.session.delete(c)
+                db.session.commit()
+                print(f"[DEBUG] /api/calendar/courses API: 删除了 {len(invalid_courses)} 条不在 /students 页面中的学生的排课记录")
+                # 从结果中移除已删除的记录
+                courses = [c for c in courses if c not in invalid_courses]
+        except Exception as cleanup_error:
+            import traceback
+            print(f"[WARN] /api/calendar/courses API 清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+            db.session.rollback()
+
         events = []
         for course in courses:
             events.append({

@@ -14,6 +14,13 @@
 .timetable-grid-wrapper {
   display: block;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow-x: auto !important; /* 允许横向滚动 */
+  overflow-y: visible !important;
+  -webkit-overflow-scrolling: touch; /* 移动端平滑滚动 */
 }
 
 .timetable-page .page-header {
@@ -33,12 +40,14 @@
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  padding: 24px !important;
+  padding: 16px 24px !important; /* 减少上下 padding，保持左右 padding */
   box-sizing: border-box;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow-x: auto !important; /* 强制允许横向滚动 */
+  overflow-y: visible !important;
   height: auto;
   min-height: auto;
+  margin: 0;
+  -webkit-overflow-scrolling: touch; /* 移动端平滑滚动 */
 }
 
 .timetable-info-row {
@@ -68,6 +77,7 @@
 .timetable-grid-wrapper {
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   overflow-x: auto !important;
   overflow-y: visible !important;
   -webkit-overflow-scrolling: touch;
@@ -76,6 +86,8 @@
   height: auto;
   min-height: auto;
   max-height: none;
+  margin: 0;
+  padding: 0;
 }
 
 /* 截取时确保完整显示所有时段行和列 */

@@ -85,18 +85,15 @@ def get_all_courses():
 
         
 
-        # 构建基础查询（只查询存在学生的排课记录，过滤已删除的学生）
+        # 构建基础查询（包含试课排课，试课排课可能关联占位学生或真实学生）
         from models import Student
+        # 对于试课排课（marketing_lead_id不为空），也需要加载marketing_lead关系以获取真实姓名
         query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-
-            joinedload(StudentCourse.course)
-
+            joinedload(StudentCourse.course),
+            joinedload(StudentCourse.marketing_lead)
         ).filter(
-
-            StudentCourse.status != '删除',
-
-            StudentCourse.marketing_lead_id.is_(None)
-
+            StudentCourse.status != '删除'
+            # 移除 marketing_lead_id.is_(None) 过滤，以包含试课排课
         )
 
         
@@ -178,8 +175,44 @@ def get_all_courses():
         courses = pagination.items
         print(f"[DEBUG] all_courses API: 返回课程数量 = {len(courses)}")
 
-        # 转换为字典
-        courses_dict = [c.to_dict() for c in courses]
+        # 清理不在 /students 页面中的学生的排课记录
+        invalid_courses = []
+        try:
+            from routes.students import get_valid_student_ids_for_management_page
+            valid_student_ids = get_valid_student_ids_for_management_page()
+            
+            # 查找不在有效学生列表中的排课记录
+            # 注意：删除所有不在 /students 页面中的学生的排课记录，无论是否确认（is_confirmed）
+            for c in courses:
+                # 如果是有 marketing_lead_id 的试课排课，但 marketing_lead 不存在（已被删除），则标记为删除
+                if c.marketing_lead_id and not c.marketing_lead:
+                    invalid_courses.append(c)
+                    continue
+                # 如果是正式排课（非试课），但学生不在 /students 页面中，则标记为删除（包括已确认和未确认的）
+                if not c.marketing_lead_id and c.student_id and c.student_id not in valid_student_ids:
+                    invalid_courses.append(c)
+                    continue
+            
+            # 彻底删除这些无效的排课记录
+            if invalid_courses:
+                for c in invalid_courses:
+                    db.session.delete(c)
+                db.session.commit()
+                print(f"[DEBUG] all_courses API: 删除了 {len(invalid_courses)} 条不在 /students 页面中的学生的排课记录")
+        except Exception as cleanup_error:
+            import traceback
+            print(f"[WARN] all_courses API 清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+            db.session.rollback()
+            invalid_courses = []  # 出错时清空，避免后续处理出错
+        
+        # 转换为字典（排除已删除的记录）
+        courses_dict = []
+        invalid_course_ids = {c.id for c in invalid_courses} if 'invalid_courses' in locals() else set()
+        for c in courses:
+            # 跳过已标记为删除的记录
+            if c.id in invalid_course_ids:
+                continue
+            courses_dict.append(c.to_dict())
         print(f"[DEBUG] all_courses API: 转换后的数据示例（前3条）: {courses_dict[:3] if courses_dict else '无数据'}")
 
         return jsonify({

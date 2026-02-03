@@ -41,4 +41,9 @@ export const marketingService = {
   markSubmitted: async (id) => {
     return api.post(`/marketing/leads/${id}/mark-submitted`)
   },
+
+  getTrialStatusMap: async () => {
+    const res = await api.get('/marketing/leads/trial-status-map')
+    return res?.items ?? []
+  },
 }

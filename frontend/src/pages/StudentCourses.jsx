@@ -20,6 +20,7 @@ const StudentCourses = () => {
   const [defaultTimeSlot, setDefaultTimeSlot] = useState('')
   const [defaultWeekday, setDefaultWeekday] = useState('')
   const [defaultTeacherId, setDefaultTeacherId] = useState('')
+  const [defaultClassroom, setDefaultClassroom] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
   // 筛选：是否标记、是否复制、是否截图
@@ -45,7 +46,7 @@ const StudentCourses = () => {
   }) // 已排课的行：Set of "studentId-courseId"
   const pageSize = 20
 
-  // 获取已缴费需要排课的学生课程列表
+  // 获取已缴费需要排课的学生课程列表（每条为 student+course，同一学生多门课程为多条，全部展示）
   const { data: courses = [], isLoading, error } = useQuery({
     queryKey: ['paid-courses-need-scheduling'],
     queryFn: () => studentCoursesService.getPaidCoursesNeedScheduling(),
@@ -87,6 +88,14 @@ const StudentCourses = () => {
   const { data: teachers = [] } = useQuery({
     queryKey: ['teachers', '启用'],
     queryFn: () => teacherService.getTeachers({ status: '启用' }),
+    staleTime: 10 * 60 * 1000,
+    enabled: showModal,
+  })
+
+  // 获取教室列表（用于默认教室下拉）
+  const { data: classrooms = [] } = useQuery({
+    queryKey: ['classrooms', '启用'],
+    queryFn: () => othersService.getClassrooms({ status: '启用' }),
     staleTime: 10 * 60 * 1000,
     enabled: showModal,
   })
@@ -271,6 +280,7 @@ const StudentCourses = () => {
       setDefaultTimeSlot(defaultScheduleData.default_time_slot || '')
       setDefaultWeekday(defaultScheduleData.default_weekday || '')
       setDefaultTeacherId(defaultScheduleData.default_teacher_id != null ? String(defaultScheduleData.default_teacher_id) : '')
+      setDefaultClassroom(defaultScheduleData.default_classroom || '')
     }
   }, [showModal, defaultScheduleData])
 
@@ -282,6 +292,7 @@ const StudentCourses = () => {
     setDefaultTimeSlot('')
     setDefaultWeekday('')
     setDefaultTeacherId('')
+    setDefaultClassroom('')
   }
 
   // 关闭模态框
@@ -291,6 +302,7 @@ const StudentCourses = () => {
     setDefaultTimeSlot('')
     setDefaultWeekday('')
     setDefaultTeacherId('')
+    setDefaultClassroom('')
   }
 
   // 保存默认排课设置
@@ -305,6 +317,7 @@ const StudentCourses = () => {
         default_time_slot: defaultTimeSlot,
         default_weekday: defaultWeekday,
         default_teacher_id: defaultTeacherId ? parseInt(defaultTeacherId, 10) : null,
+        default_classroom: defaultClassroom || '',
       },
     })
   }
@@ -799,7 +812,7 @@ const StudentCourses = () => {
   return (
     <div className="student-courses-page" style={{ width: '100%' }}>
       <div className="page-header">
-        <h1>学生课程</h1>
+        <h1>预排课</h1>
       </div>
 
       <div className="student-courses-container">
@@ -882,6 +895,7 @@ const StudentCourses = () => {
                     <th style={{ width: '12%' }}>默认上课时间</th>
                     <th style={{ width: '10%' }}>默认上课星期</th>
                     <th style={{ width: '10%' }}>默认上课老师</th>
+                    <th style={{ width: '8%' }}>默认教室</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>已消耗</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>剩余课时</th>
@@ -909,6 +923,7 @@ const StudentCourses = () => {
                         <td>{course.default_time_slot || '-'}</td>
                         <td>{course.default_weekday || '-'}</td>
                         <td>{course.default_teacher_name || '-'}</td>
+                        <td>{course.default_classroom || '-'}</td>
                         <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
                         <td style={{ textAlign: 'right' }}>{course.consumed_hours || 0}</td>
                         <td style={{ textAlign: 'right' }} className="remaining-hours">
@@ -1192,6 +1207,18 @@ const StudentCourses = () => {
                   teachers.map((t) => (
                     <option key={t.id} value={t.id}>
                       {t.name} {t.subject ? `(${t.subject})` : ''}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>默认教室</label>
+              <select value={defaultClassroom} onChange={(e) => setDefaultClassroom(e.target.value)}>
+                <option value="">-- 请选择教室 --</option>
+                {Array.isArray(classrooms) &&
+                  classrooms.map((r) => (
+                    <option key={r.id} value={r.name}>
+                      {r.name}
                     </option>
                   ))}
               </select>

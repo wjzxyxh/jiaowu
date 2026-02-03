@@ -131,12 +131,12 @@ def update_class_hours_stats(student_id, month=None, course_id=None):
         else:
             stats.actual_hours = actual_hours
         
-        # 计算本月累计课时
+        # 计算本月累计课时（上月累计 + 当月实际）
         stats.current_month_total = stats.last_month_total + stats.actual_hours
         
-        # 从缴费记录计算总缴费课时，然后减去已消耗课时得到剩余课时（按课程）
+        # 从缴费记录计算总缴费课时，减去累计已消耗课时得到剩余课时（按课程）
         total_paid_hours = calculate_remaining_hours_from_payments(student_id, cid, month)
-        stats.remaining_hours = total_paid_hours - stats.actual_hours
+        stats.remaining_hours = total_paid_hours - stats.current_month_total
     
     db.session.commit()
 

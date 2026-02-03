@@ -69,6 +69,7 @@ class MarketingLead(db.Model):
     notes = db.Column(db.Text, comment='备注/学习记录')
     enrollment_date = db.Column(db.Date, comment='登记日期')
     lead_status = db.Column(db.String(20), default='draft', comment='draft=待确认, trial=试课, submitted=已提交到学生管理')
+    trial_status = db.Column(db.String(20), nullable=True, comment='试课状态：成功/失败/再试（无排课时也可直接设置）')
     saved_at = db.Column(db.DateTime, comment='暂存时间')
     submitted_at = db.Column(db.DateTime, comment='提交到学生管理时间')
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -88,6 +89,7 @@ class MarketingLead(db.Model):
             'notes': self.notes,
             'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
             'lead_status': self.lead_status,
+            'trial_status': self.trial_status,
             'saved_at': self.saved_at.strftime('%Y-%m-%d %H:%M:%S') if self.saved_at else None,
             'submitted_at': self.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if self.submitted_at else None,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
@@ -216,12 +218,34 @@ class StudentCourse(db.Model):
         elif self.subject:
             course_name = self.subject  # 如果没有关联课程，使用科目作为课程名称
         
+        # 如果有营销线索ID，优先使用营销线索的真实姓名（而不是占位学生名称）
+        # 兼容历史数据：有些试课记录 student_name 仍为占位名，或 relationship 未预加载
+        TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+        display_student_name = self.student_name
+        display_grade = self.grade
+        if self.marketing_lead_id:
+            lead = None
+            if self.marketing_lead:
+                lead = self.marketing_lead
+            else:
+                try:
+                    lead = MarketingLead.query.get(self.marketing_lead_id)
+                except Exception:
+                    lead = None
+            if lead:
+                display_student_name = lead.name or display_student_name
+                display_grade = lead.grade or display_grade
+            else:
+                # 线索缺失时：尽量避免继续展示占位名
+                if (display_student_name or '').strip() == TRIAL_PLACEHOLDER_NAME:
+                    display_student_name = '试课学员'
+        
         return {
             'id': self.id,
             'student_id': self.student_id,
             'marketing_lead_id': self.marketing_lead_id,
-            'student_name': self.student_name,
-            'grade': self.grade,
+            'student_name': display_student_name,
+            'grade': display_grade,
             'course_id': self.course_id,
             'course_name': course_name,
             'subject': self.subject,
@@ -249,6 +273,7 @@ class StudentCourseDefaultSchedule(db.Model):
     default_time_slot = db.Column(db.String(20), comment='默认上课时段，如8:10-9:30')
     default_weekday = db.Column(db.String(10), comment='默认上课星期，如周一、周二等')
     default_teacher_id = db.Column(db.Integer, db.ForeignKey('teachers.id'), nullable=True, comment='默认上课老师ID')
+    default_classroom = db.Column(db.String(20), nullable=True, comment='默认教室')
     scheduling_paused = db.Column(db.Boolean, default=False, comment='是否暂停排课（进行中时可切换，暂停后不再参与排课）')
     created_at = db.Column(db.DateTime, default=datetime.now)
     updated_at = db.Column(db.DateTime, default=datetime.now, onupdate=datetime.now)
@@ -267,6 +292,7 @@ class StudentCourseDefaultSchedule(db.Model):
             'default_time_slot': self.default_time_slot or '',
             'default_weekday': self.default_weekday or '',
             'default_teacher_id': self.default_teacher_id,
+            'default_classroom': self.default_classroom or '',
             'scheduling_paused': self.scheduling_paused if self.scheduling_paused is not None else False,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None

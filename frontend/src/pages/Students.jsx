@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentService } from '../services/studentService'
-import { marketingService } from '../services/marketingService'
 import { usePermissions } from '../hooks/usePermissions'
 import Modal from '../components/Modal'
 import './Students.css'
@@ -32,6 +31,7 @@ const Students = () => {
         enrollment_date_end: enrollmentDateEnd || undefined,
         page,
         per_page: perPage,
+        trial_success_only: true,
       }),
     staleTime: 5 * 60 * 1000,
     cacheTime: 10 * 60 * 1000,
@@ -64,7 +64,7 @@ const Students = () => {
   // 获取所有学生用于年级筛选下拉框（延迟加载）
   const { data: allStudentsData } = useQuery({
     queryKey: ['students-all-grades'],
-    queryFn: () => studentService.getStudents({ per_page: 1000 }),
+    queryFn: () => studentService.getStudents({ per_page: 1000, trial_success_only: true }),
     staleTime: 30 * 60 * 1000,
     cacheTime: 60 * 60 * 1000,
     retry: false,
@@ -84,36 +84,14 @@ const Students = () => {
   }, [students, allStudentsData])
 
   const deleteMutation = useMutation({
-    mutationFn: ({ id }) => studentService.deleteStudent(id),
-    onSuccess: async (data, variables) => {
-      if (variables.studentData) {
-        const s = variables.studentData
-        try {
-          await marketingService.createLead({
-            name: s.name,
-            grade: s.grade,
-            source: s.source,
-            status: s.status || '在校',
-            phone: s.phone,
-            parent_name: s.parent_name,
-            parent_phone: s.parent_phone,
-            address: s.address,
-            notes: s.notes,
-            enrollment_date: s.enrollment_date,
-            lead_status: 'draft',
-            saved_at: new Date().toISOString(),
-          })
-          queryClient.invalidateQueries(['marketing-drafts'])
-        } catch (e) {
-          console.warn('恢复至营销待确认名单失败', e)
-        }
-      }
+    mutationFn: ({ id }) => studentService.removeFromManagement(id),
+    onSuccess: (data) => {
       queryClient.invalidateQueries(['students'])
       queryClient.invalidateQueries(['students-all-grades'])
-      alert(data?.message || '删除成功！已删除学生及其所有相关数据；已恢复至营销模块待确认名单。')
+      alert(data?.message || '已从学生管理页移除，该学生仍保留在学生名单页。')
     },
     onError: (error) => {
-      alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
 
@@ -152,7 +130,7 @@ const Students = () => {
     const timer = setTimeout(() => {
       queryClient.prefetchQuery({
         queryKey: ['students-all-grades'],
-        queryFn: () => studentService.getStudents({ per_page: 1000 }),
+        queryFn: () => studentService.getStudents({ per_page: 1000, trial_success_only: true }),
         staleTime: 30 * 60 * 1000,
       })
     }, 2000)
@@ -162,10 +140,10 @@ const Students = () => {
   const handleDelete = (student) => {
     if (
       window.confirm(
-        '确定要删除这个学生吗？\n\n注意：删除学生将同时删除以下所有相关数据：\n- 所有排课记录\n- 学生课时统计\n- 缴费记录\n- 老师课时将自动重新计算\n\n删除后该学生将恢复至营销模块待确认名单。'
+        '确定要从学生管理页移除该学生吗？\n\n该学生将不再显示在学生管理页，其排课、缴费、课时统计等数据会被彻底删除，但仍会在学生名单页保留基本信息和试课记录。'
       )
     ) {
-      deleteMutation.mutate({ id: student.id, studentData: student })
+      deleteMutation.mutate({ id: student.id })
     }
   }
 
@@ -385,21 +363,6 @@ const Students = () => {
 
       <div className="toolbar">
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          {hasFunctionPermission('students', 'add') && (
-            <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-              新增学生
-            </button>
-          )}
-          {hasFunctionPermission('students', 'export') && (
-            <button className="btn btn-secondary" onClick={exportStudents}>
-              导出Excel
-            </button>
-          )}
-          {hasFunctionPermission('students', 'import') && (
-            <button className="btn btn-secondary" onClick={importStudents}>
-              导入Excel
-            </button>
-          )}
           <input
             type="file"
             id="import-file"

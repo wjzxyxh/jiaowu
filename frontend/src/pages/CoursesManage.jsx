@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { usePermissions } from '../hooks/usePermissions'
 import { courseManageService } from '../services/courseManageService'
 import { teacherService } from '../services/teacherService'
 import { studentService } from '../services/studentService'
@@ -8,6 +9,7 @@ import Modal from '../components/Modal'
 import './CoursesManage.css'
 
 const CoursesManage = () => {
+  const { hasFunctionPermission } = usePermissions()
   const [activeTab, setActiveTab] = useState('courses')
   const [showModal, setShowModal] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
@@ -323,13 +325,13 @@ const CoursesManage = () => {
   return (
     <div className="courses-manage-page" style={{ width: '100%' }}>
       <div className="page-header">
-        <h1>课程管理</h1>
+        <h1>课程成本</h1>
       </div>
 
       {/* 标签页 */}
       <div className="tabs">
         <button className={`tab ${activeTab === 'courses' ? 'active' : ''}`} onClick={() => setActiveTab('courses')}>
-          课程管理
+          课程信息
         </button>
         <button className={`tab ${activeTab === 'teacher-costs' ? 'active' : ''}`} onClick={() => setActiveTab('teacher-costs')}>
           课程成本

@@ -157,8 +157,12 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
   const batchConfirmMutation = useMutation({
     mutationFn: (ids) => courseService.batchConfirm(ids),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['payments'])
+      queryClient.invalidateQueries(['stats'])
+      await queryClient.refetchQueries({ queryKey: ['payments'] })
+      await queryClient.refetchQueries({ queryKey: ['stats'] })
       setSelectedIds([])
       let message = `成功确认 ${data.confirmed_count} 个排课`
       if (data.already_confirmed_count > 0) {
@@ -167,14 +171,38 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       alert(message)
     },
     onError: (err) => {
-      alert(buildConfirmFailureMessage(err).trim())
+      const data = err?.response?.data || err
+      const msg = buildConfirmFailureMessage(data).trim()
+      const requiredCourses = data?.required_courses
+      if (Array.isArray(requiredCourses) && requiredCourses.length > 0) {
+        const dates = requiredCourses.map((c) => c.course_date).filter(Boolean)
+        if (dates.length > 0) {
+          const minDate = dates.reduce((a, b) => (a < b ? a : b))
+          const maxDate = dates.reduce((a, b) => (a > b ? a : b))
+          setFilters((prev) => {
+            const next = { ...prev }
+            next.date_start = prev.date_start ? (prev.date_start < minDate ? prev.date_start : minDate) : minDate
+            next.date_end = prev.date_end ? (prev.date_end > maxDate ? prev.date_end : maxDate) : maxDate
+            return next
+          })
+          setPage(1)
+          // 不在此处 invalidate：setState 异步，refetch 会仍用旧 filters。依赖 queryKey 变化触发带新日期的请求即可。
+          alert(`${msg}\n\n已自动调整日期范围以显示上述未确认课程，请先确认它们后再批量确认。`)
+          return
+        }
+      }
+      alert(msg)
     },
   })
 
   const batchCancelConfirmMutation = useMutation({
     mutationFn: (ids) => courseService.batchCancelConfirm(ids),
-    onSuccess: (data) => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries(['all-courses'])
+      queryClient.invalidateQueries(['payments'])
+      queryClient.invalidateQueries(['stats'])
+      await queryClient.refetchQueries({ queryKey: ['payments'] })
+      await queryClient.refetchQueries({ queryKey: ['stats'] })
       setSelectedIds([])
       let message = `成功取消确认 ${data.cancelled_count} 个排课`
       if (data.already_cancelled_count > 0) {
@@ -186,10 +214,14 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
   const confirmMutation = useMutation({
     mutationFn: courseService.confirmCourse,
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries(['all-courses'])
       queryClient.invalidateQueries(['courses'])
       queryClient.invalidateQueries(['dashboard-stats'])
+      queryClient.invalidateQueries(['payments'])
+      queryClient.invalidateQueries(['stats'])
+      await queryClient.refetchQueries({ queryKey: ['payments'] })
+      await queryClient.refetchQueries({ queryKey: ['stats'] })
       alert('确认成功')
     },
     onError: (err) => {
@@ -210,6 +242,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     onSuccess: () => {
       queryClient.invalidateQueries(['all-courses'])
       queryClient.invalidateQueries(['courses'])
+      queryClient.invalidateQueries(['payments'])
       setShowEditModal(false)
       setEditingCourse(null)
       alert('更新成功')
@@ -662,7 +695,10 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
                     />
                   </td>
                   <td>{rowNum}</td>
-                  <td>{course.student_name || ''}</td>
+                  <td>
+                    {course.student_name || ''}
+                    {(course.marketing_lead_id || (course.student_name || '').trim() === '【试课学员】') ? '(试课)' : ''}
+                  </td>
                   <td>{course.grade || ''}</td>
                   <td>{course.subject || ''}</td>
                   <td>{course.course_name || course.subject || ''}</td>
@@ -1283,6 +1319,7 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
           subject: course.subject || prev.subject,
           time_slot: defaultSchedule.default_time_slot || prev.time_slot,
           weekday: defaultSchedule.default_weekday || prev.weekday,
+          classroom: defaultSchedule.default_classroom || prev.classroom || '',
         }))
       })
       .catch(() => {})
@@ -1345,26 +1382,23 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
     queryFn: () => othersService.getClassrooms({ status: '启用' }),
   })
 
-  // 更新剩余课时显示
+  // 更新剩余课时显示：与总剩余课时同源，使用 paidCourses/studentPaidCourses（缴费－已确认消耗），不再用 stats 的 remainingHoursMap
   useEffect(() => {
-    if (!formData.student_id) {
+    if (!formData.student_id || studentPaidCourses.length === 0) {
       setRemainingHours(0)
       return
     }
-
     let hours = 0
     if (formData.course_id) {
-      const key = `${formData.student_id}-${formData.course_id}`
-      hours = remainingHoursMap[key] || 0
+      const course = studentPaidCourses.find((c) => c.course_id === parseInt(formData.course_id))
+      hours = course ? (course.remaining_hours || 0) : 0
     } else {
-      Object.keys(remainingHoursMap).forEach((key) => {
-        if (key.startsWith(`${formData.student_id}-`) || key === formData.student_id) {
-          hours += remainingHoursMap[key] || 0
-        }
+      studentPaidCourses.forEach((c) => {
+        hours += c.remaining_hours || 0
       })
     }
     setRemainingHours(hours)
-  }, [formData.student_id, formData.course_id, remainingHoursMap])
+  }, [formData.student_id, formData.course_id, studentPaidCourses])
 
   // 检查课程冲突
   useEffect(() => {
@@ -1427,25 +1461,20 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
         subject: course.subject,
       })
 
-      // 加载默认排课设置
+      // 加载默认排课设置（时段、星期、默认教室）
       if (courseId && formData.student_id) {
         try {
           const defaultSchedule = await studentCoursesService.getDefaultSchedule(
             parseInt(formData.student_id),
             parseInt(courseId)
           )
-          if (defaultSchedule.default_time_slot) {
-            setFormData((prev) => ({
-              ...prev,
-              time_slot: defaultSchedule.default_time_slot,
-            }))
-          }
-          if (defaultSchedule.default_weekday) {
-            setFormData((prev) => ({
-              ...prev,
-              weekday: defaultSchedule.default_weekday,
-            }))
-          }
+          setFormData((prev) => {
+            const next = { ...prev }
+            if (defaultSchedule.default_time_slot) next.time_slot = defaultSchedule.default_time_slot
+            if (defaultSchedule.default_weekday) next.weekday = defaultSchedule.default_weekday
+            if (defaultSchedule.default_classroom) next.classroom = defaultSchedule.default_classroom
+            return next
+          })
         } catch (err) {
           console.error('加载默认设置失败:', err)
         }

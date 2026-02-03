@@ -50,7 +50,13 @@
   justify-content: center;
 }
 
-.modal-header-center .modal-close {
+.modal-header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.modal-header-center .modal-header-right {
   position: absolute;
   right: 24px;
 }

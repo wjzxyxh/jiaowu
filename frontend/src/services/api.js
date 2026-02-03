@@ -56,10 +56,28 @@ api.interceptors.response.use(
         return Promise.reject(errorObj)
       }
 
-      // 确保错误对象包含status信息，以便React Query识别429错误
-      const errorObj = typeof data === 'object' && data !== null ? data : { error: data }
+      // 确保错误对象包含status信息和错误消息
+      const errorObj = typeof data === 'object' && data !== null ? data : { error: data || '请求失败' }
       errorObj.status = status
-      errorObj.response = { status }
+      errorObj.response = { 
+        status,
+        data: data || {}
+      }
+      
+      // 如果没有error字段，尝试从data中提取
+      if (!errorObj.error && data) {
+        if (typeof data === 'string') {
+          errorObj.error = data
+        } else if (data.error) {
+          errorObj.error = data.error
+        } else if (data.message) {
+          errorObj.error = data.message
+        } else {
+          errorObj.error = `服务器错误 [HTTP ${status}]`
+        }
+      } else if (!errorObj.error) {
+        errorObj.error = `服务器错误 [HTTP ${status}]`
+      }
 
       return Promise.reject(errorObj)
     }

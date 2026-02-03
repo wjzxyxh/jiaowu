@@ -17,7 +17,7 @@ class Config:
     SESSION_COOKIE_SECURE = False  # 开发环境设为False，生产环境应设为True（需要HTTPS）
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
-    PERMANENT_SESSION_LIFETIME = 86400  # 24小时
+    PERMANENT_SESSION_LIFETIME = 86400  # 24小时（86400秒）- 无操作自动退出
     
     # 数据库配置
     # 支持通过环境变量配置数据库类型和连接信息

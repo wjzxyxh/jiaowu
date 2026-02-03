@@ -25,6 +25,10 @@ const Marketing = () => {
   const [editingDraft, setEditingDraft] = useState(null)
   const [showScheduleModal, setShowScheduleModal] = useState(false)
   const [scheduleDraft, setScheduleDraft] = useState(null)
+  const [showEditScheduleModal, setShowEditScheduleModal] = useState(false)
+  const [editingSchedule, setEditingSchedule] = useState(null)
+  const [showStatusModal, setShowStatusModal] = useState(false)
+  const [editingStatusSchedule, setEditingStatusSchedule] = useState(null)
   const navigate = useNavigate()
 
   const { data: drafts = [], isLoading: draftsLoading } = useQuery({
@@ -42,25 +46,13 @@ const Marketing = () => {
     queryFn: marketingService.getSubmitted,
   })
 
-  // 合并所有状态的线索ID（draft、trial、submitted），用于查询排课名单
-  // 确保不论状态选什么，都能显示在排课名单中
-  const allLeadIds = useMemo(() => {
-    const draftIds = drafts.map((d) => d.id).filter(Boolean)
-    const trialIds = trials.map((t) => t.id).filter(Boolean)
-    const submittedIds = submitted.map((s) => s.id).filter(Boolean)
-    return [...new Set([...draftIds, ...trialIds, ...submittedIds])]
-  }, [drafts, trials, submitted])
-
+  // 排课名单：拉取全部试课排课（含之前排课的），不按当前待确认/试课/已提交名单过滤
   const { data: scheduleList = [], isLoading: scheduleLoading } = useQuery({
-    queryKey: ['marketing-schedules', allLeadIds],
-    queryFn: () =>
-      courseService.getCourses({
-        trial_lead_ids: allLeadIds.length > 0 ? allLeadIds.join(',') : '',
-        scope: 'leads',
-      }),
-    // 确保始终查询排课记录，不论线索状态如何
+    queryKey: ['marketing-schedules', 'all'],
+    queryFn: () => courseService.getCourses({ scope: 'leads' }),
     enabled: true,
   })
+
 
   const { data: teachers = [] } = useQuery({
     queryKey: ['teachers-for-schedule'],
@@ -148,14 +140,22 @@ const Marketing = () => {
 
   const createScheduleMutation = useMutation({
     mutationFn: courseService.createCourse,
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries(['marketing-schedules'])
       queryClient.invalidateQueries(['marketing-drafts'])
       queryClient.invalidateQueries(['marketing-trials'])
       queryClient.invalidateQueries(['marketing-submitted'])
+      await queryClient.refetchQueries({ queryKey: ['marketing-schedules'] })
       setShowScheduleModal(false)
       setScheduleDraft(null)
       alert('排课保存成功')
+      // 自动滚动到排课名单区域
+      setTimeout(() => {
+        const scheduleSection = document.getElementById('schedule-section')
+        if (scheduleSection) {
+          scheduleSection.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+      }, 100)
     },
     onError: (error) => {
       alert('排课保存失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
@@ -170,7 +170,7 @@ const Marketing = () => {
       queryClient.invalidateQueries(['marketing-trials'])
       queryClient.invalidateQueries(['marketing-submitted'])
       if (data.trial_status === '成功') {
-        alert('状态已更新为成功！\n学生信息已自动添加到学生管理页面（/students），该学员的所有试课课程已转为正式课程。')
+        alert('状态已更新为成功。\n（不会推送到学生管理页；如需在学生管理页显示，请在学生名单页操作。）')
       } else if (data.trial_status === '再试') {
         alert('状态已更新为再试！\n该记录已恢复至待确认名单，原排课记录保留，可以在待确认名单中再次进行排课。')
       } else {
@@ -190,17 +190,55 @@ const Marketing = () => {
     mutationFn: courseService.deleteCourse,
     onSuccess: () => {
       queryClient.invalidateQueries(['marketing-schedules'])
-      alert('排课记录已删除（学生信息不受影响）')
+      alert('排课记录已彻底删除（学生信息不受影响）')
     },
     onError: (error) => {
       alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
 
+  const updateScheduleMutation = useMutation({
+    mutationFn: ({ id, data }) => courseService.updateCourse(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['marketing-schedules'])
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-trials'])
+      queryClient.invalidateQueries(['marketing-submitted'])
+      setShowEditScheduleModal(false)
+      setEditingSchedule(null)
+      alert('排课信息更新成功')
+    },
+    onError: (error) => {
+      console.error('更新排课失败:', error)
+      const errorMessage = error?.response?.data?.error || error?.response?.data?.message || error?.message || '未知错误'
+      alert('更新失败：' + errorMessage)
+    },
+  })
+
   const handleDeleteSchedule = (courseId) => {
-    if (window.confirm('确定要删除这条排课记录吗？\n注意：删除排课记录不会影响学生管理页面的学生信息。')) {
+    if (window.confirm('确定要彻底删除这条排课记录吗？\n\n注意：\n- 将从数据库中永久删除，此操作不可恢复\n- 删除排课记录不会影响学生管理页面的学生信息')) {
       deleteScheduleMutation.mutate(courseId)
     }
+  }
+
+  const handleEditSchedule = (schedule) => {
+    setEditingSchedule(schedule)
+    setShowEditScheduleModal(true)
+  }
+
+  const handleCloseEditScheduleModal = () => {
+    setShowEditScheduleModal(false)
+    setEditingSchedule(null)
+  }
+
+  const handleOpenStatusModal = (schedule) => {
+    setEditingStatusSchedule(schedule)
+    setShowStatusModal(true)
+  }
+
+  const handleCloseStatusModal = () => {
+    setShowStatusModal(false)
+    setEditingStatusSchedule(null)
   }
 
   const handleCloseModal = () => {
@@ -232,10 +270,11 @@ const Marketing = () => {
       alert('请至少填写姓名')
       return
     }
+    // 只允许编辑，不允许新增
     if (editingDraft) {
       updateDraftMutation.mutate({ id: editingDraft.id, data })
     } else {
-      createDraftMutation.mutate(data)
+      alert('只能编辑已有记录，新增学生请前往学生名单页面')
     }
   }
 
@@ -297,24 +336,26 @@ const Marketing = () => {
 
   const handleViewTimetable = (s) => {
     const leadId = s.marketing_lead_id
-    if (leadId) navigate(`/marketing/timetable?lead_id=${leadId}`)
+    if (!leadId) {
+      console.log('[调试] 点击课表 - 无 leadId')
+      return
+    }
+    const dateParam = s.course_date ? `&date=${String(s.course_date).trim().slice(0, 10)}` : ''
+    const url = `/marketing/timetable?lead_id=${leadId}${dateParam}`
+    console.log('[调试] 点击课表按钮:', {
+      leadId,
+      course_date: s.course_date,
+      dateParam,
+      url,
+      完整行数据: s
+    })
+    navigate(url)
   }
 
   return (
     <div className="marketing-page">
       <div className="page-header">
-        <h1>营销模块</h1>
-      </div>
-      <p className="marketing-desc">
-        在此新增的学员可「暂存」至待确认名单，支持编辑与移除。
-      </p>
-
-      <div className="toolbar">
-        {hasFunctionPermission('marketing', 'add') && (
-          <button className="btn btn-primary" onClick={() => { setEditingDraft(null); setShowModal(true) }}>
-            新增学生
-          </button>
-        )}
+        <h1>试课系统</h1>
       </div>
 
       {/* 待确认列表 */}
@@ -362,15 +403,9 @@ const Marketing = () => {
                       </button>
                       <button
                         type="button"
-                        className="btn btn-warning btn-sm"
-                        onClick={() => handleEditDraft(d)}
-                      >
-                        编辑
-                      </button>
-                      <button
-                        type="button"
                         className="btn btn-danger btn-sm"
                         onClick={() => handleRemoveDraft(d.id)}
+                        style={{ marginLeft: '5px' }}
                       >
                         移除
                       </button>
@@ -384,7 +419,7 @@ const Marketing = () => {
       </div>
 
       {/* 排课名单 */}
-      <div className="schedule-section">
+      <div id="schedule-section" className="schedule-section">
         <h2>排课名单</h2>
         <div className="table-wrapper">
           <table className="data-table">
@@ -399,6 +434,7 @@ const Marketing = () => {
                 <th>日期</th>
                 <th>时段</th>
                 <th>教室</th>
+                <th>备注</th>
                 <th>状态</th>
                 <th>操作</th>
               </tr>
@@ -406,30 +442,25 @@ const Marketing = () => {
             <tbody>
               {scheduleLoading ? (
                 <tr>
-                  <td colSpan="11" className="empty-tip">加载中...</td>
+                  <td colSpan="12" className="empty-tip">加载中...</td>
                 </tr>
               ) : scheduleList.length === 0 ? (
                 <tr>
-                  <td colSpan="11" className="empty-tip">暂无排课记录</td>
+                  <td colSpan="12" className="empty-tip">暂无排课记录</td>
                 </tr>
               ) : (
                 scheduleList.map((s) => {
                   const isFormalStudent = s.trial_status === '成功'
                   const isRetry = s.trial_status === '再试'
-                  const isStatusLocked = isFormalStudent || isRetry
                   return (
                     <tr key={s.id} style={isFormalStudent ? { backgroundColor: '#f0f9ff' } : {}}>
                       <td>
                         {s.student_name || '-'}
                         {isFormalStudent && (
-                          <span style={{ marginLeft: '5px', color: '#28a745', fontSize: '12px' }} title="已转为正式学生">
-                            ✓
-                          </span>
+                          <span style={{ marginLeft: '5px', color: '#28a745', fontSize: '12px' }} title="已转为正式学生">✓</span>
                         )}
                         {isRetry && (
-                          <span style={{ marginLeft: '5px', color: '#ffc107', fontSize: '12px' }} title="已设为再试">
-                            ↻
-                          </span>
+                          <span style={{ marginLeft: '5px', color: '#ffc107', fontSize: '12px' }} title="已设为再试">↻</span>
                         )}
                       </td>
                       <td>{s.grade || '-'}</td>
@@ -440,41 +471,56 @@ const Marketing = () => {
                       <td>{s.course_date || '-'}</td>
                       <td>{s.time_slot || '-'}</td>
                       <td>{s.classroom || '-'}</td>
+                      <td style={{ fontWeight: s.notes ? 'bold' : 'normal', color: s.notes ? '#333' : '#999' }}>
+                        {s.notes || '-'}
+                      </td>
                       <td>
-                        {hasFunctionPermission('marketing', 'trial_status') ? (
-                          <select
-                            value={s.trial_status || ''}
-                            onChange={(e) => handleUpdateTrialStatus(s.id, e.target.value)}
-                            className="form-control"
-                            style={{ minWidth: '100px' }}
-                            disabled={isStatusLocked}
-                            title={isFormalStudent ? '已转为正式学生，状态不可修改' : isRetry ? '已设为再试，状态不可修改' : ''}
-                          >
-                            <option value="">-- 请选择 --</option>
-                            <option value="成功">成功</option>
-                            <option value="失败">失败</option>
-                            <option value="再试">再试</option>
-                          </select>
-                        ) : (
-                          <span>{s.trial_status || '-'}</span>
-                        )}
+                        <span style={{ 
+                          color: isFormalStudent ? '#28a745' : isRetry ? '#ffc107' : s.trial_status ? '#666' : '#999',
+                          fontWeight: s.trial_status ? '500' : 'normal',
+                          opacity: s.trial_status ? 1 : 0.6,
+                          cursor: 'default',
+                          userSelect: 'none'
+                        }}>
+                          {s.trial_status || '-'}
+                        </span>
                       </td>
                       <td>
                         <button
                           type="button"
                           className="btn btn-sm btn-info"
                           onClick={() => handleViewTimetable(s)}
-                          title="点击查看课表"
+                          title="点击打开课表"
                           style={{ marginRight: '5px' }}
                         >
-                          查看课表
+                          课表
+                        </button>
+                        {hasFunctionPermission('marketing', 'trial_status') && (
+                          <button
+                            type="button"
+                            className={`btn btn-sm ${s.trial_status ? 'btn-secondary' : 'btn-success'}`}
+                            onClick={() => handleOpenStatusModal(s)}
+                            title={s.trial_status ? '修改试课状态' : '设置试课状态'}
+                            style={{ marginRight: '5px' }}
+                          >
+                            状态
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-warning"
+                          onClick={() => handleEditSchedule(s)}
+                          title="编辑排课信息"
+                          style={{ marginRight: '5px' }}
+                        >
+                          编辑
                         </button>
                         {hasFunctionPermission('marketing', 'delete') && (
                           <button
                             type="button"
                             className="btn btn-sm btn-danger"
                             onClick={() => handleDeleteSchedule(s.id)}
-                            title="删除排课记录（不会删除学生信息）"
+                            title="彻底删除排课记录（将从数据库永久删除，不会删除学生信息）"
                             disabled={deleteScheduleMutation.isLoading}
                           >
                             删除
@@ -493,7 +539,7 @@ const Marketing = () => {
       <Modal
         isOpen={showModal}
         onClose={handleCloseModal}
-        title={editingDraft ? '编辑待确认学生' : '新增学生'}
+        title="编辑待确认学生"
       >
         <form
           onSubmit={handleSaveDraft}
@@ -569,19 +615,11 @@ const Marketing = () => {
             </button>
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-primary"
               onClick={handleSaveDraft}
-              disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading}
+              disabled={updateDraftMutation.isLoading || !editingDraft}
             >
-              暂存
-            </button>
-            <button 
-              type="button" 
-              className="btn btn-primary" 
-              onClick={handleSaveToSchedule}
-              disabled={createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading || updateToTrialMutation.isLoading}
-            >
-              {(createDraftMutation.isLoading || updateDraftMutation.isLoading || createTrialMutation.isLoading || updateToTrialMutation.isLoading) ? '保存中...' : '保存'}
+              {updateDraftMutation.isLoading ? '保存中...' : '保存'}
             </button>
           </div>
         </form>
@@ -600,7 +638,265 @@ const Marketing = () => {
           isLoading={createScheduleMutation.isLoading}
         />
       )}
+
+      {showEditScheduleModal && editingSchedule && (
+        <EditScheduleModal
+          isOpen={showEditScheduleModal}
+          onClose={handleCloseEditScheduleModal}
+          schedule={editingSchedule}
+          teachers={teachers}
+          courseList={courseList}
+          timeSlots={timeSlots}
+          classrooms={classrooms}
+          onSubmit={(data) => updateScheduleMutation.mutate({ id: editingSchedule.id, data })}
+          isLoading={updateScheduleMutation.isLoading}
+        />
+      )}
+
+      {showStatusModal && editingStatusSchedule && (
+        <StatusModal
+          isOpen={showStatusModal}
+          onClose={handleCloseStatusModal}
+          schedule={editingStatusSchedule}
+          onSubmit={(trial_status) => {
+            updateTrialStatusMutation.mutate({ id: editingStatusSchedule.id, trial_status })
+            handleCloseStatusModal()
+          }}
+          isLoading={updateTrialStatusMutation.isLoading}
+        />
+      )}
     </div>
+  )
+}
+
+function EditScheduleModal({ isOpen, onClose, schedule, teachers, courseList, timeSlots, classrooms, onSubmit, isLoading }) {
+  const subjects = useMemo(() => {
+    const set = new Set()
+    ;(courseList || []).forEach((c) => { if (c.subject) set.add(c.subject) })
+    return Array.from(set).sort()
+  }, [courseList])
+
+  const [form, setForm] = useState({
+    subject: '',
+    course_id: '',
+    teacher_id: '',
+    weekday: '',
+    course_date: '',
+    time_slot: '',
+    classroom: '',
+    status: '正常',
+    notes: '',
+  })
+
+  // 初始化表单数据
+  useEffect(() => {
+    if (isOpen && schedule) {
+      setForm({
+        subject: schedule.subject || '',
+        course_id: schedule.course_id ? String(schedule.course_id) : '',
+        teacher_id: schedule.teacher_id ? String(schedule.teacher_id) : '',
+        weekday: schedule.weekday || '',
+        course_date: schedule.course_date || '',
+        time_slot: schedule.time_slot || '',
+        classroom: schedule.classroom || '',
+        status: schedule.status || '正常',
+        notes: schedule.notes || '',
+      })
+    } else if (!isOpen) {
+      // 关闭时重置表单
+      setForm({
+        subject: '',
+        course_id: '',
+        teacher_id: '',
+        weekday: '',
+        course_date: '',
+        time_slot: '',
+        classroom: '',
+        status: '正常',
+        notes: '',
+      })
+    }
+  }, [isOpen, schedule])
+
+  const filteredCourses = useMemo(() => {
+    if (!form.subject || !courseList) return []
+    return courseList.filter((c) => c.subject === form.subject)
+  }, [courseList, form.subject])
+
+  const handleDateChange = (date) => {
+    if (date) {
+      const d = new Date(date + 'T00:00:00')
+      const wd = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()]
+      setForm((p) => ({ ...p, course_date: date, weekday: wd }))
+    } else {
+      setForm((p) => ({ ...p, course_date: date }))
+    }
+  }
+
+  const handleWeekdayChange = (wd) => {
+    setForm((p) => ({ ...p, weekday: wd }))
+    const map = { 周日: 0, 周一: 1, 周二: 2, 周三: 3, 周四: 4, 周五: 5, 周六: 6 }
+    const today = new Date()
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(today)
+      d.setDate(d.getDate() + i)
+      if (d.getDay() === map[wd]) {
+        setForm((p) => ({ ...p, course_date: d.toISOString().slice(0, 10) }))
+        return
+      }
+    }
+  }
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    // 验证必填字段
+    if (!form.subject || !form.teacher_id || !form.weekday || !form.course_date || !form.time_slot || !form.classroom) {
+      alert('请填写所有必填字段')
+      return
+    }
+    const teacherId = parseInt(form.teacher_id)
+    if (isNaN(teacherId)) {
+      alert('请选择有效的老师')
+      return
+    }
+    onSubmit({
+      subject: form.subject,
+      course_id: form.course_id ? parseInt(form.course_id) : null,
+      teacher_id: teacherId,
+      weekday: form.weekday || null,
+      course_date: form.course_date,
+      time_slot: form.time_slot || null,
+      classroom: form.classroom || null,
+      status: form.status,
+      notes: form.notes || null,
+    })
+  }
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="编辑排课">
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>学生</label>
+          <div style={{ padding: '8px 12px', background: '#f0f9ff', borderRadius: '4px' }}>
+            {schedule?.student_name || '-'} {schedule?.grade ? `（${schedule.grade}）` : ''}
+          </div>
+        </div>
+        <div className="form-group">
+          <label>科目 *</label>
+          <select
+            value={form.subject}
+            onChange={(e) => setForm({ ...form, subject: e.target.value, course_id: '' })}
+            required
+          >
+            <option value="">-- 请选择科目 --</option>
+            {subjects.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </div>
+        {form.subject && (
+          <div className="form-group">
+            <label>课程（可选）</label>
+            <select
+              value={form.course_id}
+              onChange={(e) => setForm({ ...form, course_id: e.target.value })}
+            >
+              <option value="">-- 请选择课程 --</option>
+              {filteredCourses.map((c) => (
+                <option key={c.id} value={c.id}>{c.name} ({c.subject})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="form-group">
+          <label>老师 *</label>
+          <select
+            value={form.teacher_id}
+            onChange={(e) => setForm({ ...form, teacher_id: e.target.value })}
+            required
+          >
+            <option value="">-- 请选择老师 --</option>
+            {(teachers || []).map((t) => (
+              <option key={t.id} value={t.id}>{t.name} {t.subject ? `(${t.subject})` : ''}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>星期 *</label>
+          <select
+            value={form.weekday}
+            onChange={(e) => handleWeekdayChange(e.target.value)}
+            required
+          >
+            <option value="">-- 请选择星期 --</option>
+            {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map((w) => (
+              <option key={w} value={w}>{w}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>日期 *</label>
+          <input
+            type="date"
+            value={form.course_date}
+            onChange={(e) => handleDateChange(e.target.value)}
+            required
+          />
+        </div>
+        <div className="form-group">
+          <label>时段 *</label>
+          <select
+            value={form.time_slot}
+            onChange={(e) => setForm({ ...form, time_slot: e.target.value })}
+            required
+          >
+            <option value="">-- 请选择时段 --</option>
+            {(timeSlots || []).map((s) => (
+              <option key={s.id} value={s.name}>{s.name} {s.start_time && s.end_time ? `(${s.start_time}-${s.end_time})` : ''}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>教室 *</label>
+          <select
+            value={form.classroom}
+            onChange={(e) => setForm({ ...form, classroom: e.target.value })}
+            required
+          >
+            <option value="">-- 请选择教室 --</option>
+            {(classrooms || []).map((r) => (
+              <option key={r.id} value={r.name}>{r.name}</option>
+            ))}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>状态</label>
+          <select
+            value={form.status}
+            onChange={(e) => setForm({ ...form, status: e.target.value })}
+          >
+            <option value="正常">正常</option>
+            <option value="请假">请假</option>
+            <option value="取消">取消</option>
+          </select>
+        </div>
+        <div className="form-group">
+          <label>备注</label>
+          <input
+            type="text"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="请输入备注信息（可选）"
+          />
+        </div>
+        <div className="form-actions marketing-actions">
+          <button type="button" className="btn" onClick={onClose}>取消</button>
+          <button type="submit" className="btn btn-primary" disabled={isLoading}>
+            {isLoading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -619,6 +915,7 @@ function ScheduleModal({ isOpen, onClose, draft, teachers, courseList, timeSlots
     course_date: '',
     time_slot: '',
     classroom: '',
+    notes: '',
   })
 
   useEffect(() => {
@@ -631,6 +928,7 @@ function ScheduleModal({ isOpen, onClose, draft, teachers, courseList, timeSlots
       course_date: '',
       time_slot: '',
       classroom: '',
+      notes: '',
     })
   }, [isOpen])
 
@@ -774,9 +1072,78 @@ function ScheduleModal({ isOpen, onClose, draft, teachers, courseList, timeSlots
             ))}
           </select>
         </div>
+        <div className="form-group">
+          <label>备注</label>
+          <input
+            type="text"
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+            placeholder="请输入备注信息（可选）"
+          />
+        </div>
         <div className="form-actions marketing-actions">
           <button type="button" className="btn" onClick={onClose}>取消</button>
           <button type="submit" className="btn btn-primary" disabled={isLoading}>
+            {isLoading ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function StatusModal({ isOpen, onClose, schedule, onSubmit, isLoading }) {
+  const [trialStatus, setTrialStatus] = useState('')
+
+  useEffect(() => {
+    if (isOpen && schedule) {
+      setTrialStatus(schedule.trial_status || '')
+    } else if (!isOpen) {
+      setTrialStatus('')
+    }
+  }, [isOpen, schedule])
+
+  const handleSubmit = (e) => {
+    e.preventDefault()
+    onSubmit(trialStatus)
+  }
+
+  const isFormalStudent = schedule?.trial_status === '成功'
+  const isRetry = schedule?.trial_status === '再试'
+  const isStatusLocked = isFormalStudent || isRetry
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="修改试课状态">
+      <form onSubmit={handleSubmit}>
+        <div className="form-group">
+          <label>学生</label>
+          <div style={{ padding: '8px 12px', background: '#f0f9ff', borderRadius: '4px' }}>
+            {schedule?.student_name || '-'} {schedule?.grade ? `（${schedule.grade}）` : ''}
+          </div>
+        </div>
+        <div className="form-group">
+          <label>试课状态 *</label>
+          <select
+            value={trialStatus}
+            onChange={(e) => setTrialStatus(e.target.value)}
+            required
+            disabled={isStatusLocked}
+            className="form-control"
+          >
+            <option value="">-- 请选择 --</option>
+            <option value="成功">成功</option>
+            <option value="失败">失败</option>
+            <option value="再试">再试</option>
+          </select>
+          {isStatusLocked && (
+            <small style={{ color: '#856404', display: 'block', marginTop: '5px' }}>
+              {isFormalStudent ? '已转为正式学生，状态不可修改' : '已设为再试，状态不可修改'}
+            </small>
+          )}
+        </div>
+        <div className="form-actions marketing-actions">
+          <button type="button" className="btn" onClick={onClose}>取消</button>
+          <button type="submit" className="btn btn-primary" disabled={isLoading || isStatusLocked}>
             {isLoading ? '保存中...' : '保存'}
           </button>
         </div>

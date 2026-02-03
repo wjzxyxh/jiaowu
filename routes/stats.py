@@ -56,8 +56,13 @@ def get_stats():
 
     
 
-    # 构建查询（只查询存在学生的课时统计，过滤已删除的学生）
-    query = ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id).filter(ClassHoursStats.month == month)
+    # 构建查询（只查询存在学生的课时统计，过滤已删除的学生，排除试课占位学员）
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    query = (
+        ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id)
+        .filter(ClassHoursStats.month == month)
+        .filter(Student.name != TRIAL_PLACEHOLDER_NAME)
+    )
 
     if student_id:
 
@@ -71,7 +76,29 @@ def get_stats():
 
     stats_list = query.all()
 
-    
+    # 清理不在 /students 页面中的学生的课时统计记录
+    try:
+        from routes.students import get_valid_student_ids_for_management_page
+        valid_student_ids = get_valid_student_ids_for_management_page()
+        
+        invalid_stats = []
+        for stat in stats_list:
+            # 如果学生不在 /students 页面中，则标记为删除
+            if stat.student_id and stat.student_id not in valid_student_ids:
+                invalid_stats.append(stat)
+        
+        # 彻底删除这些无效的课时统计记录
+        if invalid_stats:
+            for stat in invalid_stats:
+                db.session.delete(stat)
+            db.session.commit()
+            print(f"[DEBUG] /api/stats API: 删除了 {len(invalid_stats)} 条不在 /students 页面中的学生的课时统计记录")
+            # 从结果中移除已删除的记录
+            stats_list = [s for s in stats_list if s not in invalid_stats]
+    except Exception as cleanup_error:
+        import traceback
+        print(f"[WARN] /api/stats API 清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+        db.session.rollback()
 
     # 获取每个学生-课程组合的当月上课日期和时段
 

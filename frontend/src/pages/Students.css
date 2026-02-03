@@ -121,6 +121,16 @@
   background: #5a6268;
 }
 
+.btn-success {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+}
+
+.btn-success:hover {
+  background: #218838;
+}
+
 .btn-warning {
   background: #ffc107;
   color: #333;

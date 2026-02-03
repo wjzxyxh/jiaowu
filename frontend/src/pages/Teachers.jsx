@@ -126,7 +126,7 @@ const Teachers = () => {
   return (
     <div className="teachers-page" style={{ width: '100%' }}>
       <div className="page-header">
-        <h1>教师管理</h1>
+        <h1>教师名单</h1>
       </div>
 
       <div className="toolbar">

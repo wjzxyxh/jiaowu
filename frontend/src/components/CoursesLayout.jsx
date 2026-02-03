@@ -234,7 +234,7 @@ const CoursesLayout = () => {
               }}
             >
               <span>←</span>
-              <span>{fromStudentCourses && location.pathname === '/courses' ? '返回学生课程' : '返回首页'}</span>
+              <span>{fromStudentCourses && location.pathname === '/courses' ? '返回预排课' : '返回首页'}</span>
             </Link>
           )}
         </div>
