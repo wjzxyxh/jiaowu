@@ -787,6 +787,21 @@ const StudentCourses = () => {
     }
   }, [courses.length, totalPages, currentPage])
 
+  // 当前日期所在周及日期范围（必须在所有 early return 之前调用，遵守 Hooks 顺序）
+  const currentWeekLabel = useMemo(() => {
+    const today = new Date()
+    const currentMonth = today.toISOString().slice(0, 7)
+    const currentWeek = getWeekInMonth(today).toString()
+    const weekDateRange = getCurrentWeekDateRange(currentMonth, currentWeek)
+    if (!weekDateRange) return null
+    const { startDate, endDate, year, month } = weekDateRange
+    const startM = String(startDate.getMonth() + 1).padStart(2, '0')
+    const startD = String(startDate.getDate()).padStart(2, '0')
+    const endM = String(endDate.getMonth() + 1).padStart(2, '0')
+    const endD = String(endDate.getDate()).padStart(2, '0')
+    return `${year}年${String(month).padStart(2, '0')}月 第${currentWeek}周 ${startM}月${startD}日-${endM}月${endD}日`
+  }, [])
+
   if (isLoading) {
     return (
       <div className="student-courses-page" style={{ width: '100%' }}>
@@ -811,8 +826,26 @@ const StudentCourses = () => {
 
   return (
     <div className="student-courses-page" style={{ width: '100%' }}>
-      <div className="page-header">
-        <h1>预排课</h1>
+      <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+        <h1 style={{ margin: 0 }}>预排课</h1>
+        {currentWeekLabel && (
+          <span
+            className="current-week-label"
+            style={{
+              display: 'inline-block',
+              padding: '6px 16px',
+              fontSize: '15px',
+              fontWeight: '600',
+              color: '#1a73e8',
+              backgroundColor: '#e8f0fe',
+              border: '1px solid #1a73e8',
+              borderRadius: '8px',
+              letterSpacing: '0.02em',
+            }}
+          >
+            {currentWeekLabel}
+          </span>
+        )}
       </div>
 
       <div className="student-courses-container">
