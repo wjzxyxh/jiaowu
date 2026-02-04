@@ -813,19 +813,26 @@ const Courses = () => {
           </button>
         )}
         {hasFunctionPermission('courses', 'copy_next') && (
-          <CopyToNextWeekButton
-            courses={validCourses}
-            selectedIds={selectedIds}
-            monthFilter={monthFilter}
-            weekFilter={weekFilter}
-            onSuccess={(nextMonth, nextWeek) => {
-              queryClient.invalidateQueries(['courses'])
-              if (nextMonth != null && nextWeek != null) {
-                setMonthFilter(nextMonth)
-                setWeekFilter(nextWeek)
-              }
-            }}
-          />
+          <>
+            <CopyToNextWeekButton
+              courses={validCourses}
+              selectedIds={selectedIds}
+              monthFilter={monthFilter}
+              weekFilter={weekFilter}
+              onSuccess={(nextMonth, nextWeek) => {
+                queryClient.invalidateQueries(['courses'])
+                if (nextMonth != null && nextWeek != null) {
+                  setMonthFilter(nextMonth)
+                  setWeekFilter(nextWeek)
+                }
+              }}
+            />
+            <CopyToNextDayButton
+              courses={validCourses}
+              selectedIds={selectedIds}
+              onSuccess={() => queryClient.invalidateQueries(['courses'])}
+            />
+          </>
         )}
         {hasFunctionPermission('courses', 'screenshot') && (
           <button className="btn btn-secondary" onClick={handleScreenshot} title="截取当前周课表（星期模式）为图片" style={{ background: '#28a745', color: '#fff', borderColor: '#28a745' }}>
@@ -1690,6 +1697,165 @@ const CopyToNextWeekButton = ({ courses, selectedIds, monthFilter, weekFilter, o
   )
 }
 
+// 复制到下一天按钮组件：单选一条则复制到下一天；多选多条（多天）则整块后移，如选 2/17、2/18 则复制到 2/19、2/20
+const CopyToNextDayButton = ({ courses, selectedIds, onSuccess }) => {
+  const [isLoading, setIsLoading] = useState(false)
+
+  const addDays = (dateStr, days) => {
+    const d = new Date(dateStr + 'T12:00:00')
+    d.setDate(d.getDate() + days)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }
+
+  const getMonthAndWeekForDate = (dateStr) => {
+    const [y, m] = dateStr.split('-').map(Number)
+    const monthFilter = `${y}-${String(m).padStart(2, '0')}`
+    const weekOpts = getWeekRange(monthFilter)
+    for (const w of weekOpts) {
+      const range = getCurrentWeekDateRange(monthFilter, w)
+      if (!range) continue
+      const start = range.startDate.getTime()
+      const end = range.endDate.getTime()
+      const d = new Date(dateStr + 'T12:00:00').getTime()
+      if (d >= start && d <= end) return { monthFilter, week: w }
+    }
+    return { monthFilter, week: '1' }
+  }
+
+  const handleCopy = async () => {
+    if (courses.length === 0) {
+      alert('当前周没有排课数据')
+      return
+    }
+
+    let coursesToCopy = courses
+    if (selectedIds.length > 0) {
+      coursesToCopy = courses.filter((c) => selectedIds.includes(c.id))
+    }
+    if (coursesToCopy.length === 0) {
+      alert('请先勾选要复制的排课')
+      return
+    }
+
+    // 有勾选：所选涉及几天就整体后移几天（选 1 天→复制到下 1 天；选 2 天→2/17、2/18 复制到 2/19、2/20）；未勾选：当前周每条复制到下一天（偏移 1 天）
+    const distinctDates = [...new Set(coursesToCopy.map((c) => c.course_date))].sort()
+    const offsetDays = selectedIds.length > 0 ? distinctDates.length : 1
+
+    const withNextDate = coursesToCopy.map((course) => ({
+      ...course,
+      nextDateStr: addDays(course.course_date, offsetDays),
+    }))
+
+    const nextDateSet = new Set(withNextDate.map((c) => c.nextDateStr))
+    const monthWeekSet = new Set()
+    nextDateSet.forEach((dateStr) => {
+      const { monthFilter, week } = getMonthAndWeekForDate(dateStr)
+      monthWeekSet.add(JSON.stringify({ monthFilter, week }))
+    })
+
+    let existingCourses = []
+    for (const key of monthWeekSet) {
+      const { monthFilter, week } = JSON.parse(key)
+      const list = await courseService.getCourses({ month: monthFilter, week }).catch(() => [])
+      const arr = Array.isArray(list) ? list : list?.courses || list?.data || []
+      existingCourses = existingCourses.concat(arr)
+    }
+
+    const existingKeys = new Set(
+      (existingCourses || []).map((c) => `${c.course_date}|${c.student_name}|${c.subject}|${c.time_slot || ''}`)
+    )
+
+    const toCreate = withNextDate.filter((c) => {
+      const key = `${c.nextDateStr}|${c.student_name}|${c.subject}|${c.time_slot || ''}`
+      return !existingKeys.has(key)
+    })
+
+    if (toCreate.length === 0) {
+      alert('没有可复制的排课记录。\n\n所选排课在下一天已存在相同安排，或请先勾选要复制的排课。')
+      return
+    }
+
+    const hint = selectedIds.length > 0
+      ? (offsetDays === 1
+          ? `已选中 ${toCreate.length} 条排课（1 天），将复制到下一天。确定继续？`
+          : `已选中 ${toCreate.length} 条排课（${offsetDays} 天），将整块后移 ${offsetDays} 天（如 2月17日、2月18日→2月19日、2月20日）。确定继续？`)
+      : `确定要将当前周 ${toCreate.length} 条排课复制到下一天吗？`
+    if (!window.confirm(hint)) {
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      let successCount = 0
+      let failCount = 0
+      const failMessages = []
+
+      const promises = toCreate.map((course) => {
+        const newCourseData = {
+          teacher_id: course.teacher_id,
+          course_date: course.nextDateStr,
+          subject: course.subject,
+          time_slot: course.time_slot || '',
+          classroom: course.classroom || '',
+          course_id: course.course_id || null,
+        }
+        if (course.marketing_lead_id) {
+          newCourseData.marketing_lead_id = course.marketing_lead_id
+        } else {
+          newCourseData.student_id = course.student_id
+        }
+
+        return courseService
+          .createCourse(newCourseData)
+          .then((result) => {
+            if (result.id) successCount++
+            else {
+              failMessages.push(`${course.course_date} -> ${course.nextDateStr}: 返回结果异常`)
+              failCount++
+            }
+          })
+          .catch((err) => {
+            const msg = err?.response?.data?.error || err?.message || '未知错误'
+            failMessages.push(`${course.course_date} -> ${course.nextDateStr}: ${msg}`)
+            failCount++
+          })
+      })
+
+      await Promise.all(promises)
+
+      let message = `复制完成！成功：${successCount}条，失败：${failCount}条`
+      if (failMessages.length > 0) {
+        message += '\n\n失败详情：\n' + failMessages.slice(0, 5).join('\n')
+        if (failMessages.length > 5) {
+          message += `\n... 还有 ${failMessages.length - 5} 条错误`
+        }
+      }
+      alert(message)
+      onSuccess()
+    } catch (err) {
+      console.error('复制失败:', err)
+      alert('复制失败：' + (err?.message || '未知错误'))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <button
+      className="btn btn-secondary"
+      onClick={handleCopy}
+      disabled={isLoading}
+      style={{ marginLeft: 0, marginRight: 0 }}
+      title="单选一条复制到下一天；多选多天则整块后移（如选 2月17日、2月18日→复制到 2月19日、2月20日）"
+    >
+      {isLoading ? '复制中...' : '复制到下一天'}
+    </button>
+  )
+}
+
 // 辅助：获取当月第一个周一（每月第一周从当月的第一个周一开始算起）
 function getFirstMondayOfMonth(year, monthNum) {
   const firstDay = new Date(year, monthNum - 1, 1)
@@ -1939,6 +2105,7 @@ const CopyToSpecifiedWeekModal = ({ isOpen, onClose, courses, selectedIds, curre
 }
 
 // 新增排课模态框组件（包含冲突检测、剩余课时显示等功能）
+// 当 initialStudentId 存在（从 student-courses 进入）时，学生下拉框只显示该学生
 const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlots, classrooms, monthFilter, weekFilter, onSubmit, initialStudentId, initialCourseId, restrictStudentsToInitialStudent }) => {
   const [formData, setFormData] = useState({
     student_id: '',
@@ -2012,11 +2179,12 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       .catch(() => {})
   }, [isOpen, initialStudentId, initialCourseId, paidCourses])
 
-  // 从已缴费课程中提取唯一的学生：去排课进入时只显示对应学生（不受标记影响）；否则只显示未标记学生
+  // 从已缴费课程中提取唯一的学生：从 student-courses 进入（initialStudentId 存在）时只显示对应学生；否则显示未标记学生
   const availableStudents = useMemo(() => {
     const studentMap = {}
+    const onlyShowInitialStudent = !!initialStudentId
     paidCourses.forEach((course) => {
-      if (restrictStudentsToInitialStudent && initialStudentId) {
+      if (onlyShowInitialStudent) {
         if (String(course.student_id) !== String(initialStudentId)) return
       } else if (course.excluded_from_scheduling === true) return
       const studentId = course.student_id
@@ -2028,8 +2196,13 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
         }
       }
     })
-    return Object.values(studentMap).sort((a, b) => a.name.localeCompare(b.name))
-  }, [paidCourses, restrictStudentsToInitialStudent, initialStudentId])
+    let list = Object.values(studentMap).sort((a, b) => a.name.localeCompare(b.name))
+    if (onlyShowInitialStudent && list.length === 0 && students?.length) {
+      const fromParent = students.find((s) => String(s.id) === String(initialStudentId))
+      if (fromParent) list = [{ id: fromParent.id, name: fromParent.name, grade: fromParent.grade || '' }]
+    }
+    return list
+  }, [paidCourses, initialStudentId, students])
 
   // 获取当前学生已缴费的课程列表
   const studentPaidCourses = useMemo(() => {
@@ -2238,34 +2411,21 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       <form onSubmit={handleSubmit}>
         <div className="form-group">
           <label>学生 *</label>
-          {restrictStudentsToInitialStudent ? (
-            <>
-              <div style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px', marginBottom: '4px' }}>
-                {(() => {
-                  const student = availableStudents.find((s) => String(s.id) === String(formData.student_id))
-                  return student ? (
-                    <span>{student.name} {student.grade ? `（${student.grade}）` : ''} <span style={{ color: '#666', fontSize: '12px' }}>（预排课页所选学生）</span></span>
-                  ) : (
-                    <span style={{ color: '#999' }}>{formData.student_id ? '加载中...' : '--'}</span>
-                  )
-                })()}
-              </div>
-              <input type="hidden" name="student_id" value={formData.student_id} />
-            </>
-          ) : (
-            <select
-              name="student_id"
-              value={formData.student_id}
-              onChange={(e) => handleStudentChange(e.target.value)}
-              required
-            >
-              <option value="">-- 请选择学生 --</option>
-              {availableStudents.map((student) => (
-                <option key={student.id} value={String(student.id)}>
-                  {student.name} {student.grade ? `(${student.grade})` : ''}
-                </option>
-              ))}
-            </select>
+          <select
+            name="student_id"
+            value={formData.student_id}
+            onChange={(e) => handleStudentChange(e.target.value)}
+            required
+          >
+            <option value="">-- 请选择学生 --</option>
+            {availableStudents.map((student) => (
+              <option key={student.id} value={String(student.id)}>
+                {student.name} {student.grade ? `(${student.grade})` : ''}
+              </option>
+            ))}
+          </select>
+          {initialStudentId && availableStudents.length <= 1 && (
+            <span style={{ color: '#666', fontSize: '12px', marginLeft: '6px' }}>（预排课页所选学生）</span>
           )}
         </div>
         <div id="remaining-hours-display" style={{ margin: '-10px 0 15px 0', padding: '8px', background: '#f5f5f5', borderRadius: '4px', fontSize: '14px' }}>

@@ -305,74 +305,7 @@ def get_courses():
 
             
 
-            # 如果指定了student_id，查询整个月的记录（不限制周）
-
-            if filter_student_id:
-
-                # 查询整个月的记录（过滤已删除的学生）
-                from models import Student
-                # 先获取有效学生ID列表，在查询时直接过滤
-                try:
-                    from routes.students import get_valid_student_ids_for_management_page
-                    valid_student_ids = get_valid_student_ids_for_management_page()
-                except Exception:
-                    valid_student_ids = set()
-                
-                query = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
-
-                    joinedload(StudentCourse.course),
-
-                    joinedload(StudentCourse.marketing_lead),
-
-                ).filter(
-
-                    StudentCourse.course_date >= month_start,
-
-                    StudentCourse.course_date <= month_end,
-
-                    StudentCourse.status != '删除'
-
-                )
-                
-                # 如果是正式排课（非试课），只查询在有效学生列表中的学生的排课
-                if valid_student_ids:
-                    query = query.filter(
-                        or_(
-                            StudentCourse.marketing_lead_id.isnot(None),  # 试课排课保留
-                            StudentCourse.student_id.in_(valid_student_ids)  # 正式排课只保留有效学生的
-                        )
-                    )
-                else:
-                    # 如果没有有效学生，只保留试课排课
-                    query = query.filter(StudentCourse.marketing_lead_id.isnot(None))
-
-                # 应用筛选条件（包括student_id）
-
-                query = apply_filters(query)
-
-                courses = query.all()
-
-                # 再次清理不在 /students 页面中的学生的排课记录（双重保险）
-                courses = cleanup_invalid_student_courses(courses)
-
-                # 调试信息
-
-                print(f"API查询（按学生ID，整个月）: month={month}, student_id={filter_student_id}")
-
-                print(f"日期范围: {month_start} 到 {month_end}")
-
-                print(f"查询结果数量: {len(courses)}")
-
-                if len(courses) > 0:
-
-                    print(f"第一条记录日期: {courses[0].course_date}")
-
-                
-
-                return jsonify([c.to_dict() for c in courses])
-
-            
-
+            # 按周查询（含从预排课进入带 student_id 时也按当前周过滤，不查整月，避免第1周显示第3周课程）
             # 如果指定了trial_lead_id且scope=month，查询整个月的试课记录（用于试课排课页计算老师课时费）
             if filter_trial_lead_id and scope_month:
                 from models import Student
