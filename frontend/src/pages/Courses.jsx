@@ -28,6 +28,43 @@ const Courses = () => {
   const monthFromUrl = searchParams.get('month')
   const weekFromUrl = searchParams.get('week')
 
+  // 检测是否从 student-courses 的确认按钮跳转过来，或 URL 带有 student_id + month + week（直接打开课程页）
+  const fromStudentCoursesConfirm = sessionStorage.getItem('fromStudentCoursesConfirm') === 'true'
+  const confirmStudentIdFromStorage = sessionStorage.getItem('confirmStudentId') || sessionStorage.getItem('confirmedStudentId')
+  const confirmCourseIdFromStorage = sessionStorage.getItem('confirmCourseId') || sessionStorage.getItem('confirmedCourseId')
+  const confirmMonthFromStorage = sessionStorage.getItem('confirmMonth') || sessionStorage.getItem('confirmedMonth')
+  const confirmWeekFromStorage = sessionStorage.getItem('confirmWeek') || sessionStorage.getItem('confirmedWeek')
+  // 优先用 sessionStorage，其次用 URL 参数，便于直接打开 /courses?student_id=5&month=2026-02&week=1 时也能在全部确认后写回预排课
+  const confirmStudentId = confirmStudentIdFromStorage || (studentIdFromUrl && monthFromUrl && weekFromUrl ? studentIdFromUrl : null)
+  const confirmCourseId = confirmCourseIdFromStorage || null
+  const confirmMonth = confirmMonthFromStorage || (monthFromUrl && /^\d{4}-\d{2}$/.test(monthFromUrl) ? monthFromUrl : null)
+  const confirmWeek = confirmWeekFromStorage || (weekFromUrl || null)
+  const shouldCheckConfirmMark = fromStudentCoursesConfirm || (studentIdFromUrl && monthFromUrl && weekFromUrl)
+
+  // 检查该学生当周所有排课是否都已确认（不限定课程ID）
+  const checkAllCoursesConfirmed = useCallback((coursesList) => {
+    if (!confirmStudentId || !confirmMonth || !confirmWeek) {
+      return false
+    }
+    
+    // 获取该学生当周的所有排课（排除删除状态，不限定课程ID）
+    const studentCourses = coursesList.filter(
+      (c) => 
+        String(c.student_id) === String(confirmStudentId) &&
+        c.status !== '删除'
+    )
+    
+    // 如果没有排课，返回 false
+    if (studentCourses.length === 0) {
+      return false
+    }
+    
+    // 检查是否所有排课都已确认
+    const allConfirmed = studentCourses.every((c) => c.is_confirmed === true)
+    
+    return allConfirmed
+  }, [confirmStudentId, confirmMonth, confirmWeek])
+
   // 获取当月第一个周一（每月第一周从当月的第一个周一开始算起）
   const getFirstMondayOfMonth = (year, monthNum) => {
     const firstDay = new Date(year, monthNum - 1, 1)
@@ -308,6 +345,57 @@ const Courses = () => {
       queryClient.invalidateQueries(['stats'])
       await queryClient.refetchQueries({ queryKey: ['payments'] })
       await queryClient.refetchQueries({ queryKey: ['stats'] })
+      
+      // 如果是从 student-courses 确认按钮跳转过来的，检查是否所有排课都已确认
+      if (shouldCheckConfirmMark && confirmStudentId && confirmMonth && confirmWeek) {
+        // 等待查询更新后再检查
+        setTimeout(async () => {
+          try {
+            // 重新获取课程数据
+            const updatedCourses = await queryClient.fetchQuery({
+              queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter || studentIdFromUrl],
+              queryFn: () =>
+                courseService.getCourses({
+                  month: monthFilter,
+                  week: weekFilter,
+                  teacher: teacherFilter || undefined,
+                  classroom: classroomFilter || undefined,
+                  subject: subjectFilter || undefined,
+                  grade: gradeFilter || undefined,
+                  student_id: studentFilter || studentIdFromUrl || undefined,
+                }),
+            })
+            
+            // 过滤有效课程
+            let list = updatedCourses || []
+            if (statusFilter) {
+              list = list.filter((c) => c.status === statusFilter)
+            } else {
+              list = list.filter((c) => c.status !== '删除')
+            }
+            
+            const allConfirmed = checkAllCoursesConfirmed(list)
+            if (allConfirmed) {
+              // 设置标记，表示该学生当周所有排课都已确认
+              sessionStorage.setItem('allCoursesConfirmed', 'true')
+              sessionStorage.setItem('confirmedStudentId', confirmStudentId)
+              sessionStorage.setItem('confirmedCourseId', confirmCourseId || '')
+              sessionStorage.setItem('confirmedMonth', confirmMonth)
+              sessionStorage.setItem('confirmedWeek', confirmWeek)
+            } else {
+              // 如果未全部确认，清除标记（防止之前的状态影响）
+              sessionStorage.removeItem('allCoursesConfirmed')
+              sessionStorage.removeItem('confirmedStudentId')
+              sessionStorage.removeItem('confirmedCourseId')
+              sessionStorage.removeItem('confirmedMonth')
+              sessionStorage.removeItem('confirmedWeek')
+            }
+          } catch (error) {
+            console.error('检查所有课程确认状态失败:', error)
+          }
+        }, 500)
+      }
+      
       alert('确认成功')
     },
     onError: (err) => {
@@ -324,6 +412,57 @@ const Courses = () => {
       await queryClient.refetchQueries({ queryKey: ['payments'] })
       await queryClient.refetchQueries({ queryKey: ['stats'] })
       setSelectedIds([])
+      
+      // 如果是从 student-courses 确认按钮跳转过来的，检查是否所有排课都已确认
+      if (shouldCheckConfirmMark && confirmStudentId && confirmMonth && confirmWeek) {
+        // 等待查询更新后再检查
+        setTimeout(async () => {
+          try {
+            // 重新获取课程数据
+            const updatedCourses = await queryClient.fetchQuery({
+              queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter || studentIdFromUrl],
+              queryFn: () =>
+                courseService.getCourses({
+                  month: monthFilter,
+                  week: weekFilter,
+                  teacher: teacherFilter || undefined,
+                  classroom: classroomFilter || undefined,
+                  subject: subjectFilter || undefined,
+                  grade: gradeFilter || undefined,
+                  student_id: studentFilter || studentIdFromUrl || undefined,
+                }),
+            })
+            
+            // 过滤有效课程
+            let list = updatedCourses || []
+            if (statusFilter) {
+              list = list.filter((c) => c.status === statusFilter)
+            } else {
+              list = list.filter((c) => c.status !== '删除')
+            }
+            
+            const allConfirmed = checkAllCoursesConfirmed(list)
+            if (allConfirmed) {
+              // 设置标记，表示该学生当周所有排课都已确认
+              sessionStorage.setItem('allCoursesConfirmed', 'true')
+              sessionStorage.setItem('confirmedStudentId', confirmStudentId)
+              sessionStorage.setItem('confirmedCourseId', confirmCourseId || '')
+              sessionStorage.setItem('confirmedMonth', confirmMonth)
+              sessionStorage.setItem('confirmedWeek', confirmWeek)
+            } else {
+              // 如果未全部确认，清除标记（防止之前的状态影响）
+              sessionStorage.removeItem('allCoursesConfirmed')
+              sessionStorage.removeItem('confirmedStudentId')
+              sessionStorage.removeItem('confirmedCourseId')
+              sessionStorage.removeItem('confirmedMonth')
+              sessionStorage.removeItem('confirmedWeek')
+            }
+          } catch (error) {
+            console.error('检查所有课程确认状态失败:', error)
+          }
+        }, 500)
+      }
+      
       let message = `成功确认 ${data.confirmed_count} 个排课`
       if (data.already_confirmed_count > 0) {
         message += `，${data.already_confirmed_count} 个已确认`
@@ -344,6 +483,50 @@ const Courses = () => {
       await queryClient.refetchQueries({ queryKey: ['payments'] })
       await queryClient.refetchQueries({ queryKey: ['stats'] })
       setSelectedIds([])
+      
+      // 如果是从 student-courses 确认按钮跳转过来的，取消确认后需要清除标记
+      if (shouldCheckConfirmMark && confirmStudentId && confirmMonth && confirmWeek) {
+        // 等待查询更新后再检查
+        setTimeout(async () => {
+          try {
+            // 重新获取课程数据
+            const updatedCourses = await queryClient.fetchQuery({
+              queryKey: ['courses', monthFilter, weekFilter, teacherFilter, classroomFilter, subjectFilter, gradeFilter, studentFilter || studentIdFromUrl],
+              queryFn: () =>
+                courseService.getCourses({
+                  month: monthFilter,
+                  week: weekFilter,
+                  teacher: teacherFilter || undefined,
+                  classroom: classroomFilter || undefined,
+                  subject: subjectFilter || undefined,
+                  grade: gradeFilter || undefined,
+                  student_id: studentFilter || studentIdFromUrl || undefined,
+                }),
+            })
+            
+            // 过滤有效课程
+            let list = updatedCourses || []
+            if (statusFilter) {
+              list = list.filter((c) => c.status === statusFilter)
+            } else {
+              list = list.filter((c) => c.status !== '删除')
+            }
+            
+            const allConfirmed = checkAllCoursesConfirmed(list)
+            if (!allConfirmed) {
+              // 如果未全部确认，清除标记
+              sessionStorage.removeItem('allCoursesConfirmed')
+              sessionStorage.removeItem('confirmedStudentId')
+              sessionStorage.removeItem('confirmedCourseId')
+              sessionStorage.removeItem('confirmedMonth')
+              sessionStorage.removeItem('confirmedWeek')
+            }
+          } catch (error) {
+            console.error('检查所有课程确认状态失败:', error)
+          }
+        }, 500)
+      }
+      
       let message = `成功取消确认 ${data.cancelled_count} 个排课`
       if (data.already_cancelled_count > 0) {
         message += `，${data.already_cancelled_count} 个未确认`

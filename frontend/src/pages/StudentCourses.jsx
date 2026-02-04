@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom'
 import html2canvas from 'html2canvas'
 import { usePermissions } from '../hooks/usePermissions'
 import { studentCoursesService } from '../services/studentCoursesService'
@@ -15,6 +15,14 @@ const StudentCourses = () => {
   const { hasFunctionPermission } = usePermissions()
   const navigate = useNavigate()
   const location = useLocation()
+  const [searchParams, setSearchParams] = useSearchParams()
+  // 从 URL 恢复周偏移，使地址栏回车/刷新后仍停留在所选周
+  const initialWeekOffset = (() => {
+    const v = searchParams.get('weekOffset')
+    if (v === null || v === '') return 0
+    const n = parseInt(v, 10)
+    return Number.isFinite(n) ? n : 0
+  })()
   const [showModal, setShowModal] = useState(false)
   const [editingCourse, setEditingCourse] = useState(null)
   const [defaultTimeSlot, setDefaultTimeSlot] = useState('')
@@ -22,7 +30,59 @@ const StudentCourses = () => {
   const [defaultTeacherId, setDefaultTeacherId] = useState('')
   const [defaultClassroom, setDefaultClassroom] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
-  const [weekOffset, setWeekOffset] = useState(0) // 相对本周的周数偏移，可任意整数（负=过去，0=本周，正=未来）
+  const [weekOffset, setWeekOffset] = useState(initialWeekOffset) // 相对本周的周数偏移，可任意整数（负=过去，0=本周，正=未来）
+
+  // 地址栏回车或前进/后退时，从 URL 恢复周偏移，使页面停留在所选周
+  useEffect(() => {
+    const month = searchParams.get('month')
+    const week = searchParams.get('week')
+    if (month && week) return // 有 month+week 时由下方 effect 处理，不把 weekOffset 置 0
+    const v = searchParams.get('weekOffset')
+    if (v === null || v === '') {
+      setWeekOffset(0)
+      return
+    }
+    const n = parseInt(v, 10)
+    if (Number.isFinite(n)) setWeekOffset(n)
+  }, [searchParams])
+
+  // 从课程页「返回预排课」带 month+week 时，计算对应 weekOffset 并替换 URL，使预排课停留在对应周
+  useEffect(() => {
+    const month = searchParams.get('month')
+    const week = searchParams.get('week')
+    if (!month || !week) return
+    const range = getCurrentWeekDateRange(month, week)
+    if (!range) return
+    const targetMonday = new Date(range.startDate)
+    targetMonday.setHours(0, 0, 0, 0)
+    const today = new Date()
+    const daysSinceMonday = (today.getDay() + 6) % 7
+    const thisMonday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - daysSinceMonday)
+    thisMonday.setHours(0, 0, 0, 0)
+    const diffMs = targetMonday.getTime() - thisMonday.getTime()
+    const offset = Math.round(diffMs / (7 * 24 * 60 * 60 * 1000))
+    setWeekOffset(offset)
+    const nextParams = new URLSearchParams(searchParams)
+    nextParams.delete('month')
+    nextParams.delete('week')
+    if (offset !== 0) nextParams.set('weekOffset', String(offset))
+    setSearchParams(nextParams, { replace: true })
+  }, [searchParams])
+
+  const setWeekOffsetAndUrl = useCallback((valueOrUpdater) => {
+    setWeekOffset((prev) => {
+      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater
+      const nextParams = new URLSearchParams(searchParams)
+      if (next === 0) {
+        nextParams.delete('weekOffset')
+      } else {
+        nextParams.set('weekOffset', String(next))
+      }
+      setSearchParams(nextParams, { replace: true })
+      return next
+    })
+  }, [searchParams, setSearchParams])
+
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
   // 筛选：是否标记、是否复制、是否截图
   const [filterMarked, setFilterMarked] = useState('all')   // 'all' | 'marked' | 'unmarked'
@@ -35,6 +95,7 @@ const StudentCourses = () => {
   const copyCacheRef = useRef(Object.create(null)) // 手机端：缓存 { text, count }，下次点击时同步复制（在用户手势内）
   const [copyFallbackModal, setCopyFallbackModal] = useState(null) // 复制失败时显示 { text, count }，用户可手动复制或点击按钮重试
   const SCHEDULED_STORAGE_KEY = 'studentCoursesScheduled'
+  const CONFIRMED_STORAGE_KEY = 'studentCoursesConfirmed'
   const autoMarkedStudentsRef = useRef(new Set()) // 记录已自动标记的学生ID，避免重复标记
   const [scheduledRows, setScheduledRows] = useState(() => {
     try {
@@ -46,6 +107,17 @@ const StudentCourses = () => {
     } catch (_) {}
     return new Set()
   }) // 已排课的行：Set of "studentId-courseId"
+  // 已确认的行：Set of "studentId-courseId-month-week"
+  const [confirmedRows, setConfirmedRows] = useState(() => {
+    try {
+      const raw = sessionStorage.getItem(CONFIRMED_STORAGE_KEY)
+      if (raw) {
+        const arr = JSON.parse(raw)
+        return new Set(Array.isArray(arr) ? arr : [])
+      }
+    } catch (_) {}
+    return new Set()
+  })
   const pageSize = 20
 
   // 获取已缴费需要排课的学生课程列表（每条为 student+course，同一学生多门课程为多条，全部展示）
@@ -544,6 +616,181 @@ const StudentCourses = () => {
     navigate(`/courses?student_id=${studentId}&course_id=${courseId}`)
   }
 
+  // 检查该学生当周所有排课是否都已确认
+  const checkStudentAllCoursesConfirmed = useCallback((studentId) => {
+    if (!currentWeekCourses || currentWeekCourses.length === 0) {
+      return false
+    }
+    
+    // 获取该学生当周的所有排课（排除删除状态）
+    const studentCourses = currentWeekCourses.filter(
+      (c) => 
+        String(c.student_id) === String(studentId) &&
+        c.status !== '删除'
+    )
+    
+    // 如果没有排课，返回 false
+    if (studentCourses.length === 0) {
+      return false
+    }
+    
+    // 检查是否所有排课都已确认
+    const allConfirmed = studentCourses.every((c) => c.is_confirmed === true)
+    
+    return allConfirmed
+  }, [currentWeekCourses])
+
+  // 确认：点击后跳转到课程页面，返回后如果所有课程都已确认则变为已确认
+  // 如果该学生当周所有课程都已确认，即使点击已确认按钮也不会变为确认
+  const handleConfirm = (studentId, courseId) => {
+    const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+    const targetWeek = getWeekInMonth(targetWeekDate).toString()
+    const key = `${studentId}-${courseId}-${targetMonth}-${targetWeek}`
+    
+    // 如果已确认，检查该学生当周所有课程是否都已确认
+    if (confirmedRows.has(key)) {
+      // 如果该学生当周所有课程都已确认，不允许取消确认
+      const allConfirmed = checkStudentAllCoursesConfirmed(studentId)
+      if (allConfirmed) {
+        // 不允许取消确认，保持已确认状态
+        return
+      }
+      
+      // 如果该学生当周有未确认的课程，允许取消确认
+      setConfirmedRows((prev) => {
+        const next = new Set(prev)
+        next.delete(key)
+        try {
+          sessionStorage.setItem(CONFIRMED_STORAGE_KEY, JSON.stringify([...next]))
+        } catch (_) {}
+        return next
+      })
+      return
+    }
+    
+    // 跳转到课程页面，传递学生ID、月份和周数
+    sessionStorage.setItem('fromStudentCoursesConfirm', 'true')
+    sessionStorage.setItem('confirmStudentId', studentId.toString())
+    sessionStorage.setItem('confirmCourseId', courseId.toString())
+    sessionStorage.setItem('confirmMonth', targetMonth)
+    sessionStorage.setItem('confirmWeek', targetWeek)
+    navigate(`/courses?student_id=${studentId}&month=${targetMonth}&week=${targetWeek}`)
+  }
+
+  // 检查从课程页面返回后是否需要更新确认状态（只依赖课程页设置的 allCoursesConfirmed 等标记）
+  const checkAndUpdateConfirmStatus = useCallback(() => {
+    const allCoursesConfirmed = sessionStorage.getItem('allCoursesConfirmed') === 'true'
+    const confirmStudentId = sessionStorage.getItem('confirmStudentId') || sessionStorage.getItem('confirmedStudentId')
+    const confirmCourseId = sessionStorage.getItem('confirmCourseId') || sessionStorage.getItem('confirmedCourseId')
+    const confirmMonth = sessionStorage.getItem('confirmMonth') || sessionStorage.getItem('confirmedMonth')
+    const confirmWeek = sessionStorage.getItem('confirmWeek') || sessionStorage.getItem('confirmedWeek')
+    
+    // 有“全部已确认”的标记且有学生/周信息即可（不要求 fromStudentCoursesConfirm）
+    if (!allCoursesConfirmed || !confirmStudentId || !confirmMonth || !confirmWeek) {
+      const fromConfirm = sessionStorage.getItem('fromStudentCoursesConfirm')
+      if (fromConfirm === 'true') {
+        sessionStorage.removeItem('fromStudentCoursesConfirm')
+        sessionStorage.removeItem('confirmStudentId')
+        sessionStorage.removeItem('confirmCourseId')
+        sessionStorage.removeItem('confirmMonth')
+        sessionStorage.removeItem('confirmWeek')
+        sessionStorage.removeItem('allCoursesConfirmed')
+        sessionStorage.removeItem('confirmedStudentId')
+        sessionStorage.removeItem('confirmedCourseId')
+        sessionStorage.removeItem('confirmedMonth')
+        sessionStorage.removeItem('confirmedWeek')
+      }
+      return false
+    }
+    
+    // 清除标记，避免重复更新
+    sessionStorage.removeItem('fromStudentCoursesConfirm')
+    sessionStorage.removeItem('confirmStudentId')
+    sessionStorage.removeItem('confirmCourseId')
+    sessionStorage.removeItem('confirmMonth')
+    sessionStorage.removeItem('confirmWeek')
+    sessionStorage.removeItem('allCoursesConfirmed')
+    sessionStorage.removeItem('confirmedStudentId')
+    sessionStorage.removeItem('confirmedCourseId')
+    sessionStorage.removeItem('confirmedMonth')
+    sessionStorage.removeItem('confirmedWeek')
+    
+    // 使当周课程数据重新拉取，按钮才能根据最新 is_confirmed 显示「已确认」
+    queryClient.invalidateQueries({ queryKey: ['courses', confirmMonth, confirmWeek] })
+    
+    // 若指定了某一门课的 courseId，只标记该课；否则标记该学生当周在本页列表中的所有课
+    if (confirmCourseId) {
+      const key = `${confirmStudentId}-${confirmCourseId}-${confirmMonth}-${confirmWeek}`
+      setConfirmedRows((prev) => {
+        const next = new Set([...prev, key])
+        try {
+          sessionStorage.setItem(CONFIRMED_STORAGE_KEY, JSON.stringify([...next]))
+        } catch (_) {}
+        return next
+      })
+    } else {
+      // 该学生当周全部确认：为当前列表中该学生的每门课都打上已确认
+      const studentCourseRows = courses.filter((c) => String(c.student_id) === String(confirmStudentId))
+      setConfirmedRows((prev) => {
+        const next = new Set(prev)
+        studentCourseRows.forEach((row) => {
+          next.add(`${row.student_id}-${row.course_id}-${confirmMonth}-${confirmWeek}`)
+        })
+        try {
+          sessionStorage.setItem(CONFIRMED_STORAGE_KEY, JSON.stringify([...next]))
+        } catch (_) {}
+        return next
+      })
+    }
+    return true
+  }, [courses, queryClient])
+
+  // 当路径变化时检查（从 /courses 返回时），并刷新当周课程数据以便按钮显示最新确认状态
+  useEffect(() => {
+    if (location.pathname === '/student-courses') {
+      checkAndUpdateConfirmStatus()
+      const month = targetWeekDate.toISOString().slice(0, 7)
+      const week = getWeekInMonth(targetWeekDate).toString()
+      queryClient.invalidateQueries({ queryKey: ['courses', month, week] })
+    }
+  }, [location.pathname, checkAndUpdateConfirmStatus, targetWeekDate, queryClient])
+
+  // 页面可见性变化时也检查（处理浏览器返回按钮的情况）
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && location.pathname === '/student-courses') {
+        // 延迟一点时间，确保页面完全加载
+        setTimeout(() => {
+          checkAndUpdateConfirmStatus()
+        }, 100)
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [location.pathname, checkAndUpdateConfirmStatus])
+
+  // 页面加载时也检查一次，以及数据加载完成后检查
+  useEffect(() => {
+    if (location.pathname === '/student-courses' && !isLoading) {
+      // 延迟一点时间，确保页面完全加载和数据已加载
+      setTimeout(() => {
+        checkAndUpdateConfirmStatus()
+      }, 300)
+    }
+  }, [isLoading, checkAndUpdateConfirmStatus]) // 当数据加载完成时也检查
+
+  // 当当前周的课程数据更新时也检查（确保能检测到确认状态的变化）
+  useEffect(() => {
+    if (location.pathname === '/student-courses' && currentWeekCourses.length > 0) {
+      setTimeout(() => {
+        checkAndUpdateConfirmStatus()
+      }, 200)
+    }
+  }, [currentWeekCourses, checkAndUpdateConfirmStatus])
+
   // 根据排课数据构建待复制文本，供复制和预取共用
   const buildCopyText = useCallback((coursesToCopy, weekLabel, timeSlotsData) => {
     if (!coursesToCopy || coursesToCopy.length === 0) return null
@@ -1021,7 +1268,7 @@ const StudentCourses = () => {
             </span>
             <div style={{ display: 'flex', gap: '8px', marginLeft: '8px' }}>
               <button
-                onClick={() => setWeekOffset((prev) => prev - 1)}
+                onClick={() => setWeekOffsetAndUrl((prev) => prev - 1)}
                 style={{
                   padding: '6px 16px',
                   fontSize: '14px',
@@ -1048,7 +1295,7 @@ const StudentCourses = () => {
                 上周
               </button>
               <button
-                onClick={() => setWeekOffset(0)}
+                onClick={() => setWeekOffsetAndUrl(0)}
                 style={{
                   padding: '6px 16px',
                   fontSize: '14px',
@@ -1075,7 +1322,7 @@ const StudentCourses = () => {
                 本周
               </button>
               <button
-                onClick={() => setWeekOffset((prev) => prev + 1)}
+                onClick={() => setWeekOffsetAndUrl((prev) => prev + 1)}
                 style={{
                   padding: '6px 16px',
                   fontSize: '14px',
@@ -1245,6 +1492,30 @@ const StudentCourses = () => {
                                 title={hasScheduledInCurrentWeek ? '点击恢复为排课' : '去排课'}
                               >
                                 {hasScheduledInCurrentWeek ? '已排课' : '排课'}
+                              </button>
+                            )
+                          })()}
+                          {hasFunctionPermission('student_courses', 'confirm') && (() => {
+                            // 仅以该生当周所有课程是否均已确认（接口数据）决定按钮显示
+                            const isConfirmed = checkStudentAllCoursesConfirmed(course.student_id)
+                            const buttonTitle = isConfirmed
+                              ? '该学生当周所有课程已确认，无法取消'
+                              : '确认'
+                            return (
+                              <button 
+                                onClick={() => handleConfirm(course.student_id, course.course_id)} 
+                                className="btn-link"
+                                style={{
+                                  marginRight: '8px',
+                                  color: isConfirmed ? '#ff9800' : '#28a745',
+                                  borderColor: isConfirmed ? '#ff9800' : '#28a745',
+                                  cursor: isConfirmed ? 'not-allowed' : 'pointer',
+                                  opacity: isConfirmed ? 0.7 : 1
+                                }}
+                                title={buttonTitle}
+                                disabled={isConfirmed}
+                              >
+                                {isConfirmed ? '已确认' : '确认'}
                               </button>
                             )
                           })()}

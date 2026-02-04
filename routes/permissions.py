@@ -85,6 +85,7 @@ MODULE_FUNCTIONS = {
     'student_courses': [
         {'code': 'view', 'name': '查看课程'},
         {'code': 'schedule', 'name': '去排课'},
+        {'code': 'confirm', 'name': '确认'},
         {'code': 'copy', 'name': '复制'},
         {'code': 'screenshot', 'name': '截图'},
         {'code': 'edit_default', 'name': '编辑默认排课'},

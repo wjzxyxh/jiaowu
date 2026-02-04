@@ -204,7 +204,17 @@ const Layout = () => {
           <h1 style={{ margin: 0 }}>教务管理系统</h1>
           {!isHomePage && (
             <Link
-              to={location.pathname === '/marketing/timetable' ? '/marketing' : fromStudentCourses && location.pathname === '/courses' ? '/student-courses' : '/'}
+              to={(() => {
+                if (location.pathname === '/marketing/timetable') return '/marketing'
+                if (fromStudentCourses && location.pathname === '/courses') {
+                  const params = new URLSearchParams(location.search)
+                  const month = params.get('month')
+                  const week = params.get('week')
+                  if (month && week) return `/student-courses?month=${encodeURIComponent(month)}&week=${encodeURIComponent(week)}`
+                  return '/student-courses'
+                }
+                return '/'
+              })()}
               className="back-home-btn"
               style={{
                 display: 'inline-flex',
