@@ -183,16 +183,6 @@ const Courses = () => {
     return list
   }, [courses, statusFilter, confirmFilter])
 
-  // 分页数据
-  const paginatedCourses = useMemo(() => {
-    if (viewMode === 'week') return validCourses
-    const start = (currentPage - 1) * pageSize
-    const end = start + pageSize
-    return validCourses.slice(start, end)
-  }, [validCourses, currentPage, viewMode])
-
-  const totalPages = Math.ceil(validCourses.length / pageSize)
-
   // 获取筛选选项
   const { data: teachers = [] } = useQuery({
     queryKey: ['teachers-for-course'],
@@ -203,6 +193,32 @@ const Courses = () => {
     queryKey: ['time-slots'],
     queryFn: () => othersService.getTimeSlots({ status: '启用' }),
   })
+
+  // 列表按日期先后、同日期按时段顺序排列，并计算分页（合并避免 sortedCourses 未定义）
+  const { sortedCourses, paginatedCourses, totalPages } = useMemo(() => {
+    const slotOrderMap = new Map()
+    ;(timeSlots || []).forEach((slot) => {
+      const order = slot.sort_order != null ? slot.sort_order : 999
+      slotOrderMap.set((slot.name || '').trim(), order)
+    })
+    const sorted = [...validCourses].sort((a, b) => {
+      const dateA = a.course_date || ''
+      const dateB = b.course_date || ''
+      if (dateA !== dateB) return dateA.localeCompare(dateB)
+      const orderA = slotOrderMap.get((a.time_slot || '').trim()) ?? 999
+      const orderB = slotOrderMap.get((b.time_slot || '').trim()) ?? 999
+      if (orderA !== orderB) return orderA - orderB
+      return (a.time_slot || '').localeCompare(b.time_slot || '')
+    })
+    const start = (currentPage - 1) * pageSize
+    const end = start + pageSize
+    const paginated = viewMode === 'week' ? sorted : sorted.slice(start, end)
+    return {
+      sortedCourses: sorted,
+      paginatedCourses: paginated,
+      totalPages: Math.ceil(sorted.length / pageSize),
+    }
+  }, [validCourses, timeSlots, currentPage, viewMode, pageSize])
 
   const { data: classrooms = [] } = useQuery({
     queryKey: ['classrooms'],

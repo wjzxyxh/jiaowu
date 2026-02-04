@@ -11,6 +11,11 @@ export const paymentService = {
     return api.post('/payments', data)
   },
 
+  // 更新缴费记录
+  updatePayment: async (id, data) => {
+    return api.put(`/payments/${id}`, data)
+  },
+
   // 删除缴费记录
   deletePayment: async (id) => {
     return api.delete(`/payments/${id}`)

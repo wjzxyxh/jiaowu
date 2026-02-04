@@ -581,9 +581,11 @@ def create_payment():
 
         course_name = course_obj.name
 
-        # 使用课程单价计算原始费用
-
-        original_amount = course_obj.unit_price * class_count
+        # 原始费用：优先使用前端传入的 original_amount（与用户输入一致，避免浮点误差），否则用课程单价×节数
+        if data.get('original_amount') is not None and data.get('original_amount') != '':
+            original_amount = round(float(data['original_amount']), 2)
+        else:
+            original_amount = round(float(course_obj.unit_price * class_count), 2)
 
     except (ValueError, TypeError):
 
@@ -592,17 +594,17 @@ def create_payment():
     
 
     try:
-        discount_rate = float(data.get('discount_rate', 0))
+        discount_rate = round(float(data.get('discount_rate', 0)), 2)
         # 允许优惠为负数，表示报更高的价格（加价）
     except (ValueError, TypeError):
         return jsonify({'error': '优惠力度格式错误'}), 400
     
     # 计算缴费金额：原始费用 - 优惠（优惠为负数时，实际是加价）
-    paid_amount = original_amount - discount_rate
+    paid_amount = round(original_amount - discount_rate, 2)
     if paid_amount < 0:
         return jsonify({'error': '缴纳费用不能为负数'}), 400
     
-    unit_price = paid_amount / class_count if class_count > 0 else 0
+    unit_price = round(paid_amount / class_count, 2) if class_count > 0 else 0
     payment_type = data.get('type', '缴费')
 
     
@@ -660,8 +662,65 @@ def create_payment():
     return jsonify(payment.to_dict()), 201
 
 
+@bp.route('/api/payments/<int:payment_id>', methods=['PUT'])
+@csrf.exempt
+@login_required
+@require_permission('edit')
+@handle_db_errors
+@validate_json
+def update_payment(payment_id):
+    """更新缴费记录（仅允许修改日期、节数、原始费用、优惠、备注）"""
+    payment = Payment.query.get_or_404(payment_id)
+    data = request.json or {}
 
+    try:
+        if 'payment_date' in data and data['payment_date']:
+            payment.payment_date = datetime.strptime(data['payment_date'], '%Y-%m-%d').date()
+    except (ValueError, TypeError):
+        return jsonify({'error': '缴费日期格式错误，应为YYYY-MM-DD格式'}), 400
 
+    try:
+        if 'class_count' in data:
+            class_count = int(data['class_count'])
+            if class_count <= 0:
+                return jsonify({'error': '报课节数必须大于0'}), 400
+            payment.class_count = class_count
+    except (ValueError, TypeError):
+        return jsonify({'error': '报课节数格式错误'}), 400
+
+    if 'original_amount' in data and data.get('original_amount') != '':
+        try:
+            payment.original_amount = round(float(data['original_amount']), 2)
+        except (ValueError, TypeError):
+            return jsonify({'error': '原始费用格式错误'}), 400
+
+    try:
+        discount_rate = round(float(data.get('discount_rate', payment.discount_rate or 0)), 2)
+        payment.discount_rate = discount_rate
+    except (ValueError, TypeError):
+        return jsonify({'error': '优惠力度格式错误'}), 400
+
+    paid_amount = round(payment.original_amount - payment.discount_rate, 2)
+    if paid_amount < 0:
+        return jsonify({'error': '缴纳费用不能为负数'}), 400
+    payment.paid_amount = paid_amount
+    payment.unit_price = round(paid_amount / payment.class_count, 2) if payment.class_count > 0 else 0
+
+    if 'remark' in data:
+        payment.remark = data['remark'] or ''
+
+    db.session.commit()
+    log_operation('payments', 'update', 'Payment', payment.id, f"{payment.student_name}-{payment.course_name or ''}")
+
+    student_id = payment.student_id
+    course_id = payment.course_id
+    payment_month = payment.payment_date.strftime('%Y-%m')
+    update_class_hours_stats(student_id, payment_month, course_id)
+    current_month = get_current_month()
+    if payment_month != current_month:
+        update_class_hours_stats(student_id, current_month, course_id)
+
+    return jsonify(payment.to_dict())
 
 
 @bp.route('/api/payments/<int:payment_id>', methods=['DELETE'])

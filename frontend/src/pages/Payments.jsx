@@ -23,6 +23,7 @@ const Payments = () => {
   const [showModal, setShowModal] = useState(false)
   const [paymentType, setPaymentType] = useState('缴费') // '缴费' 或 '退费'
   const [selectedStudentId, setSelectedStudentId] = useState(null) // 用于从提醒页面跳转
+  const [editingPayment, setEditingPayment] = useState(null) // 编辑时传入的缴费记录
 
   const perPage = 20
 
@@ -237,6 +238,20 @@ const Payments = () => {
     },
   })
 
+  const updateMutation = useMutation({
+    mutationFn: ({ id, data }) => paymentService.updatePayment(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries(['payments'])
+      queryClient.invalidateQueries(['stats'])
+      setShowModal(false)
+      setEditingPayment(null)
+      alert('保存成功！')
+    },
+    onError: (error) => {
+      alert('保存失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: paymentService.deletePayment,
     onSuccess: () => {
@@ -314,11 +329,20 @@ const Payments = () => {
   const handleAddPayment = () => {
     setPaymentType('缴费')
     setSelectedStudentId(null)
+    setEditingPayment(null)
     setShowModal(true)
   }
 
   const handleAddRefund = () => {
     setPaymentType('退费')
+    setSelectedStudentId(null)
+    setEditingPayment(null)
+    setShowModal(true)
+  }
+
+  const handleEditPayment = (p) => {
+    setPaymentType(p.type || '缴费')
+    setEditingPayment(p)
     setSelectedStudentId(null)
     setShowModal(true)
   }
@@ -628,6 +652,15 @@ const Payments = () => {
                       <td>{statusBadge}</td>
                       <td>{p.remark || '-'}</td>
                       <td>
+                        {hasFunctionPermission('payments', 'edit') && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{ marginRight: '8px' }}
+                            onClick={() => handleEditPayment(p)}
+                          >
+                            编辑
+                          </button>
+                        )}
                         {hasFunctionPermission('payments', 'delete') && (
                           <button className="btn btn-danger" onClick={() => handleDelete(p.id)}>
                             删除
@@ -761,6 +794,7 @@ const Payments = () => {
           onClose={() => {
             setShowModal(false)
             setSelectedStudentId(null)
+            setEditingPayment(null)
           }}
           paymentType={paymentType}
           students={students}
@@ -768,8 +802,13 @@ const Payments = () => {
           stats={statsData}
           financeConfigs={financeConfigs}
           selectedStudentId={selectedStudentId}
-          onSubmit={(data) => createMutation.mutate(data)}
-          isLoading={createMutation.isLoading}
+          editingPayment={editingPayment}
+          onSubmit={(data) =>
+            editingPayment
+              ? updateMutation.mutate({ id: editingPayment.id, data })
+              : createMutation.mutate(data)
+          }
+          isLoading={createMutation.isLoading || updateMutation.isLoading}
         />
       )}
     </div>
@@ -786,6 +825,7 @@ const PaymentModal = ({
   stats,
   financeConfigs,
   selectedStudentId,
+  editingPayment,
   onSubmit,
   isLoading,
 }) => {
@@ -796,8 +836,10 @@ const PaymentModal = ({
   const [discountRate, setDiscountRate] = useState('')
   const [paidAmount, setPaidAmount] = useState('')
   const [remark, setRemark] = useState('')
+  const [paymentDate, setPaymentDate] = useState('')
 
   const reminderThreshold = financeConfigs.find((c) => c.key === 'min_hours_for_reminder')?.value || 3
+  const isEditMode = !!editingPayment
 
   // 创建剩余课时映射
   const remainingHoursMap = useMemo(() => {
@@ -811,16 +853,30 @@ const PaymentModal = ({
     return map
   }, [stats])
 
-  // 当模态框打开时，设置选中的学生
+  // 编辑模式：用 editingPayment 预填表单
   useEffect(() => {
-    if (isOpen && selectedStudentId) {
+    if (isOpen && editingPayment) {
+      setSelectedStudent(String(editingPayment.student_id))
+      setSelectedCourse(editingPayment.course_id != null ? String(editingPayment.course_id) : '')
+      setClassCount(String(editingPayment.class_count ?? ''))
+      setOriginalAmount(editingPayment.original_amount != null ? String(editingPayment.original_amount) : '')
+      setDiscountRate(editingPayment.discount_rate != null ? String(editingPayment.discount_rate) : '')
+      setPaidAmount(editingPayment.paid_amount != null ? String(editingPayment.paid_amount) : '')
+      setRemark(editingPayment.remark || '')
+      setPaymentDate(editingPayment.payment_date || new Date().toISOString().split('T')[0])
+    }
+  }, [isOpen, editingPayment])
+
+  // 当模态框打开时（非编辑），设置选中的学生
+  useEffect(() => {
+    if (isOpen && !editingPayment && selectedStudentId) {
       setSelectedStudent(selectedStudentId.toString())
-    } else if (isOpen) {
+    } else if (isOpen && !editingPayment) {
       setSelectedStudent('')
     }
-  }, [isOpen, selectedStudentId])
+  }, [isOpen, selectedStudentId, editingPayment])
 
-  // 重置表单
+  // 重置表单（关闭时或非编辑打开时）
   useEffect(() => {
     if (!isOpen) {
       setSelectedStudent('')
@@ -830,8 +886,11 @@ const PaymentModal = ({
       setDiscountRate('')
       setPaidAmount('')
       setRemark('')
+      setPaymentDate('')
+    } else if (!editingPayment) {
+      setPaymentDate(new Date().toISOString().split('T')[0])
     }
-  }, [isOpen])
+  }, [isOpen, editingPayment])
 
   // 计算缴费金额
   useEffect(() => {

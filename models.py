@@ -360,6 +360,8 @@ class Payment(db.Model):
     course = db.relationship('Course', backref='payments')
     
     def to_dict(self):
+        def _round2(v):
+            return round(float(v), 2) if v is not None else None
         return {
             'id': self.id,
             'payment_date': self.payment_date.strftime('%Y-%m-%d') if self.payment_date else None,
@@ -367,11 +369,11 @@ class Payment(db.Model):
             'student_name': self.student_name,
             'course_id': self.course_id,
             'course_name': self.course_name,
-            'original_amount': self.original_amount,
-            'discount_rate': self.discount_rate,
-            'paid_amount': self.paid_amount,
+            'original_amount': _round2(self.original_amount),
+            'discount_rate': _round2(self.discount_rate),
+            'paid_amount': _round2(self.paid_amount),
             'class_count': self.class_count,
-            'unit_price': self.unit_price,
+            'unit_price': _round2(self.unit_price),
             'remark': self.remark,
             'type': self.type or '缴费',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
