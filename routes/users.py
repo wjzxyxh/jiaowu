@@ -10,7 +10,7 @@ from models import (
     TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
     TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
     TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
-    OperationLog, Notification
+    OperationLog, Notification, UserPermission
 )
 from utils import (
     allowed_file, get_original_filename, get_safe_storage_filename,
@@ -264,6 +264,9 @@ def delete_user(user_id):
         
 
         username = user.username
+
+        # 删除用户相关的权限记录（必须在删除用户之前）
+        UserPermission.query.filter_by(user_id=user_id).delete()
 
         db.session.delete(user)
 

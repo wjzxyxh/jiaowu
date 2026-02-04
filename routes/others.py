@@ -77,13 +77,6 @@ def get_all_courses():
         
         # 确认状态：'' 全部 | 'true' 已确认 | 'false' 未确认
         filter_is_confirmed = request.args.get('is_confirmed', '')
-        
-        # 获取排序参数（升序asc或降序desc，默认为asc）
-        order_by = request.args.get('order_by', 'asc').lower()
-        if order_by not in ['asc', 'desc']:
-            order_by = 'asc'  # 默认升序
-
-        
 
         # 构建基础查询（包含试课排课，试课排课可能关联占位学生或真实学生）
         from models import Student
@@ -158,13 +151,14 @@ def get_all_courses():
         elif filter_is_confirmed == 'false':
             query = query.filter(StudentCourse.is_confirmed == False)
 
-        # 按日期和时段排序（支持升序/降序）
-        if order_by == 'asc':
-            query = query.order_by(StudentCourse.course_date.asc(), StudentCourse.time_slot)
-        else:
-            query = query.order_by(StudentCourse.course_date.desc(), StudentCourse.time_slot)
-
-        
+        # 按日期先后、同日期按时段顺序排列：左连时段表按 sort_order 排序
+        # SQLite 不支持 NULLS LAST，但升序排序时 NULL 值默认排在最后，符合需求
+        query = query.outerjoin(TimeSlot, StudentCourse.time_slot == TimeSlot.name)
+        query = query.order_by(
+            StudentCourse.course_date.asc(),
+            TimeSlot.sort_order.asc(),
+            StudentCourse.time_slot.asc()
+        )
 
         # 获取总数
         total = query.count()

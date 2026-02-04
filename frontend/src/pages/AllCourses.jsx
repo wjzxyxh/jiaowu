@@ -22,16 +22,18 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const hasOpenedGoToScheduleRef = React.useRef(false)
 
   const [page, setPage] = useState(1)
+  // 获取当前年份并设置默认日期范围
+  const currentYear = new Date().getFullYear()
   const [filters, setFilters] = useState({
     search: '',
     teacher: '',
     subject: '',
     grade: '',
-    date_start: '',
-    date_end: '',
+    year: String(currentYear), // 年份筛选：默认当前年份
+    date_start: `${currentYear}-01-01`, // 默认当前年1月1日
+    date_end: `${currentYear}-12-31`, // 默认当前年12月31日
     status: '',
     is_confirmed: 'false', // '' 全部 | 'true' 已确认 | 'false' 未确认（默认未确认）
-    order_by: 'asc',
   })
   const [searchInput, setSearchInput] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
@@ -57,12 +59,13 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     setShowAddModal(true)
   }, [openAddModalOnMount, initialStudentId, initialCourseId])
 
-  // 获取排课数据（is_confirmed 为空时不传，避免后端收到空字符串）
+  // 获取排课数据（is_confirmed 为空时不传，避免后端收到空字符串；排序由后端固定为日期+时段）
   const { data, isLoading, error } = useQuery({
     queryKey: ['all-courses', page, filters],
     queryFn: () => {
       const params = { page, per_page: pageSize, ...filters }
       if (!params.is_confirmed) delete params.is_confirmed
+      delete params.order_by
       return allCoursesService.getAllCourses(params)
     },
   })
@@ -183,6 +186,8 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
             const next = { ...prev }
             next.date_start = prev.date_start ? (prev.date_start < minDate ? prev.date_start : minDate) : minDate
             next.date_end = prev.date_end ? (prev.date_end > maxDate ? prev.date_end : maxDate) : maxDate
+            // 自动调整日期时清空年份筛选（因为日期范围可能不是完整年份）
+            next.year = ''
             return next
           })
           setPage(1)
@@ -265,7 +270,19 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
 
   // 处理筛选变化
   const handleFilterChange = (key, value) => {
-    setFilters({ ...filters, [key]: value })
+    const newFilters = { ...filters, [key]: value }
+    // 如果选择年份，自动设置该年的开始和结束日期
+    if (key === 'year') {
+      if (value) {
+        const year = parseInt(value)
+        newFilters.date_start = `${year}-01-01`
+        newFilters.date_end = `${year}-12-31`
+      } else {
+        newFilters.date_start = ''
+        newFilters.date_end = ''
+      }
+    }
+    setFilters(newFilters)
     setPage(1)
   }
 
@@ -276,14 +293,24 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       teacher: '',
       subject: '',
       grade: '',
+      year: '',
       date_start: '',
       date_end: '',
       status: '',
       is_confirmed: 'false',
-      order_by: 'asc',
     })
     setPage(1)
   }
+
+  // 生成年份选项（当前年份往前10年，往后2年）
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    const years = []
+    for (let i = currentYear + 2; i >= currentYear - 10; i--) {
+      years.push(i)
+    }
+    return years
+  }, [])
 
   // 全选/取消全选
   const toggleSelectAll = () => {
@@ -576,18 +603,14 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
           </select>
         </div>
         <div className="filter-group">
-          <label>开始：</label>
-          <input
-            type="date"
-            value={filters.date_start}
-            onChange={(e) => handleFilterChange('date_start', e.target.value)}
-          />
-          <label>结束：</label>
-          <input
-            type="date"
-            value={filters.date_end}
-            onChange={(e) => handleFilterChange('date_end', e.target.value)}
-          />
+          <select value={filters.year} onChange={(e) => handleFilterChange('year', e.target.value)}>
+            <option value="">全部年份</option>
+            {yearOptions.map((year) => (
+              <option key={year} value={String(year)}>
+                {year}年
+              </option>
+            ))}
+          </select>
         </div>
         <div className="filter-group">
           <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
@@ -602,13 +625,6 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
             <option value="">全部确认状态</option>
             <option value="false">未确认</option>
             <option value="true">已确认</option>
-          </select>
-        </div>
-        <div className="filter-group">
-          <label>排序：</label>
-          <select value={filters.order_by} onChange={(e) => handleFilterChange('order_by', e.target.value)}>
-            <option value="desc">日期降序（最新在前）</option>
-            <option value="asc">日期升序（最早在前）</option>
           </select>
         </div>
         <div className="filter-group filter-group-actions">
