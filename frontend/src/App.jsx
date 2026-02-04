@@ -1,6 +1,7 @@
 import React from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './contexts/AuthContext'
+import { usePermissions } from './hooks/usePermissions'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Students from './pages/Students'
@@ -32,6 +33,31 @@ function PrivateRoute({ children }) {
   return user ? children : <Navigate to="/login" replace />
 }
 
+function ProtectedRoute({ children, moduleCode, requireAdmin = false }) {
+  const { user, loading } = useAuth()
+  const { hasModulePermission, isAdmin, isLoading } = usePermissions()
+
+  if (loading || isLoading) {
+    return <div className="loading">加载中...</div>
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+
+  // 如果要求管理员权限
+  if (requireAdmin && !isAdmin) {
+    return <Navigate to="/" replace />
+  }
+
+  // 如果需要模块权限检查
+  if (moduleCode && !hasModulePermission(moduleCode)) {
+    return <Navigate to="/" replace />
+  }
+
+  return children
+}
+
 function App() {
   return (
     <Routes>
@@ -45,21 +71,126 @@ function App() {
         }
       >
         <Route index element={<Dashboard />} />
-        <Route path="students" element={<Students />} />
-        <Route path="teachers" element={<Teachers />} />
-        <Route path="payments" element={<Payments />} />
-        <Route path="stats" element={<Stats />} />
-        <Route path="finance" element={<Finance />} />
-        <Route path="teacher-hours" element={<TeacherHours />} />
-        <Route path="calendar" element={<Calendar />} />
-        <Route path="all-courses" element={<AllCourses />} />
-        <Route path="student-courses" element={<StudentCourses />} />
-        <Route path="courses-manage" element={<CoursesManage />} />
-        <Route path="others-manage" element={<OthersManage />} />
-        <Route path="marketing" element={<Marketing />} />
-        <Route path="marketing/timetable" element={<TimetablePage />} />
-        <Route path="student-list" element={<StudentList />} />
-        <Route path="permissions" element={<Permissions />} />
+        <Route 
+          path="students" 
+          element={
+            <ProtectedRoute moduleCode="students">
+              <Students />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="teachers" 
+          element={
+            <ProtectedRoute moduleCode="teachers">
+              <Teachers />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="payments" 
+          element={
+            <ProtectedRoute moduleCode="payments">
+              <Payments />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="stats" 
+          element={
+            <ProtectedRoute moduleCode="stats">
+              <Stats />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="finance" 
+          element={
+            <ProtectedRoute moduleCode="finance">
+              <Finance />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="teacher-hours" 
+          element={
+            <ProtectedRoute moduleCode="teacher_hours">
+              <TeacherHours />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="calendar" 
+          element={
+            <ProtectedRoute moduleCode="calendar">
+              <Calendar />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="all-courses" 
+          element={
+            <ProtectedRoute moduleCode="all_courses">
+              <AllCourses />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="student-courses" 
+          element={
+            <ProtectedRoute moduleCode="student_courses">
+              <StudentCourses />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="courses-manage" 
+          element={
+            <ProtectedRoute moduleCode="courses_manage">
+              <CoursesManage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="others-manage" 
+          element={
+            <ProtectedRoute moduleCode="others_manage">
+              <OthersManage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="marketing" 
+          element={
+            <ProtectedRoute moduleCode="marketing">
+              <Marketing />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="marketing/timetable" 
+          element={
+            <ProtectedRoute moduleCode="marketing">
+              <TimetablePage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="student-list" 
+          element={
+            <ProtectedRoute moduleCode="student_list">
+              <StudentList />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="permissions" 
+          element={
+            <ProtectedRoute requireAdmin={true}>
+              <Permissions />
+            </ProtectedRoute>
+          } 
+        />
       </Route>
       <Route
         path="/courses"
@@ -69,7 +200,14 @@ function App() {
           </PrivateRoute>
         }
       >
-        <Route index element={<Courses />} />
+        <Route 
+          index 
+          element={
+            <ProtectedRoute moduleCode="courses">
+              <Courses />
+            </ProtectedRoute>
+          } 
+        />
       </Route>
     </Routes>
   )

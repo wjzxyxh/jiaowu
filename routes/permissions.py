@@ -25,7 +25,6 @@ MODULE_FUNCTIONS = {
     ],
     'marketing': [
         {'code': 'view', 'name': '查看线索'},
-        {'code': 'add', 'name': '新增学生'},
         {'code': 'edit', 'name': '编辑线索'},
         {'code': 'delete', 'name': '删除线索'},
         {'code': 'schedule', 'name': '排课'},
