@@ -22,6 +22,7 @@ const StudentCourses = () => {
   const [defaultTeacherId, setDefaultTeacherId] = useState('')
   const [defaultClassroom, setDefaultClassroom] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
+  const [weekOffset, setWeekOffset] = useState(0) // 相对本周的周数偏移，可任意整数（负=过去，0=本周，正=未来）
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
   // 筛选：是否标记、是否复制、是否截图
   const [filterMarked, setFilterMarked] = useState('all')   // 'all' | 'marked' | 'unmarked'
@@ -34,6 +35,7 @@ const StudentCourses = () => {
   const copyCacheRef = useRef(Object.create(null)) // 手机端：缓存 { text, count }，下次点击时同步复制（在用户手势内）
   const [copyFallbackModal, setCopyFallbackModal] = useState(null) // 复制失败时显示 { text, count }，用户可手动复制或点击按钮重试
   const SCHEDULED_STORAGE_KEY = 'studentCoursesScheduled'
+  const autoMarkedStudentsRef = useRef(new Set()) // 记录已自动标记的学生ID，避免重复标记
   const [scheduledRows, setScheduledRows] = useState(() => {
     try {
       const raw = sessionStorage.getItem(SCHEDULED_STORAGE_KEY)
@@ -77,6 +79,82 @@ const StudentCourses = () => {
 
   const totalPages = Math.max(1, Math.ceil(filteredCourses.length / pageSize))
 
+  // 计算日期所在的周数（以每个月的第一个周一为第1周的开始）
+  const getWeekInMonth = (date) => {
+    const year = date.getFullYear()
+    const month = date.getMonth()
+    const dayOfMonth = date.getDate()
+    
+    // 找到当月第一个周一
+    const firstDay = new Date(year, month, 1)
+    const firstDayWeekday = firstDay.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
+    
+    // 计算到第一个周一需要多少天
+    let offset = 0
+    if (firstDayWeekday === 0) {
+      offset = 1 // 周日，第一个周一是第二天
+    } else if (firstDayWeekday === 1) {
+      offset = 0 // 周一，第一个周一就是第一天
+    } else {
+      offset = 8 - firstDayWeekday // 周二到周六
+    }
+    
+    const firstMonday = new Date(year, month, 1 + offset)
+    
+    // 如果当前日期在第一个周一之前，返回1（或者可以返回0表示不属于该月的周）
+    if (dayOfMonth < firstMonday.getDate()) {
+      return 1
+    }
+    
+    // 计算从第一个周一开始过了多少天
+    const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
+    // 计算是第几周（第1周从0天开始，第2周从7天开始，...）
+    const weekNum = Math.floor(daysFromFirstMonday / 7) + 1
+    
+    return Math.min(weekNum, 5) // 最多5周
+  }
+
+  // 计算当前周的日期范围（以每个月的第一个周一为第1周的开始）
+  const getCurrentWeekDateRange = (month, week) => {
+    if (!month || !week) return null
+    const [year, monthNum] = month.split('-').map(Number)
+    const weekNum = parseInt(week)
+    
+    // 找到当月第一个周一
+    const firstDay = new Date(year, monthNum - 1, 1)
+    const firstDayWeekday = firstDay.getDay() // 0=Sunday, 1=Monday, ..., 6=Saturday
+    
+    // 计算到第一个周一需要多少天
+    let offset = 0
+    if (firstDayWeekday === 0) {
+      offset = 1 // 周日，第一个周一是第二天
+    } else if (firstDayWeekday === 1) {
+      offset = 0 // 周一，第一个周一就是第一天
+    } else {
+      offset = 8 - firstDayWeekday // 周二到周六
+    }
+    
+    const firstMonday = new Date(year, monthNum - 1, 1 + offset)
+    
+    // 计算第weekNum周的开始日期（第1周从第一个周一开始）
+    const startDate = new Date(firstMonday)
+    startDate.setDate(firstMonday.getDate() + (weekNum - 1) * 7)
+    
+    // 计算第weekNum周的结束日期（周一到周日，共7天）
+    const endDate = new Date(startDate)
+    endDate.setDate(startDate.getDate() + 6)
+    
+    return { startDate, endDate, year, month: monthNum }
+  }
+
+  // 计算目标周的日期（根据 weekOffset：-1=上周，0=本周，1=下周）
+  const targetWeekDate = useMemo(() => {
+    const today = new Date()
+    const targetDate = new Date(today)
+    targetDate.setDate(today.getDate() + weekOffset * 7)
+    return targetDate
+  }, [weekOffset])
+
   // 获取时段列表（用于编辑默认排课）
   const { data: timeSlots = [] } = useQuery({
     queryKey: ['time-slots', '启用'],
@@ -100,22 +178,133 @@ const StudentCourses = () => {
     enabled: showModal,
   })
 
-  // 预取当前页学生的当周排课数据，便于「复制」时一次点击即可同步复制（在用户手势内）
+  // 预取当前页学生的选择周的排课数据，便于「复制」时一次点击即可同步复制（在用户手势内）
   const studentWeekCoursesKey = (month, week, studentId) => ['student-week-courses', month, week, studentId]
   useEffect(() => {
     if (!paginatedCourses.length) return
-    const today = new Date()
-    const month = today.toISOString().slice(0, 7)
-    const week = getWeekInMonth(today).toString()
+    const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+    const targetWeek = getWeekInMonth(targetWeekDate).toString()
     const studentIds = [...new Set(paginatedCourses.map((c) => c.student_id))]
     studentIds.forEach((sid) => {
       queryClient.prefetchQuery({
-        queryKey: studentWeekCoursesKey(month, week, sid),
-        queryFn: () => courseService.getCourses({ month, week, student_id: sid }),
+        queryKey: studentWeekCoursesKey(targetMonth, targetWeek, sid),
+        queryFn: () => courseService.getCourses({ month: targetMonth, week: targetWeek, student_id: sid }),
         staleTime: 2 * 60 * 1000,
       })
     })
-  }, [paginatedCourses, queryClient])
+  }, [paginatedCourses, queryClient, targetWeekDate])
+
+  // 查询当前选择周的所有排课数据（用于判断"已排课"状态）
+  const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+  const targetWeek = getWeekInMonth(targetWeekDate).toString()
+  const { data: currentWeekCourses = [] } = useQuery({
+    queryKey: ['courses', targetMonth, targetWeek],
+    queryFn: () => courseService.getCourses({ month: targetMonth, week: targetWeek }),
+    staleTime: 2 * 60 * 1000,
+  })
+
+  // 计算当前选择周有排课的学生ID集合
+  const studentsWithCoursesInCurrentWeek = useMemo(() => {
+    const studentsSet = new Set()
+    currentWeekCourses.forEach((course) => {
+      if (course.status !== '删除' && course.student_id) {
+        studentsSet.add(course.student_id)
+      }
+    })
+    return studentsSet
+  }, [currentWeekCourses])
+
+  // 计算当前选择周内每个（学生-课程）的当周已消耗课时（只统计已确认的排课：正常+1，请假-1，跑空+0.5）
+  const consumedInCurrentWeekByKey = useMemo(() => {
+    const map = {}
+    currentWeekCourses.forEach((record) => {
+      if (record.status === '删除' || !record.student_id || !record.course_id) return
+      if (!record.is_confirmed) return // 未确认的课程不计入已消耗
+      const key = `${record.student_id}-${record.course_id}`
+      if (!map[key]) map[key] = 0
+      if (record.status === '正常') map[key] += 1
+      else if (record.status === '请假') map[key] -= 1
+      else if (record.status === '跑空') map[key] += 0.5
+    })
+    return map
+  }, [currentWeekCourses])
+
+  // 自动标记：如果选择的周有学生的排课，则自动将该学生标记为已排课（excluded_from_scheduling = true）
+  useEffect(() => {
+    if (!courses.length || isLoading) return
+
+    const checkAndAutoMark = async () => {
+      try {
+        const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+        const targetWeek = getWeekInMonth(targetWeekDate).toString()
+
+        // 查询选择的周所有排课记录（不指定 student_id，获取所有学生的排课）
+        const weekCourses = await courseService.getCourses({
+          month: targetMonth,
+          week: targetWeek,
+        })
+
+        // 找出当周有排课的学生ID集合（排除已删除的排课）
+        const studentsWithCourses = new Set()
+        weekCourses.forEach((course) => {
+          if (course.status !== '删除' && course.student_id) {
+            studentsWithCourses.add(course.student_id)
+          }
+        })
+
+        // 对于当周有排课的学生，如果还未标记，则自动标记
+        const studentsToMark = []
+        const uniqueStudentIds = [...new Set(courses.map((c) => c.student_id))]
+        uniqueStudentIds.forEach((studentId) => {
+          const course = courses.find((c) => c.student_id === studentId)
+          if (
+            studentsWithCourses.has(studentId) &&
+            course &&
+            !course.excluded_from_scheduling &&
+            !autoMarkedStudentsRef.current.has(`${studentId}-${targetMonth}-${targetWeek}`)
+          ) {
+            studentsToMark.push(studentId)
+            autoMarkedStudentsRef.current.add(`${studentId}-${targetMonth}-${targetWeek}`)
+          }
+        })
+
+        // 批量标记这些学生
+        if (studentsToMark.length > 0) {
+          console.log(`[自动标记] 发现 ${studentsToMark.length} 个学生需要自动标记:`, studentsToMark)
+          // 注意：不再更新 scheduledRows，因为"已排课"状态现在基于实时查询当前周的排课数据
+
+          // 批量标记所有学生（直接调用 API，避免触发 markMutation 的 onSuccess）
+          const markPromises = studentsToMark.map(async (studentId) => {
+            try {
+              await studentCoursesService.updateExcludeFromScheduling(studentId, true)
+            } catch (err) {
+              console.warn(`[自动标记] 标记学生 ${studentId} 失败:`, err)
+              autoMarkedStudentsRef.current.delete(`${studentId}-${targetMonth}-${targetWeek}`) // 标记失败时从记录中移除，允许重试
+              throw err
+            }
+          })
+          
+          try {
+            await Promise.all(markPromises)
+            console.log(`[自动标记] 成功标记 ${studentsToMark.length} 个学生`)
+            // 所有标记完成后，强制刷新数据以确保 UI 更新
+            queryClient.invalidateQueries(['paid-courses-need-scheduling'])
+            // 强制重新获取数据
+            await queryClient.refetchQueries({ queryKey: ['paid-courses-need-scheduling'] })
+            console.log('[自动标记] 数据已刷新')
+          } catch (err) {
+            console.error('[自动标记] 批量标记过程中出错:', err)
+          }
+        }
+      } catch (error) {
+        console.error('检查并自动标记失败:', error)
+      }
+    }
+
+    // 延迟执行，避免频繁调用
+    const timer = setTimeout(checkAndAutoMark, 500)
+    return () => clearTimeout(timer)
+  }, [courses, isLoading, queryClient, targetWeekDate])
 
   // 获取默认排课设置
   const { data: defaultScheduleData } = useQuery({
@@ -155,10 +344,17 @@ const StudentCourses = () => {
   })
 
   const handleToggleMark = (course) => {
+    const newExcluded = !course.excluded_from_scheduling
     markMutation.mutate({
       studentId: course.student_id,
-      excluded: !course.excluded_from_scheduling,
+      excluded: newExcluded,
     })
+    // 如果手动取消标记，清除自动标记记录，以便选择的周有排课时能再次自动标记
+    if (!newExcluded) {
+      const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+      const targetWeek = getWeekInMonth(targetWeekDate).toString()
+      autoMarkedStudentsRef.current.delete(`${course.student_id}-${targetMonth}-${targetWeek}`)
+    }
   }
 
   // 判断当前筛选结果是否全部已标记
@@ -348,66 +544,6 @@ const StudentCourses = () => {
     navigate(`/courses?student_id=${studentId}&course_id=${courseId}`)
   }
 
-  // 计算当前日期所在的周数
-  const getWeekInMonth = (date) => {
-    const year = date.getFullYear()
-    const month = date.getMonth()
-    const dayOfMonth = date.getDate()
-    const firstDay = new Date(year, month, 1)
-    const firstDayWeekday = firstDay.getDay()
-    if (firstDayWeekday === 0) {
-      if (dayOfMonth === 1) return 1
-      const firstMonday = new Date(year, month, 2)
-      const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
-      const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
-      return Math.min(weekNum, 5)
-    } else {
-      const daysToSunday = 7 - firstDayWeekday
-      const firstSunday = new Date(year, month, 1 + daysToSunday)
-      if (dayOfMonth <= firstSunday.getDate()) return 1
-      const daysToMonday = 7 - firstDayWeekday
-      const firstMonday = new Date(year, month, 1 + daysToMonday)
-      const daysFromFirstMonday = dayOfMonth - firstMonday.getDate()
-      const weekNum = Math.floor(daysFromFirstMonday / 7) + 2
-      return Math.min(weekNum, 5)
-    }
-  }
-
-  // 计算当前周的日期范围
-  const getCurrentWeekDateRange = (month, week) => {
-    if (!month || !week) return null
-    const [year, monthNum] = month.split('-').map(Number)
-    const weekNum = parseInt(week)
-    const firstDay = new Date(year, monthNum - 1, 1)
-    const firstDayWeekday = firstDay.getDay()
-    const lastDay = new Date(year, monthNum, 0)
-    const monthEnd = lastDay.getDate()
-    let startDate, endDate
-    if (weekNum === 1) {
-      if (firstDayWeekday === 0) {
-        startDate = new Date(year, monthNum - 1, 1)
-        endDate = new Date(year, monthNum - 1, 1)
-      } else {
-        const daysToSunday = 7 - firstDayWeekday
-        const firstSundayDate = Math.min(1 + daysToSunday, monthEnd)
-        startDate = new Date(year, monthNum - 1, 1)
-        endDate = new Date(year, monthNum - 1, firstSundayDate)
-      }
-    } else {
-      let daysToMonday
-      if (firstDayWeekday === 0) daysToMonday = 1
-      else if (firstDayWeekday === 1) daysToMonday = 0
-      else daysToMonday = 8 - firstDayWeekday
-      const firstMondayDate = 1 + daysToMonday
-      const startDateNum = firstMondayDate + (weekNum - 2) * 7
-      if (startDateNum > monthEnd) return null
-      startDate = new Date(year, monthNum - 1, startDateNum)
-      const endDateNum = Math.min(startDateNum + 6, monthEnd)
-      endDate = new Date(year, monthNum - 1, endDateNum)
-    }
-    return { startDate, endDate, year, month: monthNum }
-  }
-
   // 根据排课数据构建待复制文本，供复制和预取共用
   const buildCopyText = useCallback((coursesToCopy, weekLabel, timeSlotsData) => {
     if (!coursesToCopy || coursesToCopy.length === 0) return null
@@ -569,7 +705,7 @@ const StudentCourses = () => {
   }, [fallbackCopyTextToClipboard, buildCoursesCopyText])
 
   // 复制课程：优先用预取缓存同步复制（一次点击）；无缓存时再拉取并复制
-  const handleCopyCourses = async (studentId) => {
+  const handleCopyCourses = useCallback(async (studentId) => {
     if (copiedStudents.has(studentId)) {
       setCopiedStudents((prev) => {
         const next = new Set(prev)
@@ -579,20 +715,19 @@ const StudentCourses = () => {
       return
     }
 
-    const today = new Date()
-    const currentMonth = today.toISOString().slice(0, 7)
-    const currentWeek = getWeekInMonth(today).toString()
-    const cacheKey = `${studentId}-${currentMonth}-${currentWeek}`
+    const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+    const targetWeek = getWeekInMonth(targetWeekDate).toString()
+    const cacheKey = `${studentId}-${targetMonth}-${targetWeek}`
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
 
     // 1）预取缓存或上次失败缓存的文本：在用户手势内同步复制（一次点击）
-    const cachedData = queryClient.getQueryData(studentWeekCoursesKey(currentMonth, currentWeek, studentId))
+    const cachedData = queryClient.getQueryData(studentWeekCoursesKey(targetMonth, targetWeek, studentId))
     if (cachedData && Array.isArray(cachedData)) {
       const validCourses = cachedData.filter((c) => c.status !== '删除')
       const studentCourses = validCourses.filter((c) => String(c.student_id) === String(studentId))
-      const weekDateRange = getCurrentWeekDateRange(currentMonth, currentWeek)
+      const weekDateRange = getCurrentWeekDateRange(targetMonth, targetWeek)
       if (weekDateRange) {
-        const weekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${currentWeek}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
+        const weekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${targetWeek}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
         const built = buildCoursesCopyText(studentCourses, weekInfoLabel, timeSlots)
         if (built) {
           const { textToCopy, count } = built
@@ -621,18 +756,18 @@ const StudentCourses = () => {
 
     // 2）无缓存：拉取数据后复制，并写入缓存供下次一次点击复制
     try {
-      const weekDateRange = getCurrentWeekDateRange(currentMonth, currentWeek)
+      const weekDateRange = getCurrentWeekDateRange(targetMonth, targetWeek)
       if (!weekDateRange) {
-        alert('无法计算当前周的日期范围')
+        alert('无法计算选择周的日期范围')
         return
       }
-      const weekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${currentWeek}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
+      const weekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${targetWeek}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
       const coursesData = await courseService.getCourses({
-        month: currentMonth,
-        week: currentWeek,
+        month: targetMonth,
+        week: targetWeek,
         student_id: studentId,
       })
-      queryClient.setQueryData(studentWeekCoursesKey(currentMonth, currentWeek, studentId), coursesData)
+      queryClient.setQueryData(studentWeekCoursesKey(targetMonth, targetWeek, studentId), coursesData)
       const validCourses = (coursesData || []).filter((c) => c.status !== '删除')
       const studentCourses = validCourses.filter((c) => String(c.student_id) === String(studentId))
       const built = buildCoursesCopyText(studentCourses, weekInfoLabel, timeSlots)
@@ -659,7 +794,7 @@ const StudentCourses = () => {
       console.error('获取排课数据失败:', error)
       alert('获取排课数据失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     }
-  }
+  }, [targetWeekDate, queryClient, timeSlots, buildCoursesCopyText, fallbackCopyTextToClipboard, copyCacheRef, copiedStudents])
 
   // 在弹窗内点击「复制」时执行（处于新的用户手势内，成功率更高）
   const handleCopyFromFallbackModal = useCallback(() => {
@@ -679,7 +814,7 @@ const StudentCourses = () => {
     }
   }, [copyFallbackModal, fallbackCopyTextToClipboard])
 
-  // 截图：获取该学生当周课表（星期模式），渲染后截图为图片，点击后标记为已截图；再次点击已截图则恢复为截图
+  // 截图：获取该学生已排课的第一周课表（星期模式），渲染后截图为图片，点击后标记为已截图；再次点击已截图则恢复为截图
   const handleScreenshot = async (studentId, studentName, studentGrade) => {
     if (screenshotStudents.has(studentId)) {
       setScreenshotStudents((prev) => {
@@ -691,29 +826,68 @@ const StudentCourses = () => {
     }
 
     try {
+      // 查询该学生已排课的第一周：从当前日期往前推3个月，往后推6个月
       const today = new Date()
-      const currentMonth = today.toISOString().slice(0, 7)
-      const currentWeek = getWeekInMonth(today).toString()
-      const weekDateRange = getCurrentWeekDateRange(currentMonth, currentWeek)
-      if (!weekDateRange) {
-        alert('无法计算当前周的日期范围')
+      let foundWeek = null
+      let foundMonth = null
+      let foundCourses = null
+      let foundWeekInfoLabel = null
+
+      // 生成要查询的月份列表（往前3个月到往后6个月）
+      const monthsToCheck = []
+      for (let i = -3; i <= 6; i++) {
+        const checkDate = new Date(today.getFullYear(), today.getMonth() + i, 1)
+        const monthStr = checkDate.toISOString().slice(0, 7)
+        monthsToCheck.push(monthStr)
+      }
+
+      // 按时间顺序查询每一周，找出第一个有排课的周
+      for (const monthStr of monthsToCheck) {
+        if (foundWeek) break // 已找到，停止查询
+
+        // 每个月最多5周
+        for (let weekNum = 1; weekNum <= 5; weekNum++) {
+          try {
+            const coursesData = await courseService.getCourses({
+              month: monthStr,
+              week: weekNum.toString(),
+              student_id: studentId,
+            })
+            const validCourses = (coursesData || []).filter((c) => c.status !== '删除' && String(c.student_id) === String(studentId))
+            
+            if (validCourses.length > 0) {
+              // 找到第一个有排课的周
+              foundMonth = monthStr
+              foundWeek = weekNum.toString()
+              foundCourses = validCourses
+              
+              const weekDateRange = getCurrentWeekDateRange(monthStr, weekNum.toString())
+              if (weekDateRange) {
+                foundWeekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${weekNum}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
+              }
+              break // 找到后跳出内层循环
+            }
+          } catch (err) {
+            // 如果某周查询失败，继续查询下一周
+            console.warn(`查询 ${monthStr} 第${weekNum}周失败:`, err)
+            continue
+          }
+        }
+      }
+
+      if (!foundWeek || !foundCourses || foundCourses.length === 0) {
+        alert('该学生还没有排课记录，无法截图')
         return
       }
-      const weekInfoLabel = `${weekDateRange.year}年${String(weekDateRange.month).padStart(2, '0')}月 第${currentWeek}周 ${String(weekDateRange.startDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.startDate.getDate()).padStart(2, '0')} 至 ${String(weekDateRange.endDate.getMonth() + 1).padStart(2, '0')}-${String(weekDateRange.endDate.getDate()).padStart(2, '0')}`
-      const coursesData = await courseService.getCourses({
-        month: currentMonth,
-        week: currentWeek,
-        student_id: studentId,
-      })
-      const validCourses = (coursesData || []).filter((c) => c.status !== '删除' && String(c.student_id) === String(studentId))
+
       setScreenshotTarget({
         studentId,
         studentName: studentName || '',
         studentGrade: studentGrade || '',
-        courses: validCourses,
-        weekInfoLabel,
-        monthFilter: currentMonth,
-        weekFilter: currentWeek,
+        courses: foundCourses,
+        weekInfoLabel: foundWeekInfoLabel || '',
+        monthFilter: foundMonth,
+        weekFilter: foundWeek,
       })
     } catch (error) {
       console.error('获取课表失败:', error)
@@ -787,20 +961,19 @@ const StudentCourses = () => {
     }
   }, [courses.length, totalPages, currentPage])
 
-  // 当前日期所在周及日期范围（必须在所有 early return 之前调用，遵守 Hooks 顺序）
+  // 当前选择的周及日期范围（必须在所有 early return 之前调用，遵守 Hooks 顺序）
   const currentWeekLabel = useMemo(() => {
-    const today = new Date()
-    const currentMonth = today.toISOString().slice(0, 7)
-    const currentWeek = getWeekInMonth(today).toString()
-    const weekDateRange = getCurrentWeekDateRange(currentMonth, currentWeek)
+    const targetMonth = targetWeekDate.toISOString().slice(0, 7)
+    const targetWeek = getWeekInMonth(targetWeekDate).toString()
+    const weekDateRange = getCurrentWeekDateRange(targetMonth, targetWeek)
     if (!weekDateRange) return null
     const { startDate, endDate, year, month } = weekDateRange
     const startM = String(startDate.getMonth() + 1).padStart(2, '0')
     const startD = String(startDate.getDate()).padStart(2, '0')
     const endM = String(endDate.getMonth() + 1).padStart(2, '0')
     const endD = String(endDate.getDate()).padStart(2, '0')
-    return `${year}年${String(month).padStart(2, '0')}月 第${currentWeek}周 ${startM}月${startD}日-${endM}月${endD}日`
-  }, [])
+    return `${year}年${String(month).padStart(2, '0')}月 第${targetWeek}周 ${startM}月${startD}日-${endM}月${endD}日`
+  }, [targetWeekDate])
 
   if (isLoading) {
     return (
@@ -829,22 +1002,107 @@ const StudentCourses = () => {
       <div className="page-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
         <h1 style={{ margin: 0 }}>预排课</h1>
         {currentWeekLabel && (
-          <span
-            className="current-week-label"
-            style={{
-              display: 'inline-block',
-              padding: '6px 16px',
-              fontSize: '15px',
-              fontWeight: '600',
-              color: '#1a73e8',
-              backgroundColor: '#e8f0fe',
-              border: '1px solid #1a73e8',
-              borderRadius: '8px',
-              letterSpacing: '0.02em',
-            }}
-          >
-            {currentWeekLabel}
-          </span>
+          <>
+            <span
+              className="current-week-label"
+              style={{
+                display: 'inline-block',
+                padding: '6px 16px',
+                fontSize: '15px',
+                fontWeight: '600',
+                color: '#1a73e8',
+                backgroundColor: '#e8f0fe',
+                border: '1px solid #1a73e8',
+                borderRadius: '8px',
+                letterSpacing: '0.02em',
+              }}
+            >
+              {currentWeekLabel}
+            </span>
+            <div style={{ display: 'flex', gap: '8px', marginLeft: '8px' }}>
+              <button
+                onClick={() => setWeekOffset((prev) => prev - 1)}
+                style={{
+                  padding: '6px 16px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: weekOffset < 0 ? '#fff' : '#1a73e8',
+                  backgroundColor: weekOffset < 0 ? '#1a73e8' : '#fff',
+                  border: '1px solid #1a73e8',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                title="上一周（可连续点击）"
+                onMouseEnter={(e) => {
+                  if (weekOffset >= 0) {
+                    e.target.style.backgroundColor = '#e8f0fe'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (weekOffset >= 0) {
+                    e.target.style.backgroundColor = '#fff'
+                  }
+                }}
+              >
+                上周
+              </button>
+              <button
+                onClick={() => setWeekOffset(0)}
+                style={{
+                  padding: '6px 16px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: weekOffset === 0 ? '#fff' : '#1a73e8',
+                  backgroundColor: weekOffset === 0 ? '#1a73e8' : '#fff',
+                  border: '1px solid #1a73e8',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                title="本周"
+                onMouseEnter={(e) => {
+                  if (weekOffset !== 0) {
+                    e.target.style.backgroundColor = '#e8f0fe'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (weekOffset !== 0) {
+                    e.target.style.backgroundColor = '#fff'
+                  }
+                }}
+              >
+                本周
+              </button>
+              <button
+                onClick={() => setWeekOffset((prev) => prev + 1)}
+                style={{
+                  padding: '6px 16px',
+                  fontSize: '14px',
+                  fontWeight: '500',
+                  color: weekOffset > 0 ? '#fff' : '#1a73e8',
+                  backgroundColor: weekOffset > 0 ? '#1a73e8' : '#fff',
+                  border: '1px solid #1a73e8',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s',
+                }}
+                title="下一周（可连续点击）"
+                onMouseEnter={(e) => {
+                  if (weekOffset <= 0) {
+                    e.target.style.backgroundColor = '#e8f0fe'
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (weekOffset <= 0) {
+                    e.target.style.backgroundColor = '#fff'
+                  }
+                }}
+              >
+                下周
+              </button>
+            </div>
+          </>
         )}
       </div>
 
@@ -930,8 +1188,8 @@ const StudentCourses = () => {
                     <th style={{ width: '10%' }}>默认上课老师</th>
                     <th style={{ width: '8%' }}>默认教室</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
-                    <th style={{ textAlign: 'right', width: '8%' }}>已消耗</th>
-                    <th style={{ textAlign: 'right', width: '8%' }}>剩余课时</th>
+                    <th style={{ textAlign: 'right', width: '10%' }} title="当周：当前选择周已消耗；累计：全部已确认消耗">已消耗（当周/累计）</th>
+                    <th style={{ textAlign: 'right', width: '8%' }} title="剩余课时 = 总课时 - 累计已消耗">剩余课时</th>
                     <th style={{ textAlign: 'center', width: '12%' }}>操作</th>
                   </tr>
                 </thead>
@@ -944,10 +1202,10 @@ const StudentCourses = () => {
                         <td style={{ textAlign: 'center' }}>
                           <input
                             type="checkbox"
-                            checked={!!course.excluded_from_scheduling}
-                            onChange={() => handleToggleMark(course)}
-                            disabled={markMutation.isLoading}
-                            title="勾选后该学生不出现在新增排课的学生下拉中"
+                            checked={studentsWithCoursesInCurrentWeek.has(course.student_id)}
+                            readOnly
+                            disabled
+                            title="当前选择周已排课则勾选，否则不勾选（与排课按钮状态一致）"
                           />
                         </td>
                         <td>{course.student_name}</td>
@@ -958,26 +1216,38 @@ const StudentCourses = () => {
                         <td>{course.default_teacher_name || '-'}</td>
                         <td>{course.default_classroom || '-'}</td>
                         <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
-                        <td style={{ textAlign: 'right' }}>{course.consumed_hours || 0}</td>
+                        <td style={{ textAlign: 'right' }}>
+                          {(() => {
+                            const key = `${course.student_id}-${course.course_id}`
+                            const weekConsumed = consumedInCurrentWeekByKey[key] ?? 0
+                            const totalConsumed = course.consumed_hours ?? 0
+                            const weekStr = Number.isInteger(weekConsumed) ? String(weekConsumed) : weekConsumed.toFixed(1)
+                            return `${weekStr} / ${totalConsumed}`
+                          })()}
+                        </td>
                         <td style={{ textAlign: 'right' }} className="remaining-hours">
-                          {course.remaining_hours ? course.remaining_hours.toFixed(1) : '0.0'}
+                          {course.remaining_hours != null ? Number(course.remaining_hours).toFixed(1) : '0.0'}
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          {hasFunctionPermission('student_courses', 'schedule') && (
-                            <button 
-                              onClick={() => handleGoToSchedule(course.student_id, course.course_id)} 
-                              className="btn-link"
-                              style={{
-                                marginRight: '8px',
-                                color: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
-                                borderColor: scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '#ff9800' : '#667eea',
-                                cursor: 'pointer'
-                              }}
-                              title={scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '点击恢复为排课' : '去排课'}
-                            >
-                              {scheduledRows.has(`${course.student_id}-${course.course_id}`) ? '已排课' : '排课'}
-                            </button>
-                          )}
+                          {hasFunctionPermission('student_courses', 'schedule') && (() => {
+                            // 检查当前选择的周是否有该学生的排课
+                            const hasScheduledInCurrentWeek = studentsWithCoursesInCurrentWeek.has(course.student_id)
+                            return (
+                              <button 
+                                onClick={() => handleGoToSchedule(course.student_id, course.course_id)} 
+                                className="btn-link"
+                                style={{
+                                  marginRight: '8px',
+                                  color: hasScheduledInCurrentWeek ? '#ff9800' : '#667eea',
+                                  borderColor: hasScheduledInCurrentWeek ? '#ff9800' : '#667eea',
+                                  cursor: 'pointer'
+                                }}
+                                title={hasScheduledInCurrentWeek ? '点击恢复为排课' : '去排课'}
+                              >
+                                {hasScheduledInCurrentWeek ? '已排课' : '排课'}
+                              </button>
+                            )
+                          })()}
                           {hasFunctionPermission('student_courses', 'copy') && (
                             <button
                               onClick={() => handleCopyCourses(course.student_id)}
