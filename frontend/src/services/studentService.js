@@ -105,4 +105,15 @@ export const studentService = {
     })
     return response.remaining_hours ?? 0
   },
+
+  // 获取试课状态映射（无排课时也设置了试课状态的线索）
+  getTrialStatusMap: async () => {
+    try {
+      const res = await api.get('/marketing/leads/trial-status-map')
+      return res?.items ?? []
+    } catch (error) {
+      console.error('getTrialStatusMap 错误:', error)
+      return []
+    }
+  },
 }

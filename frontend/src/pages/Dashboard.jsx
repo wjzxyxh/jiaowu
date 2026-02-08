@@ -8,8 +8,7 @@ import './Dashboard.css'
 
 const MODULE_CONFIG = [
   { code: 'students', name: '学生管理', icon: '👥', path: '/students', desc: '管理学生信息，包括姓名、年级、联系方式等' },
-  { code: 'marketing', name: '试课系统', icon: '📢', path: '/marketing', desc: '管理试课学员，安排试课课程，跟踪试课状态和结果' },
-  { code: 'student_list', name: '学生名单', icon: '📝', path: '/student-list', desc: '管理学生名单，可新增学生并推送到试课系统' },
+  { code: 'student_list', name: '学生名单', icon: '📝', path: '/student-list', desc: '管理学生名单，可新增学生' },
   { code: 'teachers', name: '教师名单', icon: '👨‍🏫', path: '/teachers', desc: '查看和管理教师名单' },
   { code: 'courses_manage', name: '课程成本', icon: '📚', path: '/courses-manage', desc: '管理课程信息，设置课程成本' },
   { code: 'courses', name: '排课管理', icon: '📅', path: '/courses', desc: '为学生排课，管理课程安排' },

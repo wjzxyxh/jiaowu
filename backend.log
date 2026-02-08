@@ -1,0 +1,104 @@
+2026-02-08 18:07:05 - app - INFO - 日志系统初始化完成
+2026-02-08 18:07:06 - app - INFO - 应用初始化完成，配置: default
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+已为教师表添加real_name字段
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+ * Serving Flask app 'app'
+ * Debug mode: on
+2026-02-08 18:07:07 - app - INFO - 日志系统初始化完成
+2026-02-08 18:07:08 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+教师表的real_name字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+[登录调试] 开始登录，用户名: admin
+[登录调试] 查询用户结果: 找到用户
+[登录调试] 用户ID: 1, 用户名: admin, 是否激活: True
+[登录调试] 开始验证密码
+[登录调试] 密码验证结果: True
+[登录调试] 密码验证成功，开始登录流程
+2026-02-08 18:09:07 - app - INFO - 日志系统初始化完成
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/app.py", line 105, in <module>
+    app = create_app(config_name)
+  File "/tmp/pycharm_project_231/app.py", line 44, in create_app
+    from routes import blueprints
+  File "/tmp/pycharm_project_231/routes/__init__.py", line 8, in <module>
+    from .teachers import bp as teachers_bp
+ModuleNotFoundError: No module named 'routes.teachers'

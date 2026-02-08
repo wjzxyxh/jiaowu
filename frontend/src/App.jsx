@@ -17,8 +17,6 @@ import StudentCourses from './pages/StudentCourses'
 import CoursesManage from './pages/CoursesManage'
 import OthersManage from './pages/OthersManage'
 import Permissions from './pages/Permissions'
-import Marketing from './pages/Marketing'
-import TimetablePage from './pages/TimetablePage'
 import StudentList from './pages/StudentList'
 import Layout from './components/Layout'
 import CoursesLayout from './components/CoursesLayout'
@@ -156,22 +154,6 @@ function App() {
           element={
             <ProtectedRoute moduleCode="others_manage">
               <OthersManage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="marketing" 
-          element={
-            <ProtectedRoute moduleCode="marketing">
-              <Marketing />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="marketing/timetable" 
-          element={
-            <ProtectedRoute moduleCode="marketing">
-              <TimetablePage />
             </ProtectedRoute>
           } 
         />

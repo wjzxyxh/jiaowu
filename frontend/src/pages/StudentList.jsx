@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { studentService } from '../services/studentService'
-import { marketingService } from '../services/marketingService'
 import { courseService } from '../services/courseService'
 import { usePermissions } from '../hooks/usePermissions'
 import Modal from '../components/Modal'
@@ -15,13 +14,11 @@ const StudentList = () => {
   const [gradeFilter, setGradeFilter] = useState('')
   const [searchKeyword, setSearchKeyword] = useState('')
   const [enrollmentYear, setEnrollmentYear] = useState('')
-  const [trialStatusFilter, setTrialStatusFilter] = useState('')
   const [trialResultFilter, setTrialResultFilter] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editingStudent, setEditingStudent] = useState(null)
   const [trialStatusStudent, setTrialStatusStudent] = useState(null)
   const [showTrialStatusModal, setShowTrialStatusModal] = useState(false)
-  const [refreshKey, setRefreshKey] = useState(0) // 用于强制重新渲染
 
   const perPage = 20
 
@@ -51,25 +48,6 @@ const StudentList = () => {
       }),
   })
 
-  // 获取待确认名单，用于检查学生是否已推送
-  const { data: drafts = [], refetch: refetchDrafts, isLoading: draftsLoading } = useQuery({
-    queryKey: ['marketing-drafts'],
-    queryFn: marketingService.getDrafts,
-    // 确保数据变化时组件重新渲染
-    notifyOnChangeProps: ['data', 'isLoading'],
-  })
-  
-  // 使用 useMemo 确保 drafts 数据变化时能触发重新渲染
-  const draftsMemo = useMemo(() => {
-    console.log('draftsMemo 更新:', drafts.length, '条记录')
-    return drafts
-  }, [drafts, refreshKey])
-  
-  // 添加 useEffect 监听 drafts 变化，强制更新 refreshKey
-  useEffect(() => {
-    console.log('drafts 数据变化，强制更新组件:', drafts.length)
-    setRefreshKey(prev => prev + 1)
-  }, [drafts.length])
 
   // 获取所有试课排课记录，用于获取试课状态
   const { data: allTrialCourses = [] } = useQuery({
@@ -80,7 +58,7 @@ const StudentList = () => {
   // 无排课时也设置了试课状态的线索（name+grade+trial_status）
   const { data: trialStatusMap = [] } = useQuery({
     queryKey: ['trial-status-map'],
-    queryFn: () => marketingService.getTrialStatusMap(),
+    queryFn: () => studentService.getTrialStatusMap(),
   })
 
   let students = data?.students || []
@@ -95,21 +73,6 @@ const StudentList = () => {
 
   // 获取唯一年级列表
   const grades = [...new Set(students.map((s) => s.grade).filter(Boolean))].sort()
-
-  // 根据是否推送筛选（前端筛选，因为需要检查待确认名单）
-  if (trialStatusFilter) {
-    students = students.filter((student) => {
-      const isInTrialList = draftsMemo.some(
-        (d) => d.name === student.name && (d.grade || '') === (student.grade || '')
-      )
-      if (trialStatusFilter === 'yes') {
-        return isInTrialList
-      } else if (trialStatusFilter === 'no') {
-        return !isInTrialList
-      }
-      return true
-    })
-  }
 
   // 根据试课结果筛选：成功 / 失败 / 再试 / 未选择
   if (trialResultFilter) {
@@ -176,117 +139,6 @@ const StudentList = () => {
     },
     onError: (error) => {
       alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
-    },
-  })
-
-  const sendToTrialMutation = useMutation({
-    mutationFn: async ({ student, draftId }) => {
-      if (draftId) {
-        // 如果已有待确认记录，删除它
-        return marketingService.deleteLead(draftId)
-      } else {
-        // 将学生信息推送到营销模块的待确认名单
-        return marketingService.createLead({
-          name: student.name,
-          grade: student.grade || '',
-          source: student.source || '',
-          status: student.status || '在校',
-          phone: student.phone || '',
-          parent_name: student.parent_name || '',
-          parent_phone: student.parent_phone || '',
-          address: student.address || '',
-          notes: student.notes || '',
-          enrollment_date: student.enrollment_date || '',
-          lead_status: 'draft',
-          saved_at: new Date().toISOString(),
-        })
-      }
-    },
-    onMutate: async ({ student, draftId }) => {
-      // 取消所有正在进行的查询，避免覆盖我们的乐观更新
-      await queryClient.cancelQueries({ queryKey: ['marketing-drafts'] })
-      
-      // 保存当前数据快照
-      const previousDrafts = queryClient.getQueryData(['marketing-drafts']) || []
-      
-      // 乐观更新：立即更新缓存
-      queryClient.setQueryData(['marketing-drafts'], (old = []) => {
-        if (draftId) {
-          // 删除操作：从列表中移除
-          return old.filter((d) => d.id !== draftId)
-        } else {
-          // 创建操作：添加到列表（使用临时数据，稍后会被真实数据替换）
-          const newDraft = {
-            id: Date.now(), // 临时ID
-            name: student.name,
-            grade: student.grade || '',
-            lead_status: 'draft',
-            saved_at: new Date().toISOString(),
-          }
-          // 检查是否已存在（避免重复添加）
-          const exists = old.some(
-            (d) => d.name === student.name && (d.grade || '') === (student.grade || '')
-          )
-          return exists ? old : [...old, newDraft]
-        }
-      })
-      
-      // 返回上下文，用于错误回滚
-      return { previousDrafts, student, draftId }
-    },
-    onError: (error, variables, context) => {
-      // 如果出错，回滚到之前的状态
-      if (context?.previousDrafts) {
-        queryClient.setQueryData(['marketing-drafts'], context.previousDrafts)
-      }
-      alert('操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
-    },
-    onSuccess: async (data, variables) => {
-      // 成功后，强制刷新数据以确保数据一致性
-      console.log('推送操作成功，开始刷新数据...', { data, variables })
-      try {
-        // 强制刷新组件（先更新，确保UI立即响应）
-        setRefreshKey(prev => prev + 1)
-        
-        // 立即更新缓存，确保UI立即响应
-        if (variables.draftId) {
-          // 删除操作：从缓存中移除
-          queryClient.setQueryData(['marketing-drafts'], (old = []) => {
-            const filtered = old.filter((d) => d.id !== variables.draftId)
-            console.log('删除后的缓存数据:', filtered)
-            return filtered
-          })
-        } else if (data) {
-          // 创建操作：添加到缓存
-          queryClient.setQueryData(['marketing-drafts'], (old = []) => {
-            const exists = old.some(
-              (d) => d.id === data.id || (d.name === data.name && (d.grade || '') === (data.grade || ''))
-            )
-            const updated = exists ? old : [...old, data]
-            console.log('创建后的缓存数据:', updated)
-            return updated
-          })
-        }
-        
-        // 强制刷新查询以确保数据一致性
-        queryClient.invalidateQueries(['marketing-drafts'])
-        queryClient.invalidateQueries(['student-list'])
-        // 重新获取数据
-        const result = await refetchDrafts()
-        console.log('刷新后的数据:', result.data)
-        console.log('刷新后的数据长度:', result.data?.length)
-        
-        // 再次强制刷新组件，确保使用最新数据
-        setTimeout(() => {
-          setRefreshKey(prev => prev + 1)
-        }, 100)
-      } catch (error) {
-        console.error('刷新数据失败:', error)
-        // 即使出错也尝试刷新
-        queryClient.invalidateQueries(['marketing-drafts'])
-        queryClient.invalidateQueries(['student-list'])
-        setRefreshKey(prev => prev + 1)
-      }
     },
   })
 
@@ -404,20 +256,6 @@ const StudentList = () => {
     setEditingStudent(null)
   }
 
-  const handleSendToTrial = (student) => {
-    // 检查该学生是否已经在待确认名单中（通过姓名和年级匹配）
-    const existingDraft = draftsMemo.find(
-      (d) => d.name === student.name && (d.grade || '') === (student.grade || '')
-    )
-
-    if (existingDraft) {
-      // 如果已在待确认名单中，直接删除（无需确认）
-      sendToTrialMutation.mutate({ student, draftId: existingDraft.id })
-    } else {
-      // 如果不在待确认名单中，直接推送（无需确认）
-      sendToTrialMutation.mutate({ student, draftId: null })
-    }
-  }
 
   const handleSearchKeyup = (e) => {
     if (e.key === 'Enter') {
@@ -476,14 +314,6 @@ const StudentList = () => {
           </select>
         </div>
         <div className="filter-group">
-          <label>是否推送：</label>
-          <select value={trialStatusFilter} onChange={(e) => { setTrialStatusFilter(e.target.value); setPage(1) }}>
-            <option value="">全部</option>
-            <option value="yes">是</option>
-            <option value="no">否</option>
-          </select>
-        </div>
-        <div className="filter-group">
           <label>试课状态：</label>
           <select
             value={trialResultFilter}
@@ -531,7 +361,6 @@ const StudentList = () => {
               <th>姓名</th>
               <th>年级</th>
               <th>状态</th>
-              <th>是否推送</th>
               <th>试课状态</th>
               <th>登记日期</th>
               <th>操作</th>
@@ -540,29 +369,17 @@ const StudentList = () => {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan="8" className="empty-tip">加载中...</td>
+                <td colSpan="7" className="empty-tip">加载中...</td>
               </tr>
             ) : students.length === 0 ? (
               <tr>
-                <td colSpan="8" className="empty-tip">暂无学生</td>
+                <td colSpan="7" className="empty-tip">暂无学生</td>
               </tr>
             ) : (
               students.map((student, index) => {
                 // 计算序号（从1开始）
                 const rowIndex = (pagination.page - 1) * (pagination.per_page || perPage) + index + 1
                 
-                // 检查该学生是否在待确认名单中
-                const isInTrialList = draftsMemo.some(
-                  (d) => {
-                    const nameMatch = d.name === student.name
-                    const gradeMatch = (d.grade || '') === (student.grade || '')
-                    const result = nameMatch && gradeMatch
-                    if (result) {
-                      console.log('找到匹配的待确认记录:', { student: student.name, draft: d.name, studentGrade: student.grade, draftGrade: d.grade })
-                    }
-                    return result
-                  }
-                )
                 // 获取该学生的所有试课状态（从排课记录中查找）
                 const studentTrialCourses = allTrialCourses.filter(
                   (c) => c.student_name === student.name && (c.grade || '') === (student.grade || '') && c.trial_status
@@ -588,7 +405,7 @@ const StudentList = () => {
                   }
                 })
                 if (Object.keys(statusCourseMap).length === 0 && leadTrial?.trial_status) {
-                  statusCourseMap[leadTrial.trial_status] = ['（无排课）']
+                  statusCourseMap[leadTrial.trial_status] = []
                 }
                 
                 return (
@@ -599,11 +416,6 @@ const StudentList = () => {
                   <td>
                     <span className={`status-badge status-${student.status === '在校' ? 'normal' : 'deleted'}`}>
                       {student.status}
-                    </span>
-                  </td>
-                  <td>
-                    <span className={`status-badge status-${isInTrialList ? 'normal' : 'deleted'}`}>
-                      {isInTrialList ? '是' : '否'}
                     </span>
                   </td>
                   <td>
@@ -621,9 +433,9 @@ const StudentList = () => {
                               backgroundColor: status === '成功' ? '#d4edda' : status === '失败' ? '#f8d7da' : status === '再试' ? '#fff3cd' : '#e9ecef',
                               display: 'inline-block'
                             }}
-                            title={courseNames.join('、')}
+                            title={courseNames.length > 0 ? courseNames.join('、') : status}
                           >
-                            {status}({courseNames.join('、')})
+                            {courseNames.length > 0 ? `${status}(${courseNames.join('、')})` : status}
                           </span>
                         ))}
                       </div>
@@ -660,45 +472,6 @@ const StudentList = () => {
                     >
                       试课
                     </button>
-                    {(() => {
-                      const existingDraft = draftsMemo.find(
-                        (d) => d.name === student.name && (d.grade || '') === (student.grade || '')
-                      )
-                      const isInTrialList = !!existingDraft
-                      const hasTrialSuccess = studentTrialCourses.some((c) => c.trial_status === '成功')
-                      const showAsPushed = hasTrialSuccess || isInTrialList
-                      const isDisabled = hasTrialSuccess || sendToTrialMutation.isLoading
-                      const buttonColor = showAsPushed ? '#6c757d' : '#28a745'
-                      const buttonText = showAsPushed ? '已推送' : '推送'
-                      return (
-                        <button
-                          key={`push-btn-${student.id}-${showAsPushed}-${refreshKey}`}
-                          onClick={() => !isDisabled && handleSendToTrial(student)}
-                          disabled={isDisabled}
-                          style={{
-                            backgroundColor: buttonColor,
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: '4px',
-                            padding: '6px 12px',
-                            fontSize: '14px',
-                            cursor: isDisabled ? 'not-allowed' : 'pointer',
-                            opacity: isDisabled ? 0.7 : 1,
-                            transition: 'background-color 0.2s ease',
-                            fontWeight: '500'
-                          }}
-                          title={
-                            hasTrialSuccess
-                              ? '试课已成功，无需推送'
-                              : isInTrialList
-                                ? '点击从试课系统的待确认名单中移除'
-                                : '点击将学生信息推送到试课系统的待确认名单'
-                          }
-                        >
-                          {buttonText}
-                        </button>
-                      )
-                    })()}
                   </td>
                 </tr>
                 )
@@ -808,14 +581,13 @@ const StudentList = () => {
         </form>
       </Modal>
 
-      {/* 设置试课状态模态框（按课程分别设置） */}
+      {/* 设置试课状态模态框 */}
       <Modal
         isOpen={showTrialStatusModal}
         onClose={handleCloseTrialStatusModal}
         title={trialStatusStudent ? `设置试课状态 - ${trialStatusStudent.name}${trialStatusStudent.grade ? `（${trialStatusStudent.grade}）` : ''}` : '设置试课状态'}
       >
         <div className="form-group">
-          <label>按课程分别设置试课状态</label>
           {trialStatusStudent && (
             <div style={{ marginTop: '8px' }}>
               {(() => {
@@ -828,7 +600,6 @@ const StudentList = () => {
                 if (coursesForStudent.length === 0) {
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                      <span style={{ flex: 1 }}>（无排课）</span>
                       <select
                         value={leadTrial?.trial_status ?? ''}
                         onChange={(e) => handleSetNoCourseTrialStatus(e.target.value === '' ? null : e.target.value)}

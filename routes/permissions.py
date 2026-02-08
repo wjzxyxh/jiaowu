@@ -23,16 +23,6 @@ MODULE_FUNCTIONS = {
         {'code': 'view_detail', 'name': '查看详情'},
         {'code': 'batch_operation', 'name': '批量操作'},
     ],
-    'marketing': [
-        {'code': 'view', 'name': '查看线索'},
-        {'code': 'edit', 'name': '编辑线索'},
-        {'code': 'delete', 'name': '删除线索'},
-        {'code': 'schedule', 'name': '排课'},
-        {'code': 'trial_status', 'name': '试课状态'},
-        {'code': 'view_timetable', 'name': '查看课表'},
-        {'code': 'search', 'name': '搜索筛选'},
-        {'code': 'export', 'name': '导出数据'},
-    ],
     'student_list': [
         {'code': 'view', 'name': '查看名单'},
         {'code': 'edit', 'name': '编辑信息'},
@@ -141,7 +131,6 @@ MODULE_FUNCTIONS = {
 # 定义所有功能模块列表（与主页 MODULE_CONFIG 保持一致）
 MODULE_LIST = [
     {'code': 'students', 'name': '学生管理', 'icon': '👥', 'path': '/students', 'functions': MODULE_FUNCTIONS.get('students', [])},
-    {'code': 'marketing', 'name': '试课系统', 'icon': '📢', 'path': '/marketing', 'functions': MODULE_FUNCTIONS.get('marketing', [])},
     {'code': 'student_list', 'name': '学生名单', 'icon': '📝', 'path': '/student-list', 'functions': MODULE_FUNCTIONS.get('student_list', [])},
     {'code': 'teachers', 'name': '教师管理', 'icon': '👨‍🏫', 'path': '/teachers', 'functions': MODULE_FUNCTIONS.get('teachers', [])},
     {'code': 'courses_manage', 'name': '课程管理', 'icon': '📚', 'path': '/courses_manage', 'functions': MODULE_FUNCTIONS.get('courses_manage', [])},
@@ -170,17 +159,16 @@ PERMISSION_TEMPLATES = {
     'teacher_full': {
         'name': '教务（完整权限）',
         'description': '拥有所有教务相关模块的完整权限',
-        'modules': ['students', 'marketing', 'student_list', 'teachers', 'courses_manage', 'courses', 'all_courses', 'student_courses', 'calendar'],
+        'modules': ['students', 'student_list', 'teachers', 'courses_manage', 'courses', 'all_courses', 'student_courses', 'calendar'],
         'all_functions': True,  # 所有功能权限都授权
     },
     'teacher_readonly': {
         'name': '教务（只读）',
         'description': '只能查看教务相关模块，不能修改',
-        'modules': ['students', 'marketing', 'student_list', 'teachers', 'courses_manage', 'courses', 'all_courses', 'student_courses', 'calendar'],
+        'modules': ['students', 'student_list', 'teachers', 'courses_manage', 'courses', 'all_courses', 'student_courses', 'calendar'],
         'all_functions': False,
         'function_permissions': {
             'students': {'view': True, 'view_detail': True, 'search': True, 'export': True},
-            'marketing': {'view': True, 'view_timetable': True, 'search': True},
             'teachers': {'view': True, 'view_detail': True, 'search': True},
             'courses': {'view': True, 'view_detail': True, 'search': True},
             'all_courses': {'view': True, 'search': True, 'export': True},

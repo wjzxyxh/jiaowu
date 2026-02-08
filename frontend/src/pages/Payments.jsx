@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePermissions } from '../hooks/usePermissions'
 import { paymentService } from '../services/paymentService'
@@ -13,19 +13,111 @@ import './Payments.css'
 const Payments = () => {
   const queryClient = useQueryClient()
   const { hasFunctionPermission } = usePermissions()
-  const [viewMode, setViewMode] = useState('record') // 'record' 或 'reminder'
-  const [yearFilter, setYearFilter] = useState('') // 默认全部年份
-  const [monthFilter, setMonthFilter] = useState('') // 默认全部月份
-  const [studentFilter, setStudentFilter] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [currentPage, setCurrentPage] = useState(1)
+  
+  // 从 localStorage 恢复页面状态
+  const STORAGE_KEY = 'payments_page_state'
+  
+  // 使用 useMemo 缓存初始状态，避免重复调用
+  const initialState = useMemo(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      console.log('[Payments] 读取 localStorage:', { saved, key: STORAGE_KEY })
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        // 确保 viewMode 是有效的值
+        const viewMode = parsed.viewMode === 'reminder' ? 'reminder' : 'record'
+        console.log('[Payments] 从 localStorage 恢复初始状态:', { viewMode, savedData: parsed })
+        return {
+          viewMode,
+          yearFilter: parsed.yearFilter || '',
+          monthFilter: parsed.monthFilter || '',
+          studentFilter: parsed.studentFilter || '',
+          typeFilter: parsed.typeFilter || '',
+          statusFilter: parsed.statusFilter || '',
+          currentPage: parsed.currentPage || 1,
+        }
+      } else {
+        console.log('[Payments] localStorage 中没有保存的状态，使用默认状态 (record)')
+      }
+    } catch (e) {
+      console.error('[Payments] 加载状态失败:', e)
+    }
+    return {
+      viewMode: 'record',
+      yearFilter: '',
+      monthFilter: '',
+      studentFilter: '',
+      typeFilter: '',
+      statusFilter: '',
+      currentPage: 1,
+    }
+  }, []) // 只在组件挂载时执行一次
+  
+  const [viewMode, setViewMode] = useState(initialState.viewMode) // 'record' 或 'reminder'
+  const [yearFilter, setYearFilter] = useState(initialState.yearFilter) // 默认全部年份
+  const [monthFilter, setMonthFilter] = useState(initialState.monthFilter) // 默认全部月份
+  const [studentFilter, setStudentFilter] = useState(initialState.studentFilter)
+  const [typeFilter, setTypeFilter] = useState(initialState.typeFilter)
+  const [statusFilter, setStatusFilter] = useState(initialState.statusFilter)
+  const [currentPage, setCurrentPage] = useState(initialState.currentPage)
   const [showModal, setShowModal] = useState(false)
   const [paymentType, setPaymentType] = useState('缴费') // '缴费' 或 '退费'
   const [selectedStudentId, setSelectedStudentId] = useState(null) // 用于从提醒页面跳转
   const [editingPayment, setEditingPayment] = useState(null) // 编辑时传入的缴费记录
 
   const perPage = 20
+  
+  // 使用 ref 保存最新的状态值，确保保存时使用最新值
+  const stateRef = useRef({ viewMode, yearFilter, monthFilter, studentFilter, typeFilter, statusFilter, currentPage })
+  
+  // 更新 ref 当状态变化时
+  useEffect(() => {
+    stateRef.current = { viewMode, yearFilter, monthFilter, studentFilter, typeFilter, statusFilter, currentPage }
+  }, [viewMode, yearFilter, monthFilter, studentFilter, typeFilter, statusFilter, currentPage])
+  
+  // 组件挂载后验证并同步 localStorage 中的状态（确保刷新后状态正确）
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      console.log('[Payments] 组件挂载后检查 localStorage:', { saved, key: STORAGE_KEY })
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        const savedViewMode = parsed.viewMode === 'reminder' ? 'reminder' : 'record'
+        console.log(`[Payments] 组件挂载后检查状态: 当前=${viewMode}, 保存=${savedViewMode}`)
+        // 如果保存的状态与当前状态不一致，恢复保存的状态
+        if (savedViewMode !== viewMode) {
+          console.log(`[Payments] 检测到状态不一致（当前: ${viewMode}, 保存: ${savedViewMode}），恢复保存的状态`)
+          setViewMode(savedViewMode)
+        } else {
+          console.log(`[Payments] 状态一致，无需恢复`)
+        }
+      } else {
+        console.log('[Payments] 组件挂载后检查: localStorage 中没有保存的状态')
+      }
+    } catch (e) {
+      console.error('[Payments] 验证状态时出错:', e)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // 只在组件挂载时执行一次
+  
+  // 保存页面状态到 localStorage（状态变化时立即保存）
+  useEffect(() => {
+    const stateToSave = {
+      viewMode,
+      yearFilter,
+      monthFilter,
+      studentFilter,
+      typeFilter,
+      statusFilter,
+      currentPage,
+    }
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
+      console.log('[Payments] 保存状态到 localStorage:', stateToSave)
+    } catch (e) {
+      console.error('Failed to save payments page state:', e)
+    }
+  }, [viewMode, yearFilter, monthFilter, studentFilter, typeFilter, statusFilter, currentPage])
 
   // 同一学生+课程的分组键：course_id 为空时用 course_name 区分不同课程，避免合并剩余课时
   const getPaymentGroupKey = useCallback((p) => {
@@ -125,7 +217,39 @@ const Payments = () => {
       }
     })
 
-    // 应用状态筛选（欠费 / 进行中 / 暂停排课 / 结束）
+    // 获取所有有缴费记录的学生ID集合
+    const studentsWithPayments = new Set(processed.map((p) => p.student_id))
+
+    // 为没有缴费记录的学生创建虚拟记录
+    students.forEach((student) => {
+      if (!studentsWithPayments.has(student.id)) {
+        processed.push({
+          id: null,
+          student_id: student.id,
+          student_name: student.name,
+          course_id: null,
+          course_name: null,
+          type: '缴费',
+          payment_date: null,
+          paid_amount: 0,
+          discount_rate: 0,
+          class_hours: 0,
+          unit_price: 0,
+          remaining_hours: 0,
+          remaining_cost: 0,
+          status: null,
+          notes: null,
+          scheduling_paused: false,
+          _status: '未缴费',
+          _remainingHours: 0,
+          _remainingCost: 0,
+          _schedulingPaused: false,
+          _isNoPayment: true, // 标记为无缴费记录
+        })
+      }
+    })
+
+    // 应用状态筛选（欠费 / 进行中 / 暂停排课 / 结束 / 未缴费）
     if (statusFilter) {
       if (statusFilter === '暂停排课') {
         processed = processed.filter((p) => p._status === '进行中' && p._schedulingPaused)
@@ -136,12 +260,14 @@ const Payments = () => {
       }
     }
 
-    // 排序：欠费最前，其次进行中/暂停排课按剩余课时升序，结束放最后
+    // 排序：欠费最前，其次未缴费，然后进行中/暂停排课按剩余课时升序，结束放最后
     processed.sort((a, b) => {
       if (a._status === '结束' && b._status !== '结束') return 1
       if (a._status !== '结束' && b._status === '结束') return -1
       if (a._status === '欠费' && b._status !== '欠费') return -1
       if (a._status !== '欠费' && b._status === '欠费') return 1
+      if (a._status === '未缴费' && b._status !== '未缴费') return -1
+      if (a._status !== '未缴费' && b._status === '未缴费') return 1
       if (a._status !== '结束' && b._status !== '结束') {
         return a._remainingHours - b._remainingHours
       }
@@ -149,9 +275,9 @@ const Payments = () => {
     })
 
     return processed
-  }, [payments, remainingHoursMap, statusFilter, getPaymentGroupKey])
+  }, [payments, remainingHoursMap, statusFilter, getPaymentGroupKey, students])
 
-  // 计算合计（所有筛选后的数据）
+  // 计算合计（所有筛选后的数据，排除未缴费记录）
   const totals = useMemo(() => {
     let totalPaidAmount = 0
     let totalDiscount = 0
@@ -159,6 +285,9 @@ const Payments = () => {
     let totalRemainingCost = 0
 
     processedPayments.forEach((p) => {
+      // 排除未缴费记录
+      if (p._status === '未缴费') return
+      
       const multiplier = p.type === '退费' ? -1 : 1
       totalPaidAmount += (p.paid_amount || 0) * multiplier
       totalDiscount += (p.discount_rate || 0) * multiplier
@@ -182,7 +311,8 @@ const Payments = () => {
   const cumulativeRemainingByKey = useMemo(() => {
     const byKey = {}
     for (const p of processedPayments) {
-      if (p.type !== '缴费' || p._status === '结束') continue
+      // 排除未缴费记录
+      if (p._status === '未缴费' || p.type !== '缴费' || p._status === '结束') continue
       const key = getPaymentGroupKey(p)
       if (!byKey[key]) byKey[key] = []
       byKey[key].push(p)
@@ -206,7 +336,8 @@ const Payments = () => {
     const list = []
     const seen = new Set()
     for (const p of processedPayments) {
-      if (p.type !== '缴费' || p._status === '结束') continue
+      // 排除未缴费记录
+      if (p._status === '未缴费' || p.type !== '缴费' || p._status === '结束') continue
       const key = getPaymentGroupKey(p)
       if (seen.has(key)) continue
       const cumulative = cumulativeRemainingByKey[key] ?? 0
@@ -318,12 +449,38 @@ const Payments = () => {
     }
   }
 
+  // 保存状态的辅助函数
+  const saveStateToStorage = useCallback((newViewMode) => {
+    try {
+      // 使用 ref 中的最新值
+      const stateToSave = {
+        viewMode: newViewMode,
+        yearFilter: stateRef.current.yearFilter,
+        monthFilter: stateRef.current.monthFilter,
+        studentFilter: stateRef.current.studentFilter,
+        typeFilter: stateRef.current.typeFilter,
+        statusFilter: stateRef.current.statusFilter,
+        currentPage: stateRef.current.currentPage,
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(stateToSave))
+      console.log(`[Payments] 立即保存状态到 localStorage (${newViewMode}):`, stateToSave)
+    } catch (e) {
+      console.error('[Payments] 保存状态失败:', e)
+    }
+  }, [])
+
   const handleShowPaymentRecord = () => {
+    console.log('[Payments] 切换到缴费记录视图')
     setViewMode('record')
+    // 立即保存状态
+    saveStateToStorage('record')
   }
 
   const handleShowPaymentReminder = () => {
+    console.log('[Payments] 切换到缴费提醒视图')
     setViewMode('reminder')
+    // 立即保存状态
+    saveStateToStorage('reminder')
   }
 
   const handleAddPayment = () => {
@@ -499,6 +656,7 @@ const Payments = () => {
           <option value="进行中">进行中</option>
           <option value="暂停排课">暂停排课</option>
           <option value="结束">结束</option>
+          <option value="未缴费">未缴费</option>
         </select>
         <button className="btn btn-secondary" onClick={clearFilters}>
           清除筛选
@@ -566,7 +724,11 @@ const Payments = () => {
 
                   const canToggleScheduling = type === '缴费' && p.course_id && status === '进行中'
                   const statusBadge =
-                    status === '欠费' ? (
+                    status === '未缴费' ? (
+                      <span className="status-badge" style={{ background: '#ffc107', color: '#000' }}>
+                        未缴费
+                      </span>
+                    ) : status === '欠费' ? (
                       <span className="status-badge" style={{ background: '#dc3545', color: 'white' }}>
                         欠费
                       </span>
@@ -620,51 +782,69 @@ const Payments = () => {
                   const cumulativeHours = type === '缴费' && status !== '结束' ? (cumulativeRemainingByKey[cumulativeKey] ?? 0) : 0
                   const hoursLow = cumulativeHours <= reminderThreshold && type === '缴费' && status !== '结束'
                   const isArrears = status === '欠费'
+                  const isNoPayment = status === '未缴费'
+                  const needsReminder = isArrears || hoursLow || isNoPayment // 未缴费也需要提醒
                   const rowStyle =
                     status === '结束'
                       ? { color: '#999', opacity: 0.7 }
-                      : isArrears || hoursLow
+                      : needsReminder
                         ? { color: '#dc3545', backgroundColor: 'rgba(220, 53, 69, 0.08)' }
                         : {}
 
                   return (
-                    <tr key={p.id} style={rowStyle}>
+                    <tr key={isNoPayment ? `no-payment-${p.student_id}` : p.id} style={rowStyle}>
                       <td>{sequenceNumber}</td>
                       <td>{typeBadge}</td>
-                      <td>{p.payment_date}</td>
+                      <td>{isNoPayment ? '-' : (p.payment_date || '-')}</td>
                       <td>
                         {p.student_name}
                       </td>
                       <td>{p.course_name || '-'}</td>
-                      <td>{p.original_amount.toFixed(2)}</td>
-                      <td>{p.discount_rate.toFixed(2)}</td>
+                      <td>{isNoPayment ? '-' : ((p.original_amount || 0).toFixed(2))}</td>
+                      <td>{isNoPayment ? '-' : ((p.discount_rate || 0).toFixed(2))}</td>
                       <td style={amountColor}>
-                        {amountPrefix}
-                        {p.paid_amount.toFixed(2)}
+                        {isNoPayment ? '-' : `${amountPrefix}${(p.paid_amount || 0).toFixed(2)}`}
                       </td>
-                      <td>{p.class_count}</td>
-                      <td>{p.unit_price ? p.unit_price.toFixed(2) : '-'}</td>
-                      <td style={remainingHoursColor}>{remainingHours.toFixed(2)}</td>
+                      <td>{isNoPayment ? '-' : (p.class_count || 0)}</td>
+                      <td>{isNoPayment ? '-' : (p.unit_price ? p.unit_price.toFixed(2) : '-')}</td>
+                      <td style={remainingHoursColor}>{isNoPayment ? '-' : remainingHours.toFixed(2)}</td>
                       <td style={remainingCostColor}>
-                        {remainingCostPrefix}
-                        {Math.abs(remainingCost).toFixed(2)}
+                        {isNoPayment ? '-' : `${remainingCostPrefix}${Math.abs(remainingCost).toFixed(2)}`}
                       </td>
                       <td>{statusBadge}</td>
                       <td>{p.remark || '-'}</td>
                       <td>
-                        {hasFunctionPermission('payments', 'edit') && (
-                          <button
-                            className="btn btn-secondary"
-                            style={{ marginRight: '8px' }}
-                            onClick={() => handleEditPayment(p)}
-                          >
-                            编辑
-                          </button>
-                        )}
-                        {hasFunctionPermission('payments', 'delete') && (
-                          <button className="btn btn-danger" onClick={() => handleDelete(p.id)}>
-                            删除
-                          </button>
+                        {isNoPayment ? (
+                          hasFunctionPermission('payments', 'add') && (
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => {
+                                setSelectedStudentId(p.student_id)
+                                setPaymentType('缴费')
+                                setEditingPayment(null)
+                                setShowModal(true)
+                              }}
+                            >
+                              新增缴费
+                            </button>
+                          )
+                        ) : (
+                          <>
+                            {hasFunctionPermission('payments', 'edit') && (
+                              <button
+                                className="btn btn-secondary"
+                                style={{ marginRight: '8px' }}
+                                onClick={() => handleEditPayment(p)}
+                              >
+                                编辑
+                              </button>
+                            )}
+                            {hasFunctionPermission('payments', 'delete') && (
+                              <button className="btn btn-danger" onClick={() => handleDelete(p.id)}>
+                                删除
+                              </button>
+                            )}
+                          </>
                         )}
                       </td>
                     </tr>
