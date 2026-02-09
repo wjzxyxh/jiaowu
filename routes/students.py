@@ -674,6 +674,102 @@ def set_student_trial_status(student_id):
     return jsonify({'message': '试课状态已更新', 'trial_status': trial_status})
 
 
+
+@bp.route('/api/students/batch-set-trial-status', methods=['POST'])
+@csrf.exempt
+@login_required
+@require_permission('edit')
+@handle_db_errors
+def batch_set_trial_status():
+    """批量设置学生试课状态（用于学生名单页批量确认试课成功）"""
+    if not request.is_json:
+        return jsonify({'error': '请求必须是JSON格式'}), 400
+    data = request.json or {}
+    student_ids = data.get('student_ids', [])
+    trial_status = data.get('trial_status', '成功')
+
+    if not student_ids or not isinstance(student_ids, list):
+        return jsonify({'error': '请选择至少一个学生'}), 400
+    if trial_status not in ('成功', '失败', '再试'):
+        return jsonify({'error': 'trial_status 只能为 成功、失败、再试'}), 400
+
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    success_count = 0
+    errors = []
+
+    for student_id in student_ids:
+        try:
+            student = Student.query.get(student_id)
+            if not student:
+                errors.append(f'学生ID {student_id} 不存在')
+                continue
+            if student.name == TRIAL_PLACEHOLDER_NAME:
+                continue
+
+            student_grade_n = (student.grade or '').strip() or None
+            all_leads_by_name = MarketingLead.query.filter(MarketingLead.name == student.name).all()
+            matching_leads = []
+            had_success_before = False
+
+            for l in all_leads_by_name:
+                lg = (l.grade or '').strip() or None
+                if lg == student_grade_n:
+                    matching_leads.append(l)
+                    if l.trial_status == '成功':
+                        had_success_before = True
+
+            if not matching_leads:
+                initial_status = 'submitted' if trial_status == '成功' else 'trial'
+                lead = MarketingLead(
+                    name=student.name,
+                    grade=student.grade or None,
+                    lead_status=initial_status,
+                    trial_status=trial_status,
+                    saved_at=datetime.now(),
+                    submitted_at=datetime.now() if trial_status == '成功' else None,
+                )
+                db.session.add(lead)
+                db.session.flush()
+                matching_leads = [lead]
+
+            for lead in matching_leads:
+                lead.trial_status = trial_status
+                if trial_status == '成功' and lead.lead_status in ('draft', 'trial'):
+                    lead.lead_status = 'submitted'
+                    lead.submitted_at = datetime.now()
+
+            StudentCourse.query.filter_by(student_id=student_id).update(
+                {StudentCourse.trial_status: trial_status}, synchronize_session=False
+            )
+            for l in MarketingLead.query.filter(MarketingLead.name == student.name).all():
+                lg = (l.grade or '').strip() or None
+                if lg != student_grade_n:
+                    continue
+                StudentCourse.query.filter_by(marketing_lead_id=l.id).update(
+                    {StudentCourse.trial_status: trial_status}, synchronize_session=False
+                )
+
+            if trial_status == '成功' and not had_success_before:
+                from models import ClassHoursStats, Payment
+                ClassHoursStats.query.filter_by(student_id=student_id).delete(synchronize_session=False)
+                Payment.query.filter_by(student_id=student_id).delete(synchronize_session=False)
+
+            success_count += 1
+        except Exception as e:
+            errors.append(f'学生ID {student_id} 操作失败: {str(e)}')
+
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'批量操作失败: {str(e)}'}), 500
+
+    result = {'message': f'成功更新 {success_count} 个学生的试课状态为「{trial_status}」', 'success_count': success_count}
+    if errors:
+        result['errors'] = errors
+    return jsonify(result)
+
+
 def _remove_student_from_management_core(student):
     """
     实际执行「从学生管理页移除学生」的核心逻辑。
@@ -1131,7 +1227,29 @@ def get_paid_courses_need_scheduling():
             # 累计缴费课时
             student_course_map[key]['total_paid_hours'] += payment.class_count
         
-        # 如果没有任何缴费记录，直接返回空列表
+        # 同时收集通过"设置课程"创建的 StudentCourseDefaultSchedule 记录（即使没有缴费记录也要显示）
+        all_default_schedules = StudentCourseDefaultSchedule.query.all()
+        for ds in all_default_schedules:
+            key = (ds.student_id, ds.course_id)
+            if key in student_course_map:
+                continue  # 已有缴费记录，跳过
+            # 检查学生和课程是否存在且有效
+            student = Student.query.get(ds.student_id)
+            course = Course.query.get(ds.course_id)
+            if not student or not course or course.status != '启用':
+                continue
+            student_course_map[key] = {
+                'student_id': ds.student_id,
+                'student_name': student.name,
+                'grade': student.grade or '',
+                'course_id': course.id,
+                'course_name': course.name,
+                'subject': course.subject,
+                'total_paid_hours': 0,
+                '_from_default_schedule': True  # 标记来自设置课程，无缴费记录
+            }
+        
+        # 如果没有任何记录，直接返回空列表
         if not student_course_map:
             return jsonify({
                 'courses': [],
@@ -1143,25 +1261,25 @@ def get_paid_courses_need_scheduling():
         for key, info in student_course_map.items():
             student_id, course_id = key
             
-            # 再次验证：检查该学生-课程组合是否还有有效的缴费记录（含 course_id 匹配或 course_name 匹配）
-            remaining_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
-                Payment.student_id == student_id,
-                or_(
-                    Payment.course_id == course_id,
-                    and_(Payment.course_id.is_(None), Payment.course_name == info['course_name'])
-                )
-            ).all()
-            
-            # 如果没有缴费记录，跳过该学生-课程组合
-            if not remaining_payments:
-                continue
-            
-            # 计算总缴费课时（包括退费）；传入 course_name 以计入仅填了课程名称的缴费
-            total_paid_hours = calculate_remaining_hours_from_payments(student_id, course_id, course_name=info['course_name'])
-            
-            # 如果总缴费课时 <= 0，跳过该学生-课程组合
-            if total_paid_hours <= 0:
-                continue
+            # 来自"设置课程"的记录无需检查缴费记录
+            if not info.get('_from_default_schedule'):
+                # 再次验证：检查该学生-课程组合是否还有有效的缴费记录（含 course_id 匹配或 course_name 匹配）
+                remaining_payments = Payment.query.join(Student, Payment.student_id == Student.id).filter(
+                    Payment.student_id == student_id,
+                    or_(
+                        Payment.course_id == course_id,
+                        and_(Payment.course_id.is_(None), Payment.course_name == info['course_name'])
+                    )
+                ).all()
+                
+                # 如果没有缴费记录，跳过该学生-课程组合
+                if not remaining_payments:
+                    continue
+                
+                # 计算总缴费课时（包括退费）；传入 course_name 以计入仅填了课程名称的缴费
+                total_paid_hours = calculate_remaining_hours_from_payments(student_id, course_id, course_name=info['course_name'])
+            else:
+                total_paid_hours = 0
             
             # 计算已消耗课时（已确认的排课）
             consumed_courses = StudentCourse.query.filter(
@@ -1183,7 +1301,7 @@ def get_paid_courses_need_scheduling():
             # 计算剩余课时
             remaining_hours = total_paid_hours - consumed_hours
             
-            # 从缴费管理推送：只要（学生, 课程）在缴费中有记录且总缴费课时>0，都进入预排课列表（含剩余课时为0的）
+            # 只要设置了课程字段，都进入预排课列表（不管是否有剩余课时）
             # 获取学生信息（包括标记状态）
             student = Student.query.get(student_id)
             
@@ -1318,6 +1436,22 @@ def student_course_default_schedule(student_id, course_id):
         except Exception as e:
             db.session.rollback()
             return jsonify({'error': f'更新失败: {str(e)}'}), 500
+
+
+@bp.route('/api/students/default-course-map', methods=['GET'])
+@login_required
+def get_student_default_course_map():
+    """获取所有学生的默认课程映射（用于缴费页面"设置课程"的回显）。返回 {student_id: course_id} 格式。"""
+    try:
+        schedules = StudentCourseDefaultSchedule.query.all()
+        result = {}
+        for s in schedules:
+            # 每个学生只保留一个默认课程（取最新的）
+            if s.student_id not in result or (s.updated_at and result.get(s.student_id, {}).get('_updated_at', '') < str(s.updated_at)):
+                result[s.student_id] = s.course_id
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/api/students/<int:student_id>/exclude-from-scheduling', methods=['PUT'])

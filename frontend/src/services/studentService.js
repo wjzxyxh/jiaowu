@@ -106,6 +106,15 @@ export const studentService = {
     return response.remaining_hours ?? 0
   },
 
+
+  // 批量设置试课状态
+  batchSetTrialStatus: async (studentIds, trialStatus) => {
+    return api.post('/students/batch-set-trial-status', {
+      student_ids: studentIds,
+      trial_status: trialStatus,
+    })
+  },
+
   // 获取试课状态映射（无排课时也设置了试课状态的线索）
   getTrialStatusMap: async () => {
     try {

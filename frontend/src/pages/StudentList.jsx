@@ -19,6 +19,7 @@ const StudentList = () => {
   const [editingStudent, setEditingStudent] = useState(null)
   const [trialStatusStudent, setTrialStatusStudent] = useState(null)
   const [showTrialStatusModal, setShowTrialStatusModal] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
 
   const perPage = 20
 
@@ -215,6 +216,53 @@ const StudentList = () => {
       })
   }
 
+  // 批量操作
+  const batchTrialMutation = useMutation({
+    mutationFn: ({ studentIds, trialStatus }) => studentService.batchSetTrialStatus(studentIds, trialStatus),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries(['student-list'])
+      queryClient.invalidateQueries(['all-trial-courses'])
+      queryClient.invalidateQueries(['trial-status-map'])
+      queryClient.invalidateQueries(['students'])
+      queryClient.invalidateQueries(['marketing-drafts'])
+      queryClient.invalidateQueries(['marketing-schedules'])
+      setSelectedIds(new Set())
+      alert(data?.message || '批量操作成功！')
+    },
+    onError: (error) => {
+      alert('批量操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+  })
+
+  const handleToggleSelect = (studentId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(studentId)) {
+        next.delete(studentId)
+      } else {
+        next.add(studentId)
+      }
+      return next
+    })
+  }
+
+  const handleToggleSelectAll = () => {
+    if (selectedIds.size === students.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(students.map((s) => s.id)))
+    }
+  }
+
+  const handleBatchConfirmTrialSuccess = () => {
+    if (selectedIds.size === 0) {
+      alert('请先选择学生')
+      return
+    }
+    if (!window.confirm(`确认将选中的 ${selectedIds.size} 个学生的试课状态设为「成功」？`)) return
+    batchTrialMutation.mutate({ studentIds: [...selectedIds], trialStatus: '成功' })
+  }
+
   const handleSubmit = (e) => {
     e.preventDefault()
     const formData = new FormData(e.target)
@@ -292,6 +340,16 @@ const StudentList = () => {
             新增学生
           </button>
         )}
+        {hasFunctionPermission('students', 'edit') && (
+          <button
+            className="btn btn-success"
+            onClick={handleBatchConfirmTrialSuccess}
+            disabled={selectedIds.size === 0 || batchTrialMutation.isLoading}
+            style={{ marginLeft: '8px' }}
+          >
+            {batchTrialMutation.isLoading ? '处理中...' : `确认试课成功${selectedIds.size > 0 ? `(${selectedIds.size})` : ''}`}
+          </button>
+        )}
       </div>
 
       {/* 筛选条件 */}
@@ -357,6 +415,14 @@ const StudentList = () => {
         <table className="data-table">
           <thead>
             <tr>
+              <th style={{ width: '40px' }}>
+                <input
+                  type="checkbox"
+                  checked={students.length > 0 && selectedIds.size === students.length}
+                  onChange={handleToggleSelectAll}
+                  title="全选/取消全选"
+                />
+              </th>
               <th>序号</th>
               <th>姓名</th>
               <th>年级</th>
@@ -369,11 +435,11 @@ const StudentList = () => {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan="7" className="empty-tip">加载中...</td>
+                <td colSpan="8" className="empty-tip">加载中...</td>
               </tr>
             ) : students.length === 0 ? (
               <tr>
-                <td colSpan="7" className="empty-tip">暂无学生</td>
+                <td colSpan="8" className="empty-tip">暂无学生</td>
               </tr>
             ) : (
               students.map((student, index) => {
@@ -410,6 +476,13 @@ const StudentList = () => {
                 
                 return (
                 <tr key={student.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(student.id)}
+                      onChange={() => handleToggleSelect(student.id)}
+                    />
+                  </td>
                   <td>{rowIndex}</td>
                   <td>{student.name}</td>
                   <td>{student.grade || '-'}</td>

@@ -31,4 +31,9 @@ export const studentCoursesService = {
       paused
     })
   },
+
+  // 获取所有学生的默认课程映射（{student_id: course_id}）
+  getDefaultCourseMap: async () => {
+    return api.get('/students/default-course-map')
+  },
 }

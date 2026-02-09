@@ -64,6 +64,56 @@ const Payments = () => {
   const [paymentType, setPaymentType] = useState('缴费') // '缴费' 或 '退费'
   const [selectedStudentId, setSelectedStudentId] = useState(null) // 用于从提醒页面跳转
   const [editingPayment, setEditingPayment] = useState(null) // 编辑时传入的缴费记录
+  const [showCourseSetModal, setShowCourseSetModal] = useState(false)
+  const [courseSetStudentId, setCourseSetStudentId] = useState(null)
+  const [courseSetStudentName, setCourseSetStudentName] = useState('')
+
+  // 学生默认课程映射（从后端加载，保存时同步到后端）
+  const [defaultCourseMap, setDefaultCourseMap] = useState({})
+
+  // 从后端加载默认课程映射
+  const { data: backendCourseMap } = useQuery({
+    queryKey: ['default-course-map'],
+    queryFn: () => studentCoursesService.getDefaultCourseMap(),
+    staleTime: 5 * 60 * 1000,
+  })
+
+  // 后端数据加载后更新 defaultCourseMap
+  useEffect(() => {
+    if (backendCourseMap && typeof backendCourseMap === 'object') {
+      // 后端返回 {student_id: course_id}，key 是字符串
+      const map = {}
+      for (const [sid, cid] of Object.entries(backendCourseMap)) {
+        map[sid] = cid
+      }
+      setDefaultCourseMap(map)
+    }
+  }, [backendCourseMap])
+
+  const saveDefaultCourse = async (studentId, courseId) => {
+    // 立即更新前端状态
+    setDefaultCourseMap((prev) => {
+      const next = { ...prev, [studentId]: courseId }
+      return next
+    })
+    // 同步到后端：创建 StudentCourseDefaultSchedule 记录
+    if (courseId) {
+      try {
+        await studentCoursesService.updateDefaultSchedule(studentId, courseId, {
+          default_time_slot: '',
+          default_weekday: '',
+          default_teacher_id: null,
+          default_classroom: '',
+        })
+        // 刷新默认课程映射和预排课数据
+        queryClient.invalidateQueries(['default-course-map'])
+        queryClient.invalidateQueries(['paid-courses-need-scheduling'])
+      } catch (err) {
+        console.warn('保存默认课程到后端失败:', err)
+        alert('保存课程失败：' + (err?.message || '未知错误'))
+      }
+    }
+  }
 
   const perPage = 20
   
@@ -220,9 +270,15 @@ const Payments = () => {
     // 获取所有有缴费记录的学生ID集合
     const studentsWithPayments = new Set(processed.map((p) => p.student_id))
 
-    // 为没有缴费记录的学生创建虚拟记录
+    // 为没有缴费记录的学生创建虚拟记录（同时考虑学生筛选）
     students.forEach((student) => {
       if (!studentsWithPayments.has(student.id)) {
+        // 如果选择了学生筛选，跳过不匹配的
+        if (studentFilter && String(student.id) !== String(studentFilter)) return
+        // 如果筛选退费，不显示未缴费虚拟记录
+        if (typeFilter === '退费') return
+        // 如果按年/月筛选，未缴费记录无日期，不显示
+        if (yearFilter || monthFilter) return
         processed.push({
           id: null,
           student_id: student.id,
@@ -275,7 +331,7 @@ const Payments = () => {
     })
 
     return processed
-  }, [payments, remainingHoursMap, statusFilter, getPaymentGroupKey, students])
+  }, [payments, remainingHoursMap, statusFilter, studentFilter, typeFilter, yearFilter, monthFilter, getPaymentGroupKey, students])
 
   // 计算合计（所有筛选后的数据，排除未缴费记录）
   const totals = useMemo(() => {
@@ -502,6 +558,12 @@ const Payments = () => {
     setEditingPayment(p)
     setSelectedStudentId(null)
     setShowModal(true)
+  }
+
+  const handleOpenCourseSet = (studentId, studentName) => {
+    setCourseSetStudentId(studentId)
+    setCourseSetStudentName(studentName)
+    setShowCourseSetModal(true)
   }
 
   const handleReminderAddPayment = (studentId) => {
@@ -799,7 +861,14 @@ const Payments = () => {
                       <td>
                         {p.student_name}
                       </td>
-                      <td>{p.course_name || '-'}</td>
+                      <td>
+                        {p.course_name || (isNoPayment && defaultCourseMap[p.student_id] ? (
+                          <span style={{ color: '#17a2b8', fontStyle: 'italic', fontSize: '12px' }}>
+                            {courses.find((c) => c.id === defaultCourseMap[p.student_id])?.name || '-'}
+                            <span style={{ color: '#999' }}>（默认）</span>
+                          </span>
+                        ) : '-')}
+                      </td>
                       <td>{isNoPayment ? '-' : ((p.original_amount || 0).toFixed(2))}</td>
                       <td>{isNoPayment ? '-' : ((p.discount_rate || 0).toFixed(2))}</td>
                       <td style={amountColor}>
@@ -815,19 +884,29 @@ const Payments = () => {
                       <td>{p.remark || '-'}</td>
                       <td>
                         {isNoPayment ? (
-                          hasFunctionPermission('payments', 'add') && (
+                          <>
+                            {hasFunctionPermission('payments', 'add') && (
+                              <button
+                                className="btn btn-primary"
+                                style={{ marginRight: '4px' }}
+                                onClick={() => {
+                                  setSelectedStudentId(p.student_id)
+                                  setPaymentType('缴费')
+                                  setEditingPayment(null)
+                                  setShowModal(true)
+                                }}
+                              >
+                                新增缴费
+                              </button>
+                            )}
                             <button
-                              className="btn btn-primary"
-                              onClick={() => {
-                                setSelectedStudentId(p.student_id)
-                                setPaymentType('缴费')
-                                setEditingPayment(null)
-                                setShowModal(true)
-                              }}
+                              className="btn btn-secondary"
+                              onClick={() => handleOpenCourseSet(p.student_id, p.student_name)}
+                              title="设置新增缴费时的默认课程"
                             >
-                              新增缴费
+                              设置课程
                             </button>
-                          )
+                          </>
                         ) : (
                           <>
                             {hasFunctionPermission('payments', 'edit') && (
@@ -967,6 +1046,41 @@ const Payments = () => {
         </div>
       )}
 
+      {/* 设置课程弹窗 */}
+      {showCourseSetModal && (
+        <Modal
+          isOpen={showCourseSetModal}
+          onClose={() => setShowCourseSetModal(false)}
+          title={`设置默认课程 - ${courseSetStudentName}`}
+        >
+          <div className="form-group">
+            <label>选择课程</label>
+            <select
+              value={defaultCourseMap[courseSetStudentId] || ''}
+              onChange={(e) => {
+                const val = e.target.value ? parseInt(e.target.value) : null
+                saveDefaultCourse(courseSetStudentId, val)
+              }}
+            >
+              <option value="">-- 不设置默认课程 --</option>
+              {courses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} (单价: {c.unit_price}元)
+                </option>
+              ))}
+            </select>
+            <small style={{ color: '#666', display: 'block', marginTop: '8px' }}>
+              设置后，为该学生新增缴费时将自动选中此课程
+            </small>
+          </div>
+          <div className="form-actions" style={{ marginTop: '16px' }}>
+            <button type="button" className="btn" onClick={() => setShowCourseSetModal(false)}>
+              关闭
+            </button>
+          </div>
+        </Modal>
+      )}
+
       {/* 新增缴费/退费模态框 */}
       {showModal && (
         <PaymentModal
@@ -983,6 +1097,7 @@ const Payments = () => {
           financeConfigs={financeConfigs}
           selectedStudentId={selectedStudentId}
           editingPayment={editingPayment}
+          defaultCourseMap={defaultCourseMap}
           onSubmit={(data) =>
             editingPayment
               ? updateMutation.mutate({ id: editingPayment.id, data })
@@ -1006,6 +1121,7 @@ const PaymentModal = ({
   financeConfigs,
   selectedStudentId,
   editingPayment,
+  defaultCourseMap = {},
   onSubmit,
   isLoading,
 }) => {
@@ -1047,14 +1163,19 @@ const PaymentModal = ({
     }
   }, [isOpen, editingPayment])
 
-  // 当模态框打开时（非编辑），设置选中的学生
+  // 当模态框打开时（非编辑），设置选中的学生和默认课程
   useEffect(() => {
     if (isOpen && !editingPayment && selectedStudentId) {
       setSelectedStudent(selectedStudentId.toString())
+      // 预选默认课程
+      const defCourseId = defaultCourseMap[selectedStudentId]
+      if (defCourseId) {
+        setSelectedCourse(String(defCourseId))
+      }
     } else if (isOpen && !editingPayment) {
       setSelectedStudent('')
     }
-  }, [isOpen, selectedStudentId, editingPayment])
+  }, [isOpen, selectedStudentId, editingPayment, defaultCourseMap])
 
   // 重置表单（关闭时或非编辑打开时）
   useEffect(() => {
