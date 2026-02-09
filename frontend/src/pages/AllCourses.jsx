@@ -1341,13 +1341,13 @@ const AddCourseModal = ({ onClose, onSave, minHoursForScheduling, remainingHours
       .catch(() => {})
   }, [initialStudentId, initialCourseId, paidCourses])
 
-  // 从已缴费课程中提取唯一的学生：去排课进入时仅显示该学生；否则仅显示未被勾选的学生
+  // 从已缴费课程中提取唯一的学生：去排课进入时仅显示该学生；否则显示所有设置了课程的学生（暂停排课的已在后端过滤）
   const students = useMemo(() => {
     const studentMap = {}
     paidCourses.forEach((course) => {
       if (initialStudentId) {
         if (String(course.student_id) !== String(initialStudentId)) return
-      } else if (course.excluded_from_scheduling === true) return
+      }
       const studentId = course.student_id
       if (!studentMap[studentId]) {
         studentMap[studentId] = {

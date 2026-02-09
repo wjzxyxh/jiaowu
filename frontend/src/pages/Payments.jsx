@@ -279,6 +279,22 @@ const Payments = () => {
         if (typeFilter === '退费') return
         // 如果按年/月筛选，未缴费记录无日期，不显示
         if (yearFilter || monthFilter) return
+
+        // 从课时统计中计算该学生的已消耗课时（无缴费时 remaining_hours 即为负的已消耗课时）
+        let studentRemainingHours = 0
+        let studentRemainingCost = 0
+        if (Array.isArray(statsData)) {
+          statsData.forEach((s) => {
+            if (s.student_id === student.id && s.remaining_hours != null) {
+              studentRemainingHours += s.remaining_hours
+              const courseObj = courses.find((c) => c.id === s.course_id)
+              const unitPrice = courseObj ? courseObj.unit_price : 0
+              studentRemainingCost += s.remaining_hours * unitPrice
+            }
+          })
+        }
+        const hasOwing = studentRemainingHours < 0
+
         processed.push({
           id: null,
           student_id: student.id,
@@ -291,14 +307,14 @@ const Payments = () => {
           discount_rate: 0,
           class_hours: 0,
           unit_price: 0,
-          remaining_hours: 0,
-          remaining_cost: 0,
+          remaining_hours: studentRemainingHours,
+          remaining_cost: studentRemainingCost,
           status: null,
           notes: null,
           scheduling_paused: false,
-          _status: '未缴费',
-          _remainingHours: 0,
-          _remainingCost: 0,
+          _status: hasOwing ? '欠费' : '未缴费',
+          _remainingHours: studentRemainingHours,
+          _remainingCost: studentRemainingCost,
           _schedulingPaused: false,
           _isNoPayment: true, // 标记为无缴费记录
         })
@@ -331,7 +347,7 @@ const Payments = () => {
     })
 
     return processed
-  }, [payments, remainingHoursMap, statusFilter, studentFilter, typeFilter, yearFilter, monthFilter, getPaymentGroupKey, students])
+  }, [payments, remainingHoursMap, statusFilter, studentFilter, typeFilter, yearFilter, monthFilter, getPaymentGroupKey, students, statsData, courses])
 
   // 计算合计（所有筛选后的数据，排除未缴费记录）
   const totals = useMemo(() => {
@@ -341,8 +357,8 @@ const Payments = () => {
     let totalRemainingCost = 0
 
     processedPayments.forEach((p) => {
-      // 排除未缴费记录
-      if (p._status === '未缴费') return
+      // 排除无缴费记录（未缴费或欠费的虚拟记录）
+      if (p._isNoPayment) return
       
       const multiplier = p.type === '退费' ? -1 : 1
       totalPaidAmount += (p.paid_amount || 0) * multiplier
@@ -367,8 +383,8 @@ const Payments = () => {
   const cumulativeRemainingByKey = useMemo(() => {
     const byKey = {}
     for (const p of processedPayments) {
-      // 排除未缴费记录
-      if (p._status === '未缴费' || p.type !== '缴费' || p._status === '结束') continue
+      // 排除无缴费记录（未缴费或欠费的虚拟记录）
+      if (p._isNoPayment || p.type !== '缴费' || p._status === '结束') continue
       const key = getPaymentGroupKey(p)
       if (!byKey[key]) byKey[key] = []
       byKey[key].push(p)
@@ -392,8 +408,8 @@ const Payments = () => {
     const list = []
     const seen = new Set()
     for (const p of processedPayments) {
-      // 排除未缴费记录
-      if (p._status === '未缴费' || p.type !== '缴费' || p._status === '结束') continue
+      // 排除无缴费记录（未缴费或欠费的虚拟记录）
+      if (p._isNoPayment || p.type !== '缴费' || p._status === '结束') continue
       const key = getPaymentGroupKey(p)
       if (seen.has(key)) continue
       const cumulative = cumulativeRemainingByKey[key] ?? 0
@@ -844,7 +860,7 @@ const Payments = () => {
                   const cumulativeHours = type === '缴费' && status !== '结束' ? (cumulativeRemainingByKey[cumulativeKey] ?? 0) : 0
                   const hoursLow = cumulativeHours <= reminderThreshold && type === '缴费' && status !== '结束'
                   const isArrears = status === '欠费'
-                  const isNoPayment = status === '未缴费'
+                  const isNoPayment = p._isNoPayment === true
                   const needsReminder = isArrears || hoursLow || isNoPayment // 未缴费也需要提醒
                   const rowStyle =
                     status === '结束'
@@ -876,9 +892,9 @@ const Payments = () => {
                       </td>
                       <td>{isNoPayment ? '-' : (p.class_count || 0)}</td>
                       <td>{isNoPayment ? '-' : (p.unit_price ? p.unit_price.toFixed(2) : '-')}</td>
-                      <td style={remainingHoursColor}>{isNoPayment ? '-' : remainingHours.toFixed(2)}</td>
+                      <td style={remainingHoursColor}>{isNoPayment && remainingHours === 0 ? '-' : remainingHours.toFixed(2)}</td>
                       <td style={remainingCostColor}>
-                        {isNoPayment ? '-' : `${remainingCostPrefix}${Math.abs(remainingCost).toFixed(2)}`}
+                        {isNoPayment && remainingCost === 0 ? '-' : `${remainingCostPrefix}${Math.abs(remainingCost).toFixed(2)}`}
                       </td>
                       <td>{statusBadge}</td>
                       <td>{p.remark || '-'}</td>
@@ -1163,19 +1179,23 @@ const PaymentModal = ({
     }
   }, [isOpen, editingPayment])
 
-  // 当模态框打开时（非编辑），设置选中的学生和默认课程
+  // 用 ref 持有最新的 defaultCourseMap，避免将其放入 useEffect 依赖导致表单被意外重置
+  const defaultCourseMapRef = useRef(defaultCourseMap)
+  useEffect(() => { defaultCourseMapRef.current = defaultCourseMap }, [defaultCourseMap])
+
+  // 当模态框打开时（非编辑），设置选中的学生和默认课程（仅在 isOpen/selectedStudentId 变化时执行）
   useEffect(() => {
     if (isOpen && !editingPayment && selectedStudentId) {
       setSelectedStudent(selectedStudentId.toString())
       // 预选默认课程
-      const defCourseId = defaultCourseMap[selectedStudentId]
+      const defCourseId = defaultCourseMapRef.current[selectedStudentId]
       if (defCourseId) {
         setSelectedCourse(String(defCourseId))
       }
     } else if (isOpen && !editingPayment) {
       setSelectedStudent('')
     }
-  }, [isOpen, selectedStudentId, editingPayment, defaultCourseMap])
+  }, [isOpen, selectedStudentId, editingPayment])
 
   // 重置表单（关闭时或非编辑打开时）
   useEffect(() => {

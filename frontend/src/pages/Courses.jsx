@@ -2378,14 +2378,14 @@ const AddCourseModal = ({ isOpen, onClose, students, teachers, courses, timeSlot
       .catch(() => {})
   }, [isOpen, initialStudentId, initialCourseId, paidCourses])
 
-  // 从已缴费课程中提取唯一的学生：从 student-courses 进入（initialStudentId 存在）时只显示对应学生；否则显示未标记学生
+  // 从已缴费课程中提取唯一的学生：从 student-courses 进入（initialStudentId 存在）时只显示对应学生；否则显示所有设置了课程的学生（暂停排课的已在后端过滤）
   const availableStudents = useMemo(() => {
     const studentMap = {}
     const onlyShowInitialStudent = !!initialStudentId
     paidCourses.forEach((course) => {
       if (onlyShowInitialStudent) {
         if (String(course.student_id) !== String(initialStudentId)) return
-      } else if (course.excluded_from_scheduling === true) return
+      }
       const studentId = course.student_id
       if (!studentMap[studentId]) {
         studentMap[studentId] = {

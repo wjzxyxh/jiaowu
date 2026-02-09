@@ -1430,9 +1430,9 @@ const StudentCourses = () => {
                     <th style={{ width: '12%' }}>学生</th>
                     <th style={{ width: '8%' }}>年级</th>
                     <th style={{ width: '15%' }}>课程</th>
-                    <th style={{ width: '12%' }}>默认上课时间</th>
-                    <th style={{ width: '10%' }}>默认上课星期</th>
-                    <th style={{ width: '10%' }}>默认上课老师</th>
+                    <th style={{ width: '12%' }}>默认时间</th>
+                    <th style={{ width: '10%' }}>默认星期</th>
+                    <th style={{ width: '10%' }}>默认老师</th>
                     <th style={{ width: '8%' }}>默认教室</th>
                     <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
                     <th style={{ textAlign: 'right', width: '10%' }} title="当周：当前选择周已消耗；累计：全部已确认消耗">已消耗（当周/累计）</th>
@@ -1761,7 +1761,7 @@ const StudentCourses = () => {
               </select>
             </div>
             <div className="form-group">
-              <label>默认上课星期</label>
+              <label>默认星期</label>
               <select value={defaultWeekday} onChange={(e) => setDefaultWeekday(e.target.value)}>
                 <option value="">-- 请选择星期 --</option>
                 <option value="周一">周一</option>
@@ -1774,7 +1774,7 @@ const StudentCourses = () => {
               </select>
             </div>
             <div className="form-group">
-              <label>默认上课老师</label>
+              <label>默认老师</label>
               <select value={defaultTeacherId} onChange={(e) => setDefaultTeacherId(e.target.value)}>
                 <option value="">-- 请选择老师 --</option>
                 {Array.isArray(teachers) &&
