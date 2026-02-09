@@ -18,8 +18,9 @@
 
 .page-header {
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
+  gap: 16px;
   margin-bottom: 20px;
 }
 
@@ -131,26 +132,27 @@
   background: #e9ecef;
 }
 
-.data-table {
+.courses-manage-page .data-table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 15px;
+  border: 1px solid #888;
 }
 
-.data-table thead {
-  background: #f5f5f5;
+.courses-manage-page .data-table thead {
+  background: #f0f0f0;
 }
 
-.data-table th {
+.courses-manage-page .data-table th {
   padding: 12px;
   text-align: left;
   font-weight: bold;
-  border-bottom: 2px solid #ddd;
+  border: 1px solid #888;
 }
 
-.data-table td {
+.courses-manage-page .data-table td {
   padding: 12px;
-  border-bottom: 1px solid #eee;
+  border: 1px solid #aaa;
 }
 
 .data-table tbody tr:hover {
@@ -215,6 +217,163 @@
   justify-content: flex-end;
   gap: 10px;
   margin-top: 24px;
+}
+
+/* ==================== 课程成本分组表格 ==================== */
+
+.cost-grouped-table .subject-cell {
+  background: #fafafa;
+  vertical-align: middle;
+  text-align: center;
+  border-right: 2px solid #666;
+  font-weight: 600;
+}
+
+.cost-grouped-table .subject-tag {
+  display: inline-block;
+  padding: 3px 12px;
+  background: #f5f5f5;
+  color: #555;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid #ddd;
+}
+
+.cost-grouped-table .course-name-cell {
+  vertical-align: middle;
+  font-weight: 500;
+  color: #333;
+}
+
+.cost-grouped-table .course-price-cell {
+  vertical-align: middle;
+  color: #667eea;
+  font-weight: 500;
+}
+
+.cost-grouped-table .teacher-name-cell {
+  font-weight: 500;
+  color: #333;
+}
+
+.cost-grouped-table .teacher-cost-cell {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+.cost-grouped-table .no-teacher-cell {
+  text-align: center;
+}
+
+.cost-grouped-table .action-cell {
+  white-space: nowrap;
+}
+
+/* 教师标签（chips）布局 */
+.cost-grouped-table .teachers-chips-cell {
+  padding: 8px 12px;
+}
+
+.teacher-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.teacher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #f5f7fa;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+
+.teacher-chip:hover {
+  background: #eef1f6;
+  border-color: #b0b8c4;
+}
+
+.chip-name {
+  font-weight: 600;
+  color: #333;
+}
+
+.chip-cost {
+  color: #e67e22;
+  font-weight: 600;
+}
+
+
+/* 教师成本详情弹窗 */
+.chip-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.chip-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chip-detail-label {
+  font-size: 14px;
+  color: #888;
+  min-width: 80px;
+}
+
+.chip-detail-value {
+  font-size: 15px;
+  color: #333;
+  font-weight: 500;
+}
+
+/* 科目之间的分界线 - 加粗 */
+.courses-manage-page .cost-grouped-table tr.subject-first-row td {
+  border-top: 2px solid #666;
+}
+
+/* 课程之间的分界线 */
+.courses-manage-page .cost-grouped-table tr.course-first-row td {
+  border-top: 1px solid #aaa;
+}
+
+.courses-manage-page .cost-grouped-table tbody tr:first-child td {
+  border-top: none;
+}
+
+.cost-grouped-table .add-row-cell {
+  text-align: center;
+  padding: 6px 12px;
+  background: #fafafa;
+}
+
+.cost-grouped-table .add-row-cell .btn-add-teacher,
+.cost-grouped-table .subject-cell .btn-add-teacher {
+  display: block;
+  margin: 10px auto 0;
+  padding: 3px 14px;
+  background: white;
+  color: #667eea;
+  border: 1px dashed #667eea;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.cost-grouped-table .add-row-cell .btn-add-teacher:hover,
+.cost-grouped-table .subject-cell .btn-add-teacher:hover {
+  background: #f0f3ff;
+  border-style: solid;
 }
 
 .loading {

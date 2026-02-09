@@ -13,6 +13,8 @@ const CoursesManage = () => {
   const [activeTab, setActiveTab] = useState('courses')
   const [showModal, setShowModal] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
+  const [showChipDetailModal, setShowChipDetailModal] = useState(false)
+  const [selectedChipCost, setSelectedChipCost] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
   const [historyData, setHistoryData] = useState([])
   const queryClient = useQueryClient()
@@ -29,7 +31,6 @@ const CoursesManage = () => {
     queryFn: async () => {
       return api.get('/teacher-course-costs')
     },
-    enabled: activeTab === 'teacher-costs',
   })
 
   // 经验成本数据
@@ -45,7 +46,6 @@ const CoursesManage = () => {
   const { data: teachers = [] } = useQuery({
     queryKey: ['teachers', '启用'],
     queryFn: () => teacherService.getTeachers({ status: '启用' }),
-    enabled: activeTab === 'teacher-costs' || activeTab === 'experience-costs',
   })
 
   // 获取学生列表（用于经验成本）
@@ -63,7 +63,11 @@ const CoursesManage = () => {
     mutationFn: courseManageService.deleteCourse,
     onSuccess: () => {
       queryClient.invalidateQueries(['courses-manage'])
+      queryClient.invalidateQueries(['teacher-course-costs'])
       alert('删除成功')
+    },
+    onError: (error) => {
+      alert('删除失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
     },
   })
 
@@ -324,8 +328,20 @@ const CoursesManage = () => {
 
   return (
     <div className="courses-manage-page" style={{ width: '100%' }}>
-      <div className="page-header">
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', gap: '16px' }}>
         <h1>课程成本</h1>
+        <button className="btn btn-primary" onClick={() => {
+          if (activeTab === 'courses') {
+            setEditingItem({ type: 'course', data: null })
+          } else if (activeTab === 'teacher-costs') {
+            setEditingItem({ type: 'teacher-cost', data: null })
+          } else if (activeTab === 'experience-costs') {
+            setEditingItem({ type: 'experience-cost', data: null })
+          }
+          setShowModal(true)
+        }}>
+          新增
+        </button>
       </div>
 
       {/* 标签页 */}
@@ -344,123 +360,179 @@ const CoursesManage = () => {
       {/* 课程管理标签页 */}
       {activeTab === 'courses' && (
         <div className="tab-content active">
-          <div className="toolbar">
-            {hasFunctionPermission('courses_manage', 'add') && (
-              <button className="btn btn-primary" onClick={() => {
-                setEditingItem({ type: 'course', data: null })
-                setShowModal(true)
-              }}>
-                新增课程
-              </button>
-            )}
-          </div>
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>课程</th>
-                  <th>科目</th>
-                  <th>课程单价</th>
-                  <th>课程描述</th>
-                  <th>状态</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-            <tbody>
-              {courses.length > 0 ? (
-                courses.map((course) => (
-                  <tr key={course.id}>
-                    <td>{course.id}</td>
-                    <td>{course.name}</td>
-                    <td>{course.subject}</td>
-                    <td>{course.unit_price}</td>
-                    <td>{course.description || '-'}</td>
-                    <td>
-                      <span className={`status-badge status-${course.status === '启用' ? 'normal' : 'deleted'}`}>
-                        {course.status}
-                      </span>
-                    </td>
-                    <td>
-                      {hasFunctionPermission('courses_manage', 'edit') && (
-                        <button className="btn btn-warning" onClick={() => handleEditCourse(course)}>
-                          编辑
-                        </button>
-                      )}
-                      {hasFunctionPermission('courses_manage', 'delete') && (
-                        <button className="btn btn-danger" onClick={() => handleDeleteCourse(course.id)}>
-                          删除
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                    暂无课程数据
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
+          {(() => {
+            // 按科目分组
+            const subjectMap = {}
+            courses.forEach(course => {
+              const subject = course.subject || '未分类'
+              if (!subjectMap[subject]) {
+                subjectMap[subject] = []
+              }
+              subjectMap[subject].push(course)
+            })
+
+            const subjects = Object.keys(subjectMap).sort()
+
+            if (subjects.length === 0) {
+              return (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  暂无课程数据
+                </div>
+              )
+            }
+
+            // 构建表格行
+            const tableRows = []
+            subjects.forEach(subject => {
+              const subjectCourses = subjectMap[subject]
+
+              subjectCourses.forEach((course, idx) => {
+                tableRows.push({
+                  subject,
+                  course,
+                  isFirstOfSubject: idx === 0,
+                  subjectRowSpan: subjectCourses.length,
+                })
+              })
+            })
+
+            return (
+              <div className="table-wrapper">
+                <table className="data-table cost-grouped-table">
+                  <thead>
+                    <tr>
+                      <th>科目</th>
+                      <th>课程</th>
+                      <th>课程单价</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, index) => (
+                        <tr key={row.course.id} className={`${row.isFirstOfSubject ? 'subject-first-row' : ''} course-first-row`}>
+                          {row.isFirstOfSubject && (
+                            <td rowSpan={row.subjectRowSpan} className="subject-cell">
+                              <span className="subject-tag">{row.subject}</span>
+                            </td>
+                          )}
+                          <td className="course-name-cell">{row.course.name}</td>
+                          <td className="course-price-cell">¥{row.course.unit_price}</td>
+                          <td>
+                            <span className={`status-badge status-${row.course.status === '启用' ? 'normal' : 'deleted'}`}>
+                              {row.course.status}
+                            </span>
+                          </td>
+                          <td className="action-cell">
+                            {hasFunctionPermission('courses_manage', 'edit') && (
+                              <button className="btn btn-warning" onClick={() => handleEditCourse(row.course)}>编辑</button>
+                            )}
+                            {hasFunctionPermission('courses_manage', 'delete') && (
+                              <button className="btn btn-danger" onClick={() => handleDeleteCourse(row.course.id)}>删除</button>
+                            )}
+                          </td>
+                        </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
         </div>
       )}
 
       {/* 课程成本标签页 */}
       {activeTab === 'teacher-costs' && (
         <div className="tab-content active">
-          <div className="toolbar">
-            <button className="btn btn-primary" onClick={() => {
-              setEditingItem({ type: 'teacher-cost', data: null })
-              setShowModal(true)
-            }}>
-              新增课程成本
-            </button>
-          </div>
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>教师姓名</th>
-                  <th>课程</th>
-                  <th>每次课成本</th>
-                  <th>操作</th>
-                </tr>
-              </thead>
-            <tbody>
-              {teacherCosts.length > 0 ? (
-                teacherCosts.map((tc) => (
-                  <tr key={tc.id}>
-                    <td>{tc.id}</td>
-                    <td>{tc.teacher_name}</td>
-                    <td>{tc.course_name}</td>
-                    <td>{tc.cost_per_class.toFixed(2)}</td>
-                    <td>
-                      <button className="btn btn-warning" onClick={() => handleEditTeacherCost(tc)}>
-                        编辑
-                      </button>
-                      <button className="btn btn-danger" onClick={() => handleDeleteTeacherCost(tc.id)}>
-                        删除
-                      </button>
-                      <button className="btn btn-info" onClick={() => handleShowTeacherCostHistory(tc.id)} style={{ background: '#17a2b8', color: 'white' }}>
-                        操作记录
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                    暂无课程成本数据
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-          </div>
+          {(() => {
+            // 按科目分组课程
+            const subjectMap = {}
+            const enabledCourses = courses.filter(c => c.status === '启用')
+            enabledCourses.forEach(course => {
+              const subject = course.subject || '未分类'
+              if (!subjectMap[subject]) {
+                subjectMap[subject] = []
+              }
+              subjectMap[subject].push(course)
+            })
+
+            // 为每个课程匹配教师成本
+            const costByCourseId = {}
+            teacherCosts.forEach(tc => {
+              if (!costByCourseId[tc.course_id]) {
+                costByCourseId[tc.course_id] = []
+              }
+              costByCourseId[tc.course_id].push(tc)
+            })
+
+            const subjects = Object.keys(subjectMap).sort()
+
+            if (subjects.length === 0) {
+              return (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                  暂无课程数据，请先在"课程信息"中添加课程
+                </div>
+              )
+            }
+
+            // 构建表格行：每个课程一行，教师以标签形式展示
+            const tableRows = []
+            subjects.forEach(subject => {
+              const subjectCourses = subjectMap[subject]
+              subjectCourses.forEach((course, idx) => {
+                tableRows.push({
+                  subject,
+                  course,
+                  teachers: costByCourseId[course.id] || [],
+                  isFirstOfSubject: idx === 0,
+                  subjectRowSpan: subjectCourses.length,
+                })
+              })
+            })
+
+            return (
+              <div className="table-wrapper">
+                <table className="data-table cost-grouped-table">
+                  <thead>
+                    <tr>
+                      <th>科目</th>
+                      <th>课程</th>
+                      <th>授课教师 / 每次课成本</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableRows.map((row, index) => (
+                      <tr key={index} className={`${row.isFirstOfSubject ? 'subject-first-row' : ''} course-first-row`}>
+                        {row.isFirstOfSubject && (
+                          <td rowSpan={row.subjectRowSpan} className="subject-cell">
+                            <span className="subject-tag">{row.subject}</span>
+                          </td>
+                        )}
+                        <td className="course-name-cell">{row.course.name}</td>
+                        <td className="teachers-chips-cell">
+                          {row.teachers.length > 0 ? (
+                            <div className="teacher-chips">
+                              {row.teachers.map(tc => (
+                                <div key={tc.id} className="teacher-chip" onClick={() => {
+                                  setSelectedChipCost(tc)
+                                  setShowChipDetailModal(true)
+                                }} title="点击查看详情">
+                                  <span className="chip-name">{tc.teacher_name}</span>
+                                  <span className="chip-cost">¥{tc.cost_per_class.toFixed(2)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <span style={{ color: '#bbb', fontSize: '13px' }}>暂无教师</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })()}
         </div>
       )}
 
@@ -644,6 +716,34 @@ const CoursesManage = () => {
           historyData={historyData}
           type={activeTab === 'teacher-costs' ? 'teacher-cost' : 'experience-cost'}
         />
+      )}
+
+      {/* 教师成本详情弹窗（双击触发） */}
+      {showChipDetailModal && selectedChipCost && (
+        <Modal isOpen={showChipDetailModal} onClose={() => { setShowChipDetailModal(false); setSelectedChipCost(null) }} title="课程成本详情">
+          <div className="chip-detail-content">
+            <div className="chip-detail-row">
+              <span className="chip-detail-label">教师</span>
+              <span className="chip-detail-value">{selectedChipCost.teacher_name}</span>
+            </div>
+            <div className="chip-detail-row">
+              <span className="chip-detail-label">课程</span>
+              <span className="chip-detail-value">{selectedChipCost.course_name}</span>
+            </div>
+            <div className="chip-detail-row">
+              <span className="chip-detail-label">每次课成本</span>
+              <span className="chip-detail-value" style={{ color: '#e67e22', fontWeight: 600 }}>¥{selectedChipCost.cost_per_class.toFixed(2)}</span>
+            </div>
+          </div>
+          <div className="form-actions" style={{ marginTop: '24px', justifyContent: 'center', gap: '12px' }}>
+            <button className="btn btn-danger" onClick={() => {
+              setShowChipDetailModal(false)
+              handleDeleteTeacherCost(selectedChipCost.id)
+              setSelectedChipCost(null)
+            }}>删除</button>
+            <button className="btn" onClick={() => { setShowChipDetailModal(false); setSelectedChipCost(null) }}>关闭</button>
+          </div>
+        </Modal>
       )}
     </div>
   )

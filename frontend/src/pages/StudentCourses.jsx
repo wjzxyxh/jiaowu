@@ -70,18 +70,16 @@ const StudentCourses = () => {
   }, [searchParams])
 
   const setWeekOffsetAndUrl = useCallback((valueOrUpdater) => {
-    setWeekOffset((prev) => {
-      const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(prev) : valueOrUpdater
-      const nextParams = new URLSearchParams(searchParams)
-      if (next === 0) {
-        nextParams.delete('weekOffset')
-      } else {
-        nextParams.set('weekOffset', String(next))
-      }
-      setSearchParams(nextParams, { replace: true })
-      return next
-    })
-  }, [searchParams, setSearchParams])
+    const next = typeof valueOrUpdater === 'function' ? valueOrUpdater(weekOffset) : valueOrUpdater
+    setWeekOffset(next)
+    const nextParams = new URLSearchParams(searchParams)
+    if (next === 0) {
+      nextParams.delete('weekOffset')
+    } else {
+      nextParams.set('weekOffset', String(next))
+    }
+    setSearchParams(nextParams, { replace: true })
+  }, [weekOffset, searchParams, setSearchParams])
 
   const [copiedStudents, setCopiedStudents] = useState(new Set()) // 记录已复制过的学生ID
   // 筛选：是否标记、是否复制、是否截图
@@ -89,6 +87,31 @@ const StudentCourses = () => {
   const [filterCopied, setFilterCopied] = useState('all') // 'all' | 'copied' | 'not_copied'
   const [filterScreenshot, setFilterScreenshot] = useState('all') // 'all' | 'screenshot' | 'not_screenshot'
   const [batchOperating, setBatchOperating] = useState(false)
+  const [showFieldsDropdown, setShowFieldsDropdown] = useState(false) // 显示/隐藏字段下拉菜单
+  const fieldsDropdownRef = useRef(null)
+  // 可隐藏的字段配置（key: 字段标识, label: 显示名称, defaultVisible: 默认是否可见）
+  const FIELD_OPTIONS = useMemo(() => [
+    { key: 'time', label: '时间' },
+    { key: 'weekday', label: '星期' },
+    { key: 'teacher', label: '老师' },
+    { key: 'classroom', label: '教室' },
+    { key: 'totalHours', label: '总课时' },
+    { key: 'consumed', label: '当周/累计' },
+    { key: 'remaining', label: '剩余课时' },
+    { key: 'grade', label: '年级' },
+    { key: 'copyButton', label: '复制按钮' },
+  ], [])
+  const [visibleFields, setVisibleFields] = useState({
+    time: false,
+    weekday: false,
+    teacher: true,
+    classroom: false,
+    totalHours: false,
+    consumed: true,
+    remaining: true,
+    grade: true,
+    copyButton: false,
+  })
   const [screenshotStudents, setScreenshotStudents] = useState(new Set()) // 已截图的学生ID
   const [screenshotTarget, setScreenshotTarget] = useState(null) // 待截图的 { studentId, studentName, courses, weekInfoLabel, monthFilter, weekFilter }
   const screenshotCaptureRef = useRef(null)
@@ -233,6 +256,18 @@ const StudentCourses = () => {
     queryFn: () => othersService.getTimeSlots({ status: '启用' }),
     staleTime: 10 * 60 * 1000,
   })
+
+  // 点击下拉菜单外部时关闭
+  useEffect(() => {
+    if (!showFieldsDropdown) return
+    const handleClickOutside = (e) => {
+      if (fieldsDropdownRef.current && !fieldsDropdownRef.current.contains(e.target)) {
+        setShowFieldsDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showFieldsDropdown])
 
   // 获取老师列表（用于默认上课老师）
   const { data: teachers = [] } = useQuery({
@@ -1372,18 +1407,6 @@ const StudentCourses = () => {
                   </select>
                 </div>
                 <div className="filter-item">
-                  <span className="filter-name">是否复制</span>
-                  <select
-                    value={filterCopied}
-                    onChange={(e) => { setFilterCopied(e.target.value); setCurrentPage(1) }}
-                    className="filter-select"
-                  >
-                    <option value="all">全部</option>
-                    <option value="copied">已复制</option>
-                    <option value="not_copied">未复制</option>
-                  </select>
-                </div>
-                <div className="filter-item">
                   <span className="filter-name">是否截图</span>
                   <select
                     value={filterScreenshot}
@@ -1398,17 +1421,56 @@ const StudentCourses = () => {
               </div>
               <div className="toolbar-divider" aria-hidden="true" />
               <div className="toolbar-actions">
-                {hasFunctionPermission('student_courses', 'batch_select') && (
+                <div ref={fieldsDropdownRef} style={{ position: 'relative', display: 'inline-block' }}>
                   <button
                     type="button"
                     className="btn btn-secondary toolbar-btn"
-                    onClick={handleToggleSelectAll}
-                    disabled={batchOperating || filteredCourses.length === 0}
-                    title={filteredCourses.length === 0 ? '当前筛选结果为空，无法操作' : ''}
+                    onClick={() => setShowFieldsDropdown((prev) => !prev)}
                   >
-                    {batchOperating ? '处理中...' : (isAllMarked ? '取消勾选' : '全部勾选')}
+                    显示字段 ▾
                   </button>
-                )}
+                  {showFieldsDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: '4px',
+                      background: '#fff',
+                      border: '1px solid #ddd',
+                      borderRadius: '6px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.12)',
+                      padding: '8px 0',
+                      zIndex: 100,
+                      minWidth: '140px',
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {FIELD_OPTIONS.map((opt) => (
+                        <label
+                          key={opt.key}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            padding: '6px 14px',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            userSelect: 'none',
+                          }}
+                          onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={visibleFields[opt.key]}
+                            onChange={() => setVisibleFields((prev) => ({ ...prev, [opt.key]: !prev[opt.key] }))}
+                            style={{ margin: 0 }}
+                          />
+                          {opt.label}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 {hasFunctionPermission('student_courses', 'reset') && (
                   <button
                     type="button"
@@ -1427,17 +1489,17 @@ const StudentCourses = () => {
                   <tr>
                     <th style={{ width: '5%', textAlign: 'center' }}>序号</th>
                     <th style={{ width: '5%', textAlign: 'center' }}>标记</th>
-                    <th style={{ width: '12%' }}>学生</th>
-                    <th style={{ width: '8%' }}>年级</th>
-                    <th style={{ width: '15%' }}>课程</th>
-                    <th style={{ width: '12%' }}>默认时间</th>
-                    <th style={{ width: '10%' }}>默认星期</th>
-                    <th style={{ width: '10%' }}>默认老师</th>
-                    <th style={{ width: '8%' }}>默认教室</th>
-                    <th style={{ textAlign: 'right', width: '8%' }}>总课时</th>
-                    <th style={{ textAlign: 'right', width: '10%' }} title="当周：当前选择周已消耗；累计：全部已确认消耗">已消耗（当周/累计）</th>
-                    <th style={{ textAlign: 'right', width: '8%' }} title="剩余课时 = 总课时 - 累计已消耗">剩余课时</th>
-                    <th style={{ textAlign: 'center', width: '12%' }}>操作</th>
+                    <th>学生</th>
+                    {visibleFields.grade && <th>年级</th>}
+                    <th>课程</th>
+                    {visibleFields.time && <th>时间</th>}
+                    {visibleFields.weekday && <th>星期</th>}
+                    {visibleFields.teacher && <th>老师</th>}
+                    {visibleFields.classroom && <th>教室</th>}
+                    {visibleFields.totalHours && <th style={{ textAlign: 'right' }}>总课时</th>}
+                    {visibleFields.consumed && <th style={{ textAlign: 'right' }} title="当周：当前选择周已消耗；累计：全部已确认消耗">当周/累计</th>}
+                    {visibleFields.remaining && <th style={{ textAlign: 'right' }} title="剩余课时 = 总课时 - 累计已消耗">剩余课时</th>}
+                    <th style={{ textAlign: 'center' }}>操作</th>
                   </tr>
                 </thead>
                 <tbody>{paginatedCourses.map((course, index) => {
@@ -1455,26 +1517,36 @@ const StudentCourses = () => {
                             title="当前选择周已排课则勾选，否则不勾选（与排课按钮状态一致）"
                           />
                         </td>
-                        <td>{course.student_name}</td>
-                        <td>{course.grade || '-'}</td>
+                        <td
+                          onDoubleClick={() => hasFunctionPermission('student_courses', 'edit_default') && handleShowEditModal(course)}
+                          style={{ cursor: hasFunctionPermission('student_courses', 'edit_default') ? 'pointer' : undefined }}
+                          title={hasFunctionPermission('student_courses', 'edit_default') ? '双击编辑默认排课' : undefined}
+                        >
+                          {course.student_name}
+                        </td>
+                        {visibleFields.grade && <td>{course.grade || '-'}</td>}
                         <td>{course.course_name}</td>
-                        <td>{course.default_time_slot || '-'}</td>
-                        <td>{course.default_weekday || '-'}</td>
-                        <td>{course.default_teacher_name || '-'}</td>
-                        <td>{course.default_classroom || '-'}</td>
-                        <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>
-                        <td style={{ textAlign: 'right' }}>
-                          {(() => {
-                            const key = `${course.student_id}-${course.course_id}`
-                            const weekConsumed = consumedInCurrentWeekByKey[key] ?? 0
-                            const totalConsumed = course.consumed_hours ?? 0
-                            const weekStr = Number.isInteger(weekConsumed) ? String(weekConsumed) : weekConsumed.toFixed(1)
-                            return `${weekStr} / ${totalConsumed}`
-                          })()}
-                        </td>
-                        <td style={{ textAlign: 'right' }} className="remaining-hours">
-                          {course.remaining_hours != null ? Number(course.remaining_hours).toFixed(1) : '0.0'}
-                        </td>
+                        {visibleFields.time && <td>{course.default_time_slot || '-'}</td>}
+                        {visibleFields.weekday && <td>{course.default_weekday || '-'}</td>}
+                        {visibleFields.teacher && <td>{course.default_teacher_name || '-'}</td>}
+                        {visibleFields.classroom && <td>{course.default_classroom || '-'}</td>}
+                        {visibleFields.totalHours && <td style={{ textAlign: 'right' }}>{course.total_paid_hours || 0}</td>}
+                        {visibleFields.consumed && (
+                          <td style={{ textAlign: 'right' }}>
+                            {(() => {
+                              const key = `${course.student_id}-${course.course_id}`
+                              const weekConsumed = consumedInCurrentWeekByKey[key] ?? 0
+                              const totalConsumed = course.consumed_hours ?? 0
+                              const weekStr = Number.isInteger(weekConsumed) ? String(weekConsumed) : weekConsumed.toFixed(1)
+                              return `${weekStr} / ${totalConsumed}`
+                            })()}
+                          </td>
+                        )}
+                        {visibleFields.remaining && (
+                          <td style={{ textAlign: 'right' }} className="remaining-hours">
+                            {course.remaining_hours != null ? Number(course.remaining_hours).toFixed(1) : '0.0'}
+                          </td>
+                        )}
                         <td style={{ textAlign: 'center' }}>
                           {hasFunctionPermission('student_courses', 'schedule') && (() => {
                             // 检查当前选择的周是否有该学生的排课
@@ -1519,7 +1591,7 @@ const StudentCourses = () => {
                               </button>
                             )
                           })()}
-                          {hasFunctionPermission('student_courses', 'copy') && (
+                          {visibleFields.copyButton && hasFunctionPermission('student_courses', 'copy') && (
                             <button
                               onClick={() => handleCopyCourses(course.student_id)}
                               className="btn-link"
@@ -1549,15 +1621,6 @@ const StudentCourses = () => {
                               {screenshotStudents.has(course.student_id) ? '已截图' : '截图'}
                             </button>
                           )}
-                          {hasFunctionPermission('student_courses', 'edit_default') && (
-                            <button 
-                              onClick={() => handleShowEditModal(course)} 
-                              className="btn-link edit-default"
-                              style={{ marginRight: '0' }}
-                            >
-                              编辑
-                            </button>
-                          )}
                         </td>
                       </tr>
                     )
@@ -1572,27 +1635,86 @@ const StudentCourses = () => {
                   display: 'flex',
                   justifyContent: 'center',
                   alignItems: 'center',
-                  gap: '10px',
+                  gap: '6px',
+                  flexWrap: 'wrap',
                 }}
               >
                 <button
                   className="btn btn-secondary"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  style={{ padding: '6px 10px', fontSize: '13px' }}
+                >
+                  首页
+                </button>
+                <button
+                  className="btn btn-secondary"
                   onClick={() => changePage(-1)}
                   disabled={currentPage === 1}
+                  style={{ padding: '6px 10px', fontSize: '13px' }}
                 >
                   上一页
                 </button>
-                <span style={{ padding: '0 15px' }}>
-                  第 {currentPage} 页，共 {totalPages} 页（当前 {filteredCourses.length} 条
-                  {(filterMarked !== 'all' || filterCopied !== 'all' || filterScreenshot !== 'all') ? ` / 全部 ${courses.length} 条` : ''}）
-                </span>
+                {(() => {
+                  const pages = []
+                  let start = Math.max(1, currentPage - 2)
+                  let end = Math.min(totalPages, currentPage + 2)
+                  if (currentPage <= 3) end = Math.min(totalPages, 5)
+                  if (currentPage >= totalPages - 2) start = Math.max(1, totalPages - 4)
+
+                  if (start > 1) {
+                    pages.push(
+                      <button key={1} className="btn btn-secondary" onClick={() => setCurrentPage(1)} style={{ padding: '6px 10px', fontSize: '13px' }}>1</button>
+                    )
+                    if (start > 2) pages.push(<span key="start-dots" style={{ padding: '0 4px', color: '#999' }}>...</span>)
+                  }
+                  for (let i = start; i <= end; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        className="btn btn-secondary"
+                        onClick={() => setCurrentPage(i)}
+                        style={{
+                          padding: '6px 10px',
+                          fontSize: '13px',
+                          background: i === currentPage ? '#667eea' : undefined,
+                          color: i === currentPage ? '#fff' : undefined,
+                          borderColor: i === currentPage ? '#667eea' : undefined,
+                          fontWeight: i === currentPage ? 600 : undefined,
+                        }}
+                      >
+                        {i}
+                      </button>
+                    )
+                  }
+                  if (end < totalPages) {
+                    if (end < totalPages - 1) pages.push(<span key="end-dots" style={{ padding: '0 4px', color: '#999' }}>...</span>)
+                    pages.push(
+                      <button key={totalPages} className="btn btn-secondary" onClick={() => setCurrentPage(totalPages)} style={{ padding: '6px 10px', fontSize: '13px' }}>{totalPages}</button>
+                    )
+                  }
+                  return pages
+                })()}
                 <button
                   className="btn btn-secondary"
                   onClick={() => changePage(1)}
                   disabled={currentPage === totalPages}
+                  style={{ padding: '6px 10px', fontSize: '13px' }}
                 >
                   下一页
                 </button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  style={{ padding: '6px 10px', fontSize: '13px' }}
+                >
+                  末页
+                </button>
+                <span style={{ padding: '0 8px', fontSize: '13px', color: '#666' }}>
+                  共 {filteredCourses.length} 条
+                  {(filterMarked !== 'all' || filterCopied !== 'all' || filterScreenshot !== 'all') ? ` / 全部 ${courses.length} 条` : ''}
+                </span>
               </div>
             )}
           </>

@@ -173,13 +173,31 @@ def delete_course_manage(course_id):
 
     """删除课程"""
 
-    course = Course.query.get_or_404(course_id)
+    try:
+        course = Course.query.get_or_404(course_id)
 
-    db.session.delete(course)
+        # 检查是否有关联的课程成本记录
+        cost_count = TeacherCourseCost.query.filter_by(course_id=course_id).count()
+        if cost_count > 0:
+            return jsonify({'error': f'该课程下有 {cost_count} 条课程成本记录，请先删除相关成本记录'}), 400
 
-    db.session.commit()
+        # 检查是否有关联的排课记录
+        schedule_count = StudentCourse.query.filter_by(course_id=course_id).count()
+        if schedule_count > 0:
+            return jsonify({'error': f'该课程下有 {schedule_count} 条排课记录，无法删除'}), 400
 
-    return jsonify({'message': '删除成功'})
+        # 检查是否有关联的经验成本记录
+        exp_count = TeacherExperienceCost.query.filter_by(course_id=course_id).count()
+        if exp_count > 0:
+            return jsonify({'error': f'该课程下有 {exp_count} 条经验成本记录，请先删除相关记录'}), 400
+
+        db.session.delete(course)
+        db.session.commit()
+
+        return jsonify({'message': '删除成功'})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'删除失败: {str(e)}'}), 500
 
 
 

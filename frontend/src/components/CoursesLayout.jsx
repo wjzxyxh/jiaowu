@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { memo } from 'react'
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
@@ -6,12 +6,48 @@ import { studentCoursesService } from '../services/studentCoursesService'
 import './Layout.css'
 import './CoursesLayout.css'
 
+// 全局加载指示器：独立组件，避免 useIsFetching 导致整个 CoursesLayout 重新渲染
+const CoursesGlobalLoadingIndicator = memo(() => {
+  const isFetching = useIsFetching()
+  if (isFetching === 0) return null
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: '80px',
+        right: '20px',
+        background: 'rgba(0, 123, 255, 0.9)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+      }}
+    >
+      <div
+        style={{
+          width: '8px',
+          height: '8px',
+          border: '1px solid white',
+          borderTop: '1px solid transparent',
+          borderRadius: '50%',
+          animation: 'globalSpin 1s linear infinite',
+        }}
+      />
+      加载中...
+    </div>
+  )
+})
+
 const CoursesLayout = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const isFetching = useIsFetching()
   const [showUserMenu, setShowUserMenu] = React.useState(false)
   const [showNotifications, setShowNotifications] = React.useState(false)
   const [isRefreshing, setIsRefreshing] = React.useState(false)
@@ -137,46 +173,8 @@ const CoursesLayout = () => {
 
   return (
     <div className="courses-layout">
-      {/* 全局加载指示器 - 调整位置以适应课程页面布局 */}
-      {isFetching > 0 && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '80px', // 与导航栏高度保持一致
-            right: '20px',
-            background: 'rgba(0, 123, 255, 0.9)',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }}
-        >
-          <style>
-            {`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}
-          </style>
-          <div
-            style={{
-              width: '8px',
-              height: '8px',
-              border: '1px solid white',
-              borderTop: '1px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}
-          />
-          加载中...
-        </div>
-      )}
+      {/* 全局加载指示器（独立组件，不触发 CoursesLayout 重新渲染） */}
+      <CoursesGlobalLoadingIndicator />
 
       {/* 课程页面专用导航栏 */}
       <header className="layout-header">

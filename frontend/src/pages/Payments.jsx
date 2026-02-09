@@ -408,7 +408,22 @@ const Payments = () => {
     const list = []
     const seen = new Set()
     for (const p of processedPayments) {
-      // 排除无缴费记录（未缴费或欠费的虚拟记录）
+      // 欠费状态的虚拟记录（无缴费记录但有消耗课时的学生）也要提醒
+      if (p._isNoPayment && p._status === '欠费') {
+        const studentKey = `no_payment_${p.student_id}`
+        if (seen.has(studentKey)) continue
+        seen.add(studentKey)
+        list.push({
+          student_id: p.student_id,
+          course_id: p.course_id,
+          course_name: p.course_name,
+          student_name: p.student_name,
+          remaining_hours: p._remainingHours,
+          _isArrears: true,
+        })
+        continue
+      }
+      // 排除其他无缴费记录的虚拟记录（未缴费状态）
       if (p._isNoPayment || p.type !== '缴费' || p._status === '结束') continue
       const key = getPaymentGroupKey(p)
       if (seen.has(key)) continue
@@ -1004,6 +1019,7 @@ const Payments = () => {
                 <th>课程</th>
                 <th>年级</th>
                 <th>剩余课时</th>
+                <th>状态</th>
                 <th>联系电话</th>
                 <th>家长姓名</th>
                 <th>操作</th>
@@ -1014,6 +1030,7 @@ const Payments = () => {
                 reminderData.map((s) => {
                   const student = students.find((st) => st.id === s.student_id) || {}
                   const remainingHours = s.remaining_hours || 0
+                  const isArrears = s._isArrears || remainingHours < 0
                   const urgencyStyle =
                     remainingHours < 0
                       ? { color: '#dc3545', fontWeight: 'bold' }
@@ -1021,14 +1038,30 @@ const Payments = () => {
                         ? { color: '#ff6b6b', fontWeight: 'bold' }
                         : { color: '#ff9800', fontWeight: 'bold' }
                   const urgencyText =
-                    remainingHours < 0
+                    isArrears
                       ? '（需要补足欠费）'
                       : remainingHours < 1
                         ? '（急需缴费）'
                         : '（建议缴费）'
 
+                  const statusBadge = isArrears ? (
+                    <span className="status-badge" style={{ background: '#dc3545', color: 'white' }}>
+                      欠费
+                    </span>
+                  ) : remainingHours < 1 ? (
+                    <span className="status-badge" style={{ background: '#ff6b6b', color: 'white' }}>
+                      即将用完
+                    </span>
+                  ) : (
+                    <span className="status-badge" style={{ background: '#ff9800', color: 'white' }}>
+                      课时不足
+                    </span>
+                  )
+
                   return (
-                    <tr key={`${s.student_id}_${s.course_id ?? 'null'}_${(s.course_name || '').trim()}`}>
+                    <tr key={`${s.student_id}_${s.course_id ?? 'null'}_${(s.course_name || '').trim()}`}
+                      style={isArrears ? { backgroundColor: 'rgba(220, 53, 69, 0.08)' } : {}}
+                    >
                       <td style={urgencyStyle}>
                         {s.student_name}
                         {urgencyText}
@@ -1036,6 +1069,7 @@ const Payments = () => {
                       <td>{(s.course_name || '').trim() || '-'}</td>
                       <td>{student.grade || '-'}</td>
                       <td style={urgencyStyle}>{remainingHours.toFixed(2)}</td>
+                      <td>{statusBadge}</td>
                       <td>{student.phone || '-'}</td>
                       <td>{student.parent_name || '-'}</td>
                       <td>
@@ -1051,7 +1085,7 @@ const Payments = () => {
                 })
               ) : (
                 <tr>
-                  <td colSpan="7" style={{ textAlign: 'center', padding: '20px' }}>
+                  <td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>
                     暂无需要缴费提醒的学生
                   </td>
                 </tr>

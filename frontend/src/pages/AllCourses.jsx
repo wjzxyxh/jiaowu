@@ -631,11 +631,6 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
           <button className="btn btn-secondary" onClick={handleClearFilters}>
             清除筛选
           </button>
-          {hasFunctionPermission('all_courses', 'add') && (
-            <button className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-              新增排课
-            </button>
-          )}
           {hasFunctionPermission('all_courses', 'batch_confirm') && (
             <button
               className="btn btn-success"

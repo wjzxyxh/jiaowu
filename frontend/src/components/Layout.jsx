@@ -1,16 +1,52 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, memo } from 'react'
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { studentCoursesService } from '../services/studentCoursesService'
 import './Layout.css'
 
+// 全局加载指示器：独立组件，避免 useIsFetching 导致整个 Layout 重新渲染
+const GlobalLoadingIndicator = memo(() => {
+  const isFetching = useIsFetching()
+  if (isFetching === 0) return null
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: '60px',
+        right: '20px',
+        background: 'rgba(0, 123, 255, 0.9)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '12px',
+        zIndex: 1000,
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+      }}
+    >
+      <div
+        style={{
+          width: '8px',
+          height: '8px',
+          border: '1px solid white',
+          borderTop: '1px solid transparent',
+          borderRadius: '50%',
+          animation: 'globalSpin 1s linear infinite',
+        }}
+      />
+      加载中...
+    </div>
+  )
+})
+
 const Layout = () => {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const queryClient = useQueryClient()
-  const isFetching = useIsFetching() // 全局查询状态
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showNotifications, setShowNotifications] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -158,46 +194,8 @@ const Layout = () => {
 
   return (
     <div className="layout">
-      {/* 全局加载指示器 */}
-      {isFetching > 0 && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '60px',
-            right: '20px',
-            background: 'rgba(0, 123, 255, 0.9)',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '4px',
-            fontSize: '12px',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-          }}
-        >
-          <style>
-            {`
-              @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-              }
-            `}
-          </style>
-          <div
-            style={{
-              width: '8px',
-              height: '8px',
-              border: '1px solid white',
-              borderTop: '1px solid transparent',
-              borderRadius: '50%',
-              animation: 'spin 1s linear infinite'
-            }}
-          />
-          加载中...
-        </div>
-      )}
+      {/* 全局加载指示器（独立组件，不触发 Layout 重新渲染） */}
+      <GlobalLoadingIndicator />
 
       <header className="layout-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px', flex: 1 }}>
