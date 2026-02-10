@@ -9,9 +9,9 @@ import './index.css'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      refetchOnWindowFocus: false,
-      refetchOnMount: false, // 挂载时不自动重新获取，优先使用缓存
-      refetchOnReconnect: false, // 重连时不自动重新获取
+      refetchOnWindowFocus: true, // 切换回页面时自动刷新过期数据
+      refetchOnMount: true, // 组件挂载时，若数据过期则自动重新获取（解决跨页面数据滞后的核心）
+      refetchOnReconnect: true, // 网络重连时自动刷新
       retry: (failureCount, error) => {
         // 对于429错误，使用指数退避重试，最多重试2次
         if (error?.status === 429 || error?.isRateLimitError) {
@@ -21,7 +21,7 @@ const queryClient = new QueryClient({
         return false
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000), // 指数退避，最长30秒
-      staleTime: 10 * 60 * 1000, // 数据10分钟内视为新鲜，不会自动重新获取
+      staleTime: 2 * 60 * 1000, // 数据2分钟内视为新鲜（缩短以便更及时获取更新）
       cacheTime: 30 * 60 * 1000, // 缓存30分钟
     },
   },

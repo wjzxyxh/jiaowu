@@ -83,11 +83,20 @@ const Students = () => {
     return combined.sort()
   }, [students, allStudentsData])
 
+  // 学生数据变更后需要刷新的所有关联查询
+  const invalidateStudentRelated = () => {
+    queryClient.invalidateQueries(['students'])
+    queryClient.invalidateQueries(['students-all-grades'])
+    queryClient.invalidateQueries(['student-list']) // 学生名单页
+    queryClient.invalidateQueries(['payments']) // 缴费页面（显示学生信息）
+    queryClient.invalidateQueries(['paid-courses-need-scheduling']) // 排课管理
+    queryClient.invalidateQueries(['stats']) // 课时统计
+  }
+
   const deleteMutation = useMutation({
     mutationFn: ({ id }) => studentService.removeFromManagement(id),
     onSuccess: (data) => {
-      queryClient.invalidateQueries(['students'])
-      queryClient.invalidateQueries(['students-all-grades'])
+      invalidateStudentRelated()
       alert(data?.message || '已从学生管理页移除，该学生仍保留在学生名单页。')
     },
     onError: (error) => {
@@ -98,8 +107,7 @@ const Students = () => {
   const createMutation = useMutation({
     mutationFn: studentService.createStudent,
     onSuccess: () => {
-      queryClient.invalidateQueries(['students'])
-      queryClient.invalidateQueries(['students-all-grades'])
+      invalidateStudentRelated()
       setShowModal(false)
       setEditingStudent(null)
       alert('保存成功！')
@@ -112,8 +120,7 @@ const Students = () => {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => studentService.updateStudent(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['students'])
-      queryClient.invalidateQueries(['students-all-grades'])
+      invalidateStudentRelated()
       setShowModal(false)
       setEditingStudent(null)
       alert('保存成功！')
@@ -140,7 +147,7 @@ const Students = () => {
   const handleDelete = (student) => {
     if (
       window.confirm(
-        '确定要从学生管理页移除该学生吗？\n\n该学生将不再显示在学生管理页，其排课、缴费、课时统计等数据会被彻底删除，但仍会在学生名单页保留基本信息和试课记录。'
+        '确定要从学生管理页移除该学生吗？\n\n该学生将不再显示在学生管理页，其排课、缴费、课时统计等数据会被彻底删除，但仍会在学生名单页保留基本信息。'
       )
     ) {
       deleteMutation.mutate({ id: student.id })
@@ -208,7 +215,14 @@ const Students = () => {
   }
 
   const exportStudents = () => {
-    window.open('/api/export/students', '_blank')
+    const params = new URLSearchParams()
+    params.set('trial_success_only', 'true')
+    if (statusFilter) params.set('status', statusFilter)
+    if (gradeFilter) params.set('grade', gradeFilter)
+    if (searchKeyword) params.set('search', searchKeyword)
+    if (enrollmentDateStart) params.set('enrollment_date_start', enrollmentDateStart)
+    if (enrollmentDateEnd) params.set('enrollment_date_end', enrollmentDateEnd)
+    window.open(`/api/export/students?${params.toString()}`, '_blank')
   }
 
   const handleImportFile = (e) => {
@@ -437,6 +451,9 @@ const Students = () => {
 
           <button className="btn btn-secondary" onClick={clearFilters}>
             清除筛选
+          </button>
+          <button className="btn btn-secondary" onClick={exportStudents}>
+            导出Excel
           </button>
         </div>
       </div>

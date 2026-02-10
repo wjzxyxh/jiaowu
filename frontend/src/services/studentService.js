@@ -115,6 +115,11 @@ export const studentService = {
     })
   },
 
+  // 更新学生级别的暂停排课状态（用于未缴费学生的暂停排课切换）
+  updateSchedulingPaused: async (studentId, paused) => {
+    return api.put(`/students/${studentId}/scheduling-paused`, { paused })
+  },
+
   // 获取试课状态映射（无排课时也设置了试课状态的线索）
   getTrialStatusMap: async () => {
     try {

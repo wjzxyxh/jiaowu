@@ -10,7 +10,7 @@ from models import (
     TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
     TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
     TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
-    OperationLog, Notification
+    OperationLog, Notification, MarketingLead
 )
 from utils import (
     allowed_file, get_original_filename, get_safe_storage_filename,
@@ -67,120 +67,126 @@ def create_excel_response(wb, filename):
     return response
 
 @bp.route('/api/export/students', methods=['GET'])
+@login_required
 def export_students():
+    """导出学生管理列表到Excel（支持筛选，与学生管理页 /students 一致）"""
+    try:
+        from sqlalchemy import or_
+        from routes.students import get_valid_student_ids_for_management_page
 
-    """导出学生列表到Excel（排除营销模块试课占位学生）"""
+        # 获取筛选参数
+        status = request.args.get('status', '')
+        grade = request.args.get('grade', '')
+        search_keyword = request.args.get('search', '').strip()
+        enrollment_date_start = request.args.get('enrollment_date_start', '')
+        enrollment_date_end = request.args.get('enrollment_date_end', '')
+        trial_success_only = request.args.get('trial_success_only', '').lower() in ('true', '1', 'yes')
 
-    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
-    students = Student.query.filter(Student.name != TRIAL_PLACEHOLDER_NAME).order_by(Student.created_at.desc()).all()
+        TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+        query = Student.query.filter(Student.name != TRIAL_PLACEHOLDER_NAME)
 
-    
+        # 学生管理页的 trial_success_only 过滤逻辑
+        if trial_success_only:
+            valid_ids = get_valid_student_ids_for_management_page()
+            if valid_ids:
+                query = query.filter(Student.id.in_(valid_ids))
+            else:
+                query = query.filter(Student.id == -1)
 
-    wb = Workbook()
+        # 状态筛选
+        if status:
+            query = query.filter_by(status=status)
 
-    ws = wb.active
+        # 年级筛选
+        if grade:
+            query = query.filter_by(grade=grade)
 
-    ws.title = "学生列表"
+        # 登记日期范围筛选
+        if enrollment_date_start:
+            try:
+                start_date = datetime.strptime(enrollment_date_start, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date >= start_date)
+            except ValueError:
+                pass
 
-    
+        if enrollment_date_end:
+            try:
+                end_date = datetime.strptime(enrollment_date_end, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date <= end_date)
+            except ValueError:
+                pass
 
-    # 设置表头
+        # 搜索关键词
+        if search_keyword:
+            search_pattern = f'%{search_keyword}%'
+            query = query.filter(
+                or_(
+                    Student.name.like(search_pattern),
+                    Student.phone.like(search_pattern),
+                    Student.parent_name.like(search_pattern)
+                )
+            )
 
-    headers = ['ID', '姓名', '年级', '入学日期', '状态', '联系电话', '家长姓名', '家长电话', '地址', '邮箱', '创建时间']
+        students = query.order_by(Student.created_at.desc()).all()
 
-    ws.append(headers)
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "学生管理"
 
-    
+        # 设置表头（与学生管理页表格列一致）
+        headers = ['序号', '姓名', '来源', '年级', '登记日期', '状态', '联系电话', '家长姓名', '家长电话', '地址', '备注']
+        ws.append(headers)
 
-    # 设置表头样式
+        # 设置表头样式
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
 
-    header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
-
-    header_font = Font(bold=True, color="FFFFFF")
-
-    border = Border(
-
-        left=Side(style='thin'),
-
-        right=Side(style='thin'),
-
-        top=Side(style='thin'),
-
-        bottom=Side(style='thin')
-
-    )
-
-    
-
-    for cell in ws[1]:
-
-        cell.fill = header_fill
-
-        cell.font = header_font
-
-        cell.alignment = Alignment(horizontal='center', vertical='center')
-
-        cell.border = border
-
-    
-
-    # 添加数据
-
-    for student in students:
-
-        ws.append([
-
-            student.id,
-
-            student.name,
-
-            student.grade or '',
-
-            student.enrollment_date.strftime('%Y-%m-%d') if student.enrollment_date else '',
-
-            student.status or '',
-
-            student.phone or '',
-
-            student.parent_name or '',
-
-            student.parent_phone or '',
-
-            student.address or '',
-
-            student.email or '',
-
-            student.created_at.strftime('%Y-%m-%d %H:%M:%S') if student.created_at else ''
-
-        ])
-
-    
-
-    # 设置列宽
-
-    column_widths = [8, 15, 10, 12, 10, 15, 15, 15, 30, 25, 20]
-
-    for i, width in enumerate(column_widths, 1):
-
-        ws.column_dimensions[get_column_letter(i)].width = width
-
-    
-
-    # 添加边框
-
-    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-
-        for cell in row:
-
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
             cell.border = border
 
-            cell.alignment = Alignment(horizontal='left', vertical='center')
+        # 添加数据
+        for idx, student in enumerate(students, 1):
+            ws.append([
+                idx,
+                student.name,
+                student.source or '',
+                student.grade or '',
+                student.enrollment_date.strftime('%Y-%m-%d') if student.enrollment_date else '',
+                student.status or '',
+                student.phone or '',
+                student.parent_name or '',
+                student.parent_phone or '',
+                student.address or '',
+                student.notes or '',
+            ])
 
-    
+        # 设置列宽
+        column_widths = [8, 12, 10, 10, 12, 8, 15, 12, 15, 25, 30]
+        for i, width in enumerate(column_widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = width
 
-    filename = f"学生列表_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        # 添加边框
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.border = border
+                cell.alignment = Alignment(horizontal='left', vertical='center')
 
-    return create_excel_response(wb, filename)
+        filename = f"学生管理_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return create_excel_response(wb, filename)
+    except Exception as e:
+        import traceback
+        error_msg = f"导出学生管理列表失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
 
 
@@ -722,7 +728,149 @@ def export_teacher_hours():
     return create_excel_response(wb, filename)
 
 
+@bp.route('/api/export/student-list', methods=['GET'])
+@login_required
+def export_student_list():
+    """导出学生名单到Excel（支持筛选条件，与学生名单页一致）"""
+    try:
+        from sqlalchemy import or_
 
+        # 获取筛选参数（与学生名单页一致）
+        status = request.args.get('status', '')
+        grade = request.args.get('grade', '')
+        search_keyword = request.args.get('search', '').strip()
+        enrollment_date_start = request.args.get('enrollment_date_start', '')
+        enrollment_date_end = request.args.get('enrollment_date_end', '')
 
+        TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+        query = Student.query.filter(Student.name != TRIAL_PLACEHOLDER_NAME)
+
+        # 状态筛选
+        if status:
+            query = query.filter_by(status=status)
+
+        # 年级筛选
+        if grade:
+            query = query.filter_by(grade=grade)
+
+        # 登记日期范围筛选
+        if enrollment_date_start:
+            try:
+                start_date = datetime.strptime(enrollment_date_start, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date >= start_date)
+            except ValueError:
+                pass
+
+        if enrollment_date_end:
+            try:
+                end_date = datetime.strptime(enrollment_date_end, '%Y-%m-%d').date()
+                query = query.filter(Student.enrollment_date <= end_date)
+            except ValueError:
+                pass
+
+        # 搜索关键词（姓名、电话、家长姓名）
+        if search_keyword:
+            search_pattern = f'%{search_keyword}%'
+            query = query.filter(
+                or_(
+                    Student.name.like(search_pattern),
+                    Student.phone.like(search_pattern),
+                    Student.parent_name.like(search_pattern)
+                )
+            )
+
+        students = query.order_by(Student.created_at.desc()).all()
+
+        # 获取所有试课排课记录（用于获取试课状态）
+        trial_courses = StudentCourse.query.filter(
+            StudentCourse.trial_status.isnot(None),
+            StudentCourse.status != '删除'
+        ).all()
+
+        # 获取线索的试课状态映射
+        leads_with_trial = MarketingLead.query.filter(
+            MarketingLead.trial_status.isnot(None)
+        ).all()
+
+        # 构建学生试课状态字典：{(name, grade): trial_status}
+        def get_student_trial_status(student):
+            name = student.name
+            grade_val = student.grade or ''
+
+            # 从排课记录获取试课状态
+            statuses = set()
+            for tc in trial_courses:
+                if tc.student_id == student.id and tc.trial_status:
+                    statuses.add(tc.trial_status)
+
+            # 从线索获取试课状态
+            for lead in leads_with_trial:
+                if lead.name == name and (lead.grade or '') == grade_val and lead.trial_status:
+                    statuses.add(lead.trial_status)
+
+            if statuses:
+                return '、'.join(sorted(statuses))
+            return ''
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "学生名单"
+
+        # 设置表头（与学生名单页表格列一致）
+        headers = ['序号', '姓名', '年级', '状态', '试课状态', '登记日期', '联系电话', '家长姓名', '家长电话', '来源', '地址', '备注']
+        ws.append(headers)
+
+        # 设置表头样式
+        header_fill = PatternFill(start_color="366092", end_color="366092", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF")
+        border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+            cell.border = border
+
+        # 添加数据
+        for idx, student in enumerate(students, 1):
+            trial_status = get_student_trial_status(student)
+            ws.append([
+                idx,
+                student.name,
+                student.grade or '',
+                student.status or '',
+                trial_status,
+                student.enrollment_date.strftime('%Y-%m-%d') if student.enrollment_date else '',
+                student.phone or '',
+                student.parent_name or '',
+                student.parent_phone or '',
+                student.source or '',
+                student.address or '',
+                student.notes or '',
+            ])
+
+        # 设置列宽
+        column_widths = [8, 12, 10, 8, 12, 12, 15, 12, 15, 10, 25, 30]
+        for i, width in enumerate(column_widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = width
+
+        # 添加边框和样式
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.border = border
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+
+        filename = f"学生名单_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        return create_excel_response(wb, filename)
+    except Exception as e:
+        import traceback
+        error_msg = f"导出学生名单失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
 

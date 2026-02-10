@@ -1532,5 +1532,35 @@ def update_student_course_scheduling_paused(student_id, course_id):
         return jsonify({'error': error_msg}), 500
 
 
+@bp.route('/api/students/<int:student_id>/scheduling-paused', methods=['PUT'])
+@login_required
+@csrf.exempt
+def update_student_scheduling_paused(student_id):
+    """更新学生级别的暂停排课状态（用于未缴费学生的暂停排课切换）"""
+    try:
+        student = Student.query.get_or_404(student_id)
+        data = request.get_json() or {}
+        paused = data.get('paused', False)
+
+        old_paused = getattr(student, 'scheduling_paused', False) or False
+        student.scheduling_paused = bool(paused)
+        db.session.commit()
+
+        log_operation('students', 'update', 'Student', student.id,
+                     f'{student.name} 暂停排课切换',
+                     {'scheduling_paused': old_paused},
+                     {'scheduling_paused': bool(paused)})
+        return jsonify({
+            'message': '更新成功',
+            'student_id': student_id,
+            'scheduling_paused': student.scheduling_paused
+        })
+    except Exception as e:
+        db.session.rollback()
+        import traceback
+        error_msg = f"更新学生暂停排课状态失败: {str(e)}\n{traceback.format_exc()}"
+        print(error_msg)
+        return jsonify({'error': error_msg}), 500
+
 
 

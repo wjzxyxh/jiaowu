@@ -31,6 +31,7 @@ class Student(db.Model):
     enrollment_date = db.Column(db.Date, comment='入学日期')
     source = db.Column(db.String(50), comment='来源：转介绍、传单、家教中介、其它')
     excluded_from_scheduling = db.Column(db.Boolean, default=False, comment='是否排除在排课下拉列表中')
+    scheduling_paused = db.Column(db.Boolean, default=False, comment='是否暂停排课（未缴费学生可切换）')
     created_at = db.Column(db.DateTime, default=datetime.now)
     
     def to_dict(self):
@@ -49,6 +50,7 @@ class Student(db.Model):
             'enrollment_date': self.enrollment_date.strftime('%Y-%m-%d') if self.enrollment_date else None,
             'source': self.source,
             'excluded_from_scheduling': self.excluded_from_scheduling,
+            'scheduling_paused': self.scheduling_paused if self.scheduling_paused is not None else False,
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None
         }
 

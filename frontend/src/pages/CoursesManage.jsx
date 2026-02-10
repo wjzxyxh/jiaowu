@@ -59,11 +59,20 @@ const CoursesManage = () => {
 
   // ==================== 课程管理 ====================
 
+  // 课程数据变更后需要刷新的所有关联查询
+  const invalidateCourseRelated = () => {
+    queryClient.invalidateQueries(['courses-manage'])
+    queryClient.invalidateQueries(['teacher-course-costs'])
+    queryClient.invalidateQueries(['payments']) // 缴费页面（显示课程信息）
+    queryClient.invalidateQueries(['paid-courses-need-scheduling']) // 排课管理
+    queryClient.invalidateQueries(['all-courses']) // 全部排课
+    queryClient.invalidateQueries(['courses']) // 排课页面
+  }
+
   const deleteCourseMutation = useMutation({
     mutationFn: courseManageService.deleteCourse,
     onSuccess: () => {
-      queryClient.invalidateQueries(['courses-manage'])
-      queryClient.invalidateQueries(['teacher-course-costs'])
+      invalidateCourseRelated()
       alert('删除成功')
     },
     onError: (error) => {
@@ -74,7 +83,7 @@ const CoursesManage = () => {
   const createCourseMutation = useMutation({
     mutationFn: courseManageService.createCourse,
     onSuccess: () => {
-      queryClient.invalidateQueries(['courses-manage'])
+      invalidateCourseRelated()
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
@@ -87,7 +96,7 @@ const CoursesManage = () => {
   const updateCourseMutation = useMutation({
     mutationFn: ({ id, data }) => courseManageService.updateCourse(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['courses-manage'])
+      invalidateCourseRelated()
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
@@ -98,7 +107,14 @@ const CoursesManage = () => {
   })
 
   const handleDeleteCourse = (id) => {
-    if (window.confirm('确定要删除这个课程吗？')) {
+    if (window.confirm(
+      '确定要删除这个课程吗？\n\n' +
+      '删除课程可能产生以下影响：\n' +
+      '• 如果该课程下有排课记录，将无法删除\n' +
+      '• 如果该课程下有课程成本记录，需先删除相关成本记录\n' +
+      '• 如果该课程下有经验成本记录，需先删除相关记录\n' +
+      '• 相关的缴费记录将失去课程关联'
+    )) {
       deleteCourseMutation.mutate(id)
     }
   }

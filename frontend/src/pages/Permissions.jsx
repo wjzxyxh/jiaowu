@@ -55,9 +55,9 @@ const Permissions = () => {
     if (!selectedUserId || permsLoading) return
 
     const perms = userPermissionsRef.current
-    // 创建当前权限的 key（用于比较）
+    // 创建当前权限的 key（用于比较，包含功能权限以确保同步）
     const currentKey = perms && perms.length > 0
-      ? JSON.stringify(perms.map((p) => ({ module: p.module, is_granted: p.is_granted })).sort((a, b) => a.module.localeCompare(b.module)))
+      ? JSON.stringify(perms.map((p) => ({ module: p.module, is_granted: p.is_granted, function_permissions: p.function_permissions || {} })).sort((a, b) => a.module.localeCompare(b.module)))
       : '[]'
 
     // 只在 key 变化时更新
@@ -107,15 +107,6 @@ const Permissions = () => {
   // 权限管理 mutations
   const batchUpdatePermissionsMutation = useMutation({
     mutationFn: ({ userId, permissions }) => permissionService.batchUpdateUserPermissions(userId, permissions),
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries(['user-permissions', variables.userId])
-      alert('权限保存成功！')
-      // 重新加载权限以同步状态
-      queryClient.refetchQueries(['user-permissions', variables.userId])
-    },
-    onError: (error) => {
-      alert('保存权限失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
-    },
   })
 
   // 打开权限授权模态框
@@ -189,7 +180,7 @@ const Permissions = () => {
 
 
   // 保存权限
-  const handleSavePermissions = () => {
+  const handleSavePermissions = async () => {
     if (!selectedUserId) {
       alert('请先选择子管理员')
       return
@@ -199,16 +190,20 @@ const Permissions = () => {
       return
     }
 
-    batchUpdatePermissionsMutation.mutate({
-      userId: selectedUserId,
-      permissions: localPermissions,
-    }, {
-      onSuccess: () => {
-        handleClosePermissionModal()
-        // 刷新用户权限查询
-        queryClient.invalidateQueries(['user-permissions'])
-      }
-    })
+    try {
+      await batchUpdatePermissionsMutation.mutateAsync({
+        userId: selectedUserId,
+        permissions: localPermissions,
+      })
+      // 等待权限数据刷新完成，确保缓存已更新
+      await queryClient.refetchQueries({ queryKey: ['user-permissions', selectedUserId] })
+      alert('权限保存成功！')
+      handleClosePermissionModal()
+      // 标记所有用户权限缓存为过期，下次访问时会自动刷新
+      queryClient.invalidateQueries({ queryKey: ['user-permissions'] })
+    } catch (error) {
+      alert('保存权限失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    }
   }
 
   // 显示编辑用户模态框

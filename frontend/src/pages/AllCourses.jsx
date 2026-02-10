@@ -133,12 +133,23 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       })
   }, [])
 
+  // 排课数据变更后需要刷新的所有关联查询
+  const invalidateAllCoursesRelated = () => {
+    queryClient.invalidateQueries(['all-courses'])
+    queryClient.invalidateQueries(['courses'])
+    queryClient.invalidateQueries(['payments'])
+    queryClient.invalidateQueries(['stats'])
+    queryClient.invalidateQueries(['dashboard-stats'])
+    queryClient.invalidateQueries(['finance'])
+    queryClient.invalidateQueries(['teacher-hours'])
+    queryClient.invalidateQueries(['paid-courses-need-scheduling'])
+  }
+
   // Mutations
   const deleteMutation = useMutation({
     mutationFn: courseService.deleteCourse,
     onSuccess: () => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
+      invalidateAllCoursesRelated()
       alert('删除成功')
     },
   })
@@ -151,8 +162,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       return { successCount, failCount }
     },
     onSuccess: (result) => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
+      invalidateAllCoursesRelated()
       setSelectedIds([])
       alert(`批量删除完成！成功：${result.successCount}条，失败：${result.failCount}条`)
     },
@@ -161,11 +171,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const batchConfirmMutation = useMutation({
     mutationFn: (ids) => courseService.batchConfirm(ids),
     onSuccess: async (data) => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
-      await queryClient.refetchQueries({ queryKey: ['payments'] })
-      await queryClient.refetchQueries({ queryKey: ['stats'] })
+      invalidateAllCoursesRelated()
       setSelectedIds([])
       let message = `成功确认 ${data.confirmed_count} 个排课`
       if (data.already_confirmed_count > 0) {
@@ -203,11 +209,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const batchCancelConfirmMutation = useMutation({
     mutationFn: (ids) => courseService.batchCancelConfirm(ids),
     onSuccess: async (data) => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
-      await queryClient.refetchQueries({ queryKey: ['payments'] })
-      await queryClient.refetchQueries({ queryKey: ['stats'] })
+      invalidateAllCoursesRelated()
       setSelectedIds([])
       let message = `成功取消确认 ${data.cancelled_count} 个排课`
       if (data.already_cancelled_count > 0) {
@@ -220,13 +222,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const confirmMutation = useMutation({
     mutationFn: courseService.confirmCourse,
     onSuccess: async () => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
-      queryClient.invalidateQueries(['dashboard-stats'])
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
-      await queryClient.refetchQueries({ queryKey: ['payments'] })
-      await queryClient.refetchQueries({ queryKey: ['stats'] })
+      invalidateAllCoursesRelated()
       alert('确认成功')
     },
     onError: (err) => {
@@ -237,17 +233,14 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const updateStatusMutation = useMutation({
     mutationFn: ({ id, status }) => courseService.updateCourse(id, { status }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
+      invalidateAllCoursesRelated()
     },
   })
 
   const updateCourseMutation = useMutation({
     mutationFn: ({ id, data }) => courseService.updateCourse(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
-      queryClient.invalidateQueries(['payments'])
+      invalidateAllCoursesRelated()
       setShowEditModal(false)
       setEditingCourse(null)
       alert('更新成功')
@@ -257,8 +250,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   const createCourseMutation = useMutation({
     mutationFn: (data) => courseService.createCourse(data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['all-courses'])
-      queryClient.invalidateQueries(['courses'])
+      invalidateAllCoursesRelated()
       setShowAddModal(false)
       alert('新增排课成功')
     },

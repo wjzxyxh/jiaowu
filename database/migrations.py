@@ -1326,6 +1326,25 @@ def upgrade_marketing_lead_table_with_trial_status():
         traceback.print_exc()
 
 
+def upgrade_student_table_with_scheduling_paused():
+    """升级学生表，添加 scheduling_paused 字段（未缴费学生可切换暂停排课）"""
+    try:
+        inspector = inspect(db.engine)
+        if 'students' not in inspector.get_table_names():
+            return
+        columns = [col['name'] for col in inspector.get_columns('students')]
+        if 'scheduling_paused' not in columns:
+            with db.engine.begin() as conn:
+                conn.execute(text('ALTER TABLE students ADD COLUMN scheduling_paused BOOLEAN DEFAULT 0'))
+            print('已为学生表添加 scheduling_paused 字段')
+        else:
+            print('学生表的 scheduling_paused 字段已存在')
+    except Exception as e:
+        print(f'升级学生表（scheduling_paused）时出错: {e}')
+        import traceback
+        traceback.print_exc()
+
+
 def run_migrations():
     """运行所有数据库迁移"""
     upgrade_student_table()
@@ -1353,3 +1372,4 @@ def run_migrations():
     upgrade_student_course_default_schedule_default_classroom()
     upgrade_user_table_with_session_token()
     upgrade_marketing_lead_table_with_trial_status()
+    upgrade_student_table_with_scheduling_paused()

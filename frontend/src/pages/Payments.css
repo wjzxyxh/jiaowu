@@ -124,6 +124,10 @@
   border-bottom: 1px solid #eee;
 }
 
+.data-table tbody tr {
+  transition: background-color 0.3s ease, opacity 0.3s ease, color 0.3s ease;
+}
+
 .data-table tbody tr:hover {
   background: #f9f9f9;
 }
@@ -133,6 +137,13 @@
   border-radius: 4px;
   font-size: 12px;
   font-weight: bold;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  display: inline-block;
+}
+
+#payment-record-view,
+#payment-reminder-view {
+  transition: opacity 0.2s ease;
 }
 
 .status-normal {

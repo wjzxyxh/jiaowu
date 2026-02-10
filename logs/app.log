@@ -1794,3 +1794,25 @@ UnboundLocalError: local variable 'current_app' referenced before assignment
 2026-02-09 15:28:23 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
 2026-02-09 15:29:11 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
 2026-02-09 15:29:12 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:11:51 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:11:52 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:11:53 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:11:54 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:17:58 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:18:00 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:28:29 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:28:30 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:28:31 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:28:32 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:29:44 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:29:44 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:29:45 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:29:46 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-09 18:32:33 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-09 18:32:34 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-10 16:43:26 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-10 16:43:28 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-10 16:43:46 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-10 16:43:46 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default
+2026-02-10 16:48:30 - app - INFO - /tmp/pycharm_project_231/utils/logging_config.py:86 - 日志系统初始化完成
+2026-02-10 16:48:31 - app - INFO - /tmp/pycharm_project_231/app.py:83 - 应用初始化完成，配置: default

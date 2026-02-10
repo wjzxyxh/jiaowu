@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query'
 import { usePermissions } from '../hooks/usePermissions'
 import { paymentService } from '../services/paymentService'
 import { studentService } from '../services/studentService'
@@ -192,10 +192,11 @@ const Payments = () => {
   }, [yearFilter, monthFilter, studentFilter, typeFilter])
 
   // 获取缴费列表（缴费记录与缴费提醒共用，需始终拉取以正确显示剩余课时与提醒）
-  const { data: paymentsData = [], isLoading: paymentsLoading } = useQuery({
+  const { data: paymentsData = [], isLoading: paymentsLoading, isFetching: paymentsFetching } = useQuery({
     queryKey: ['payments', paymentParams],
     queryFn: () => paymentService.getPayments(paymentParams),
     enabled: true,
+    placeholderData: keepPreviousData,
   })
 
   const payments = Array.isArray(paymentsData) ? paymentsData : paymentsData.payments || []
@@ -237,6 +238,7 @@ const Payments = () => {
     queryKey: ['students', 'all'],
     queryFn: () => studentService.getStudents({ per_page: 1000, trial_success_only: true }),
     staleTime: 10 * 60 * 1000,
+    placeholderData: keepPreviousData,
   })
 
   const students = studentsData?.students || studentsData || []
@@ -295,6 +297,7 @@ const Payments = () => {
         }
         const hasOwing = studentRemainingHours < 0
 
+        const studentSchedulingPaused = !!student.scheduling_paused
         processed.push({
           id: null,
           student_id: student.id,
@@ -311,11 +314,11 @@ const Payments = () => {
           remaining_cost: studentRemainingCost,
           status: null,
           notes: null,
-          scheduling_paused: false,
-          _status: hasOwing ? '欠费' : '未缴费',
+          scheduling_paused: studentSchedulingPaused,
+          _status: hasOwing ? '欠费' : (studentSchedulingPaused ? '暂停排课' : '未缴费'),
           _remainingHours: studentRemainingHours,
           _remainingCost: studentRemainingCost,
-          _schedulingPaused: false,
+          _schedulingPaused: studentSchedulingPaused,
           _isNoPayment: true, // 标记为无缴费记录
         })
       }
@@ -324,9 +327,14 @@ const Payments = () => {
     // 应用状态筛选（欠费 / 进行中 / 暂停排课 / 结束 / 未缴费）
     if (statusFilter) {
       if (statusFilter === '暂停排课') {
-        processed = processed.filter((p) => p._status === '进行中' && p._schedulingPaused)
+        processed = processed.filter((p) =>
+          ((p._status === '进行中' || p._status === '欠费') && p._schedulingPaused) ||
+          (p._isNoPayment && p._schedulingPaused)
+        )
       } else if (statusFilter === '进行中') {
         processed = processed.filter((p) => p._status === '进行中' && !p._schedulingPaused)
+      } else if (statusFilter === '欠费') {
+        processed = processed.filter((p) => p._status === '欠费' && !p._schedulingPaused)
       } else {
         processed = processed.filter((p) => p._status === statusFilter)
       }
@@ -441,12 +449,20 @@ const Payments = () => {
     return list
   }, [viewMode, processedPayments, cumulativeRemainingByKey, reminderThreshold, getPaymentGroupKey])
 
+  // 缴费相关操作后需要刷新的所有关联查询
+  const invalidatePaymentRelated = () => {
+    queryClient.invalidateQueries(['payments'])
+    queryClient.invalidateQueries(['stats'])
+    queryClient.invalidateQueries(['paid-courses-need-scheduling']) // 排课管理页面
+    queryClient.invalidateQueries(['dashboard-stats']) // 首页统计
+    queryClient.invalidateQueries(['finance']) // 财务页面
+  }
+
   // Mutations
   const createMutation = useMutation({
     mutationFn: paymentService.createPayment,
     onSuccess: () => {
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
+      invalidatePaymentRelated()
       setShowModal(false)
       setSelectedStudentId(null)
       alert('保存成功！')
@@ -459,8 +475,7 @@ const Payments = () => {
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => paymentService.updatePayment(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
+      invalidatePaymentRelated()
       setShowModal(false)
       setEditingPayment(null)
       alert('保存成功！')
@@ -473,8 +488,7 @@ const Payments = () => {
   const deleteMutation = useMutation({
     mutationFn: paymentService.deletePayment,
     onSuccess: () => {
-      queryClient.invalidateQueries(['payments'])
-      queryClient.invalidateQueries(['stats'])
+      invalidatePaymentRelated()
       alert('删除成功！')
     },
     onError: (error) => {
@@ -485,22 +499,118 @@ const Payments = () => {
   const toggleSchedulingPausedMutation = useMutation({
     mutationFn: ({ studentId, courseId, paused }) =>
       studentCoursesService.updateSchedulingPaused(studentId, courseId, paused),
-    onSuccess: () => {
+    onMutate: async ({ studentId, courseId, paused }) => {
+      // 取消正在进行的 payments 查询，避免覆盖乐观更新
+      await queryClient.cancelQueries({ queryKey: ['payments'] })
+      const previousPayments = queryClient.getQueryData(['payments', paymentParams])
+      // 乐观更新：立即在缓存中修改 scheduling_paused 字段
+      queryClient.setQueryData(['payments', paymentParams], (old) => {
+        if (!old) return old
+        const list = Array.isArray(old) ? old : old.payments || []
+        const updated = list.map((p) =>
+          p.student_id === studentId && p.course_id === courseId
+            ? { ...p, scheduling_paused: paused }
+            : p
+        )
+        return Array.isArray(old) ? updated : { ...old, payments: updated }
+      })
+      return { previousPayments }
+    },
+    onError: (error, _vars, context) => {
+      // 失败时回滚
+      if (context?.previousPayments) {
+        queryClient.setQueryData(['payments', paymentParams], context.previousPayments)
+      }
+      alert('操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+    onSettled: () => {
       queryClient.invalidateQueries(['payments'])
-      // 使排课管理、学生课程、全部排课等页面的「需要排课」列表及时更新
       queryClient.invalidateQueries(['paid-courses-need-scheduling'])
     },
-    onError: (error) => {
+  })
+
+  // 学生级别的暂停排课切换（用于未缴费学生）
+  const toggleStudentSchedulingPausedMutation = useMutation({
+    mutationFn: ({ studentId, paused }) => {
+      console.log('[Payments] 发送暂停排课请求:', { studentId, paused })
+      return studentService.updateSchedulingPaused(studentId, paused)
+    },
+    onMutate: async ({ studentId, paused }) => {
+      // 取消正在进行的查询，避免覆盖乐观更新
+      await queryClient.cancelQueries({ queryKey: ['payments'] })
+      await queryClient.cancelQueries({ queryKey: ['students'] })
+      const previousPayments = queryClient.getQueryData(['payments', paymentParams])
+      const previousStudents = queryClient.getQueryData(['students', 'all'])
+      // 乐观更新 payments 缓存
+      queryClient.setQueryData(['payments', paymentParams], (old) => {
+        if (!old) return old
+        const list = Array.isArray(old) ? old : old.payments || []
+        const updated = list.map((p) =>
+          p.student_id === studentId
+            ? { ...p, scheduling_paused: paused }
+            : p
+        )
+        return Array.isArray(old) ? updated : { ...old, payments: updated }
+      })
+      // 乐观更新 students 缓存
+      queryClient.setQueryData(['students', 'all'], (old) => {
+        if (!old) return old
+        const list = old?.students || (Array.isArray(old) ? old : [])
+        const updated = list.map((s) =>
+          s.id === studentId ? { ...s, scheduling_paused: paused } : s
+        )
+        return old?.students ? { ...old, students: updated } : updated
+      })
+      return { previousPayments, previousStudents }
+    },
+    onError: (error, _vars, context) => {
+      // 失败时回滚
+      if (context?.previousPayments) {
+        queryClient.setQueryData(['payments', paymentParams], context.previousPayments)
+      }
+      if (context?.previousStudents) {
+        queryClient.setQueryData(['students', 'all'], context.previousStudents)
+      }
+      console.error('[Payments] 暂停排课失败:', error)
       alert('操作失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+    },
+    onSettled: () => {
+      // 无论成功还是失败，最终都从服务器刷新数据
+      queryClient.invalidateQueries({ queryKey: ['students'], refetchType: 'all' })
+      queryClient.invalidateQueries({ queryKey: ['payments'] })
+      queryClient.invalidateQueries({ queryKey: ['paid-courses-need-scheduling'] })
     },
   })
 
   const handleToggleSchedulingPaused = (p) => {
-    if (p.type !== '缴费' || !p.course_id || p._status === '结束' || p._status === '欠费') return
+    if (p._status === '结束') return
     const newPaused = !p._schedulingPaused
-    toggleSchedulingPausedMutation.mutate({
+    if (p.course_id) {
+      toggleSchedulingPausedMutation.mutate({
+        studentId: p.student_id,
+        courseId: p.course_id,
+        paused: newPaused,
+      })
+    } else {
+      toggleStudentSchedulingPausedMutation.mutate({
+        studentId: p.student_id,
+        paused: newPaused,
+      })
+    }
+  }
+
+  const handleToggleStudentSchedulingPaused = (p) => {
+    const newPaused = !p._schedulingPaused
+    console.log('[Payments] 切换未缴费/暂停排课:', {
+      student_id: p.student_id,
+      student_name: p.student_name,
+      current_schedulingPaused: p._schedulingPaused,
+      newPaused,
+      _isNoPayment: p._isNoPayment,
+      _status: p._status,
+    })
+    toggleStudentSchedulingPausedMutation.mutate({
       studentId: p.student_id,
-      courseId: p.course_id,
       paused: newPaused,
     })
   }
@@ -639,10 +749,6 @@ const Payments = () => {
     return years
   }, [])
 
-  if (paymentsLoading && viewMode === 'record') {
-    return <div className="loading">加载中...</div>
-  }
-
   return (
     <div className="payments-page" style={{ width: '100%' }}>
       <div className="page-header">
@@ -769,8 +875,11 @@ const Payments = () => {
       </div>
 
       {/* 缴费记录视图 */}
-      {viewMode === 'record' && (
-        <div id="payment-record-view">
+      {viewMode === 'record' && paymentsLoading && payments.length === 0 && (
+        <div className="loading">加载中...</div>
+      )}
+      {viewMode === 'record' && !(paymentsLoading && payments.length === 0) && (
+        <div id="payment-record-view" style={{ opacity: paymentsFetching ? 0.7 : 1, transition: 'opacity 0.2s ease' }}>
           <div className="table-wrapper">
             <table className="data-table">
             <thead>
@@ -815,16 +924,64 @@ const Payments = () => {
                   const amountColor = type === '退费' ? { color: '#dc3545', fontWeight: 'bold' } : {}
                   const amountPrefix = type === '退费' ? '-' : ''
 
-                  const canToggleScheduling = type === '缴费' && p.course_id && status === '进行中'
+                  const canToggleScheduling = type === '缴费' && ((p.course_id && status === '进行中') || status === '欠费')
                   const statusBadge =
                     status === '未缴费' ? (
-                      <span className="status-badge" style={{ background: '#ffc107', color: '#000' }}>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="status-badge"
+                        style={{
+                          background: '#ffc107',
+                          color: '#000',
+                          cursor: 'pointer',
+                        }}
+                        title="点击暂停排课"
+                        onClick={() => handleToggleStudentSchedulingPaused(p)}
+                        onKeyDown={(e) =>
+                          (e.key === 'Enter' || e.key === ' ') && handleToggleStudentSchedulingPaused(p)
+                        }
+                      >
                         未缴费
                       </span>
                     ) : status === '欠费' ? (
-                      <span className="status-badge" style={{ background: '#dc3545', color: 'white' }}>
-                        欠费
-                      </span>
+                      p._schedulingPaused ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="status-badge"
+                          style={{
+                            background: '#fd7e14',
+                            color: 'white',
+                            cursor: canToggleScheduling ? 'pointer' : 'default',
+                          }}
+                          title={canToggleScheduling ? '点击恢复为欠费状态，可排课' : ''}
+                          onClick={() => canToggleScheduling && handleToggleSchedulingPaused(p)}
+                          onKeyDown={(e) =>
+                            canToggleScheduling && (e.key === 'Enter' || e.key === ' ') && handleToggleSchedulingPaused(p)
+                          }
+                        >
+                          暂停排课
+                        </span>
+                      ) : (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="status-badge"
+                          style={{
+                            background: '#dc3545',
+                            color: 'white',
+                            cursor: canToggleScheduling ? 'pointer' : 'default',
+                          }}
+                          title={canToggleScheduling ? '点击暂停排课，之后将不再进行排课' : ''}
+                          onClick={() => canToggleScheduling && handleToggleSchedulingPaused(p)}
+                          onKeyDown={(e) =>
+                            canToggleScheduling && (e.key === 'Enter' || e.key === ' ') && handleToggleSchedulingPaused(p)
+                          }
+                        >
+                          欠费
+                        </span>
+                      )
                     ) : status === '结束' ? (
                       <span className="status-badge" style={{ background: '#6c757d', color: 'white' }}>
                         结束
@@ -837,13 +994,19 @@ const Payments = () => {
                         style={{
                           background: '#fd7e14',
                           color: 'white',
-                          cursor: canToggleScheduling ? 'pointer' : 'default',
+                          cursor: 'pointer',
                         }}
-                        title={canToggleScheduling ? '点击恢复为进行中，可排课' : ''}
-                        onClick={() => canToggleScheduling && handleToggleSchedulingPaused(p)}
-                        onKeyDown={(e) =>
-                          canToggleScheduling && (e.key === 'Enter' || e.key === ' ') && handleToggleSchedulingPaused(p)
-                        }
+                        title={p._isNoPayment ? '点击恢复为未缴费' : '点击恢复为进行中，可排课'}
+                        onClick={() => {
+                          if (p._isNoPayment) handleToggleStudentSchedulingPaused(p)
+                          else handleToggleSchedulingPaused(p)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            if (p._isNoPayment) handleToggleStudentSchedulingPaused(p)
+                            else handleToggleSchedulingPaused(p)
+                          }
+                        }}
                       >
                         暂停排课
                       </span>

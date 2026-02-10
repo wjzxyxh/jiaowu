@@ -321,6 +321,17 @@ const StudentList = () => {
     setPage(1)
   }
 
+  const exportStudentList = () => {
+    const params = new URLSearchParams()
+    if (statusFilter) params.set('status', statusFilter)
+    if (gradeFilter) params.set('grade', gradeFilter)
+    if (searchKeyword) params.set('search', searchKeyword)
+    if (enrollmentDateStart) params.set('enrollment_date_start', enrollmentDateStart)
+    if (enrollmentDateEnd) params.set('enrollment_date_end', enrollmentDateEnd)
+    const queryString = params.toString()
+    window.open(`/api/export/student-list${queryString ? '?' + queryString : ''}`, '_blank')
+  }
+
   const changePage = (delta) => {
     const newPage = page + delta
     if (newPage >= 1 && newPage <= pagination.total_pages) {
@@ -350,6 +361,13 @@ const StudentList = () => {
             {batchTrialMutation.isLoading ? '处理中...' : `确认试课成功${selectedIds.size > 0 ? `(${selectedIds.size})` : ''}`}
           </button>
         )}
+        <button
+          className="btn btn-secondary"
+          onClick={exportStudentList}
+          style={{ marginLeft: '8px' }}
+        >
+          导出Excel
+        </button>
       </div>
 
       {/* 筛选条件 */}
