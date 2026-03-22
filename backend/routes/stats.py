@@ -1,0 +1,320 @@
+"""
+Stats路由模块
+从app_old.py提取
+"""
+from flask import Blueprint, request, jsonify, render_template, send_from_directory, Response
+from flask_login import login_required, current_user
+from backend.extensions import db, limiter
+from backend.models import (
+    Student, Teacher, Course, StudentCourse, ClassHoursStats, Payment, 
+    TeacherHours, FinanceRecord, TimeSlot, Classroom, FinanceConfig,
+    TeacherCourseCost, TeacherCourseCostHistory, TeacherExperienceCost,
+    TeacherExperienceCostHistory, TeacherResume, User, LoginLog, 
+    OperationLog, Notification
+)
+from backend.utils import (
+    allowed_file, get_original_filename, get_safe_storage_filename,
+    get_client_ip, log_operation, require_permission, get_current_month,
+    get_weekday, check_course_conflicts
+)
+from backend.services import (
+    create_notification, check_and_create_notifications,
+    update_class_hours_stats, update_teacher_hours,
+    get_finance_config, calculate_remaining_hours_from_payments,
+    calculate_actual_unit_price, update_finance_record
+)
+from backend.config import Config
+import os
+from datetime import datetime, date, timedelta
+from sqlalchemy import func, extract
+from sqlalchemy.orm import joinedload
+import calendar
+import io
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
+from openpyxl.utils import get_column_letter
+import json
+from urllib.parse import quote
+from werkzeug.utils import secure_filename
+
+bp = Blueprint('stats', __name__)
+
+@bp.route('/api/stats', methods=['GET'])
+def get_stats():
+
+    """获取课时统计（按课程）"""
+
+    month = request.args.get('month', get_current_month())
+
+    student_id = request.args.get('student_id')
+
+    course_id = request.args.get('course_id')  # 可选：按课程筛选
+
+    # 调试信息
+    print(f"Stats request: month={month}, student_id={student_id}, course_id={course_id}")
+
+    
+
+    # 构建查询（只查询存在学生的课时统计，过滤已删除的学生，排除试课占位学员）
+    TRIAL_PLACEHOLDER_NAME = '【试课学员】'
+    query = (
+        ClassHoursStats.query.join(Student, ClassHoursStats.student_id == Student.id)
+        .filter(ClassHoursStats.month == month)
+        .filter(Student.name != TRIAL_PLACEHOLDER_NAME)
+    )
+
+    if student_id:
+
+        query = query.filter(ClassHoursStats.student_id == student_id)
+
+    if course_id:
+
+        query = query.filter(ClassHoursStats.course_id == course_id)
+
+    
+
+    stats_list = query.all()
+
+    # 清理不在 /students 页面中的学生的课时统计记录
+    try:
+        from backend.routes.students import get_valid_student_ids_for_management_page
+        valid_student_ids = get_valid_student_ids_for_management_page()
+        
+        invalid_stats = []
+        for stat in stats_list:
+            # 如果学生不在 /students 页面中，则标记为删除
+            if stat.student_id and stat.student_id not in valid_student_ids:
+                invalid_stats.append(stat)
+        
+        # 彻底删除这些无效的课时统计记录
+        if invalid_stats:
+            for stat in invalid_stats:
+                db.session.delete(stat)
+            db.session.commit()
+            print(f"[DEBUG] /api/stats API: 删除了 {len(invalid_stats)} 条不在 /students 页面中的学生的课时统计记录")
+            # 从结果中移除已删除的记录
+            stats_list = [s for s in stats_list if s not in invalid_stats]
+    except Exception as cleanup_error:
+        import traceback
+        print(f"[WARN] /api/stats API 清理逻辑出错（不影响查询）: {str(cleanup_error)}\n{traceback.format_exc()}")
+        db.session.rollback()
+
+    # 获取每个学生-课程组合的当月上课日期和时段
+
+    year, month_num = map(int, month.split('-'))
+
+    start_date = date(year, month_num, 1)
+
+    end_date = date(year, month_num, calendar.monthrange(year, month_num)[1])
+
+    
+
+    result = []
+
+    for stat in stats_list:
+
+        stat_dict = stat.to_dict()
+
+        # 调试信息：记录每个学生的统计数据
+        if student_id and stat.student_id == int(student_id):
+            print(f"统计数据 - 学生 {stat.student_name}: 原始课时={stat.original_hours}, 实际课时={stat.actual_hours}, 剩余课时={stat.remaining_hours}")
+
+        
+
+        # 查询该学生该课程当月的排课记录，并加载课程关联
+
+        # 只查询已确认的课程，未确认的课程不显示在上课日期和时段中
+        # 过滤已删除的学生（虽然stat已经过滤了，但这里再次确保）
+        courses = StudentCourse.query.join(Student, StudentCourse.student_id == Student.id).options(
+
+            db.joinedload(StudentCourse.course)
+
+        ).filter(
+
+            StudentCourse.student_id == stat.student_id,
+
+            StudentCourse.course_id == stat.course_id,
+
+            StudentCourse.course_date >= start_date,
+
+            StudentCourse.course_date <= end_date,
+
+            StudentCourse.status != '删除',
+
+            StudentCourse.is_confirmed == True,  # 只显示已确认的课程
+
+            StudentCourse.marketing_lead_id.is_(None)
+
+        ).order_by(StudentCourse.course_date, StudentCourse.time_slot).all()
+
+        # 调试信息：记录查询到的课程数量和状态
+        if student_id and stat.student_id == int(student_id):
+            print(f"查询到 {len(courses)} 个已确认课程记录")
+            status_counts = {}
+            for course in courses:
+                status = course.status
+                status_counts[status] = status_counts.get(status, 0) + 1
+            print(f"课程状态统计: {status_counts}")
+
+        
+
+        # 构建上课日期和时段的列表，按老师分组
+
+        # 格式：老师姓名:日期(星期) 时段;日期(星期) 时段;
+
+        from collections import defaultdict
+
+        teacher_groups = defaultdict(list)
+
+        
+
+        for course in courses:
+
+            if course.status in ['正常', '跑空']:  # 显示正常和跑空状态的课程
+
+                date_str = course.course_date.strftime('%m-%d')
+
+                weekday_str = course.weekday or ''
+
+                time_slot_str = course.time_slot or ''
+
+                
+
+                # 创建分组键：老师姓名
+
+                group_key = course.teacher_name
+
+                
+
+                # 构建日期时段字符串
+
+                detail = f"{date_str}({weekday_str})"
+
+                if time_slot_str:
+
+                    detail += f" {time_slot_str}"
+
+                # 如果是跑空课程，添加标识
+                if course.status == '跑空':
+                    detail += "(跑空)"
+
+                detail += ";"  # 添加分号分隔符
+
+                
+
+                teacher_groups[group_key].append(detail)
+
+        
+
+        # 将分组后的数据格式化为字符串列表
+
+        course_details = []
+
+        for group_key, details in teacher_groups.items():
+
+            # 格式：老师姓名:日期(星期) 时段;日期(星期) 时段;
+
+            formatted_detail = f"{group_key}:{''.join(details)}"
+
+            course_details.append(formatted_detail)
+
+        
+
+        stat_dict['course_details'] = course_details
+
+        result.append(stat_dict)
+
+    
+
+    return jsonify(result)
+
+
+@bp.route('/api/stats/debug/<int:student_id>', methods=['GET'])
+@login_required
+def debug_student_stats(student_id):
+    """调试特定学生的课时统计"""
+
+    month = request.args.get('month', get_current_month())
+
+    try:
+        # 获取学生的所有课程统计
+        stats_list = ClassHoursStats.query.filter_by(
+            student_id=student_id,
+            month=month
+        ).all()
+
+        year, month_num = map(int, month.split('-'))
+        start_date = date(year, month_num, 1)
+        end_date = date(year, month_num, calendar.monthrange(year, month_num)[1])
+
+        debug_info = {
+            'student_id': student_id,
+            'month': month,
+            'date_range': f'{start_date} 到 {end_date}',
+            'stats': []
+        }
+
+        for stat in stats_list:
+            # 查询该学生该课程当月的排课记录
+            courses = StudentCourse.query.filter(
+                StudentCourse.student_id == student_id,
+                StudentCourse.course_id == stat.course_id,
+                StudentCourse.course_date >= start_date,
+                StudentCourse.course_date <= end_date,
+                StudentCourse.status != '删除',
+                StudentCourse.is_confirmed == True,
+                StudentCourse.marketing_lead_id.is_(None)
+            ).all()
+
+            # 手动计算实际课时（按新规则）
+            # 正常上课：+1课时，请假：+0课时，跑空：+0.5课时
+            manual_actual_hours = 0
+            status_breakdown = {'正常': 0, '请假': 0, '跑空': 0, '其他': 0}
+
+            for course in courses:
+                if course.status == '正常':
+                    manual_actual_hours += 1
+                    status_breakdown['正常'] += 1
+                elif course.status == '请假':
+                    manual_actual_hours += 0  # 请假不计入实际课时
+                    status_breakdown['请假'] += 1
+                elif course.status == '跑空':
+                    manual_actual_hours += 0.5
+                    status_breakdown['跑空'] += 1
+                else:
+                    status_breakdown['其他'] += 1
+
+            stat_info = {
+                'course_name': stat.course_name,
+                'original_hours': stat.original_hours,
+                'actual_hours': stat.actual_hours,
+                'manual_calculation': manual_actual_hours,
+                'remaining_hours': stat.remaining_hours,
+                'total_courses': len(courses),
+                'status_breakdown': status_breakdown,
+                'courses': [
+                    {
+                        'date': course.course_date.strftime('%Y-%m-%d'),
+                        'status': course.status,
+                        'is_confirmed': course.is_confirmed
+                    } for course in courses[:10]  # 只显示前10个
+                ]
+            }
+
+            debug_info['stats'].append(stat_info)
+
+        return jsonify(debug_info)
+
+    except Exception as e:
+        import traceback
+        return jsonify({
+            'error': str(e),
+            'traceback': traceback.format_exc()
+        }), 500
+
+
+
+
+
+

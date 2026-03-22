@@ -26,7 +26,7 @@ from services import (
 from config import Config
 import os
 from datetime import datetime, date, timedelta
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -71,43 +71,49 @@ def get_teacher_hours():
 
             
 
-            # 为没有TeacherHours记录的老师创建临时记录（不保存到数据库）
+            # 全职老师：即使没有排课，也有底薪需要结算。
+            # TeacherHours 表按 (teacher_id, course_id, month) 存储，course_id 不能为空，
+            # 因此使用“底薪(占位)”课程承载 0 课时记录，确保前端可确认结算/可编辑激励与备注。
+            if employment_type == '全职':
+                placeholder_course = Course.query.filter_by(name='底薪(占位)', subject='系统').first()
+                if not placeholder_course:
+                    placeholder_course = Course(
+                        name='底薪(占位)',
+                        subject='系统',
+                        unit_price=0.0,
+                        description='系统占位课程：用于全职教师无排课月份的底薪结算',
+                        status='停用',
+                    )
+                    db.session.add(placeholder_course)
+                    db.session.flush()
 
-            existing_teacher_ids = {h.teacher_id for h in hours_list}
+                existing_teacher_ids = {h.teacher_id for h in hours_list}
+                for teacher in teachers:
+                    if teacher.id in existing_teacher_ids:
+                        continue
+                    if (teacher.base_salary or 0.0) <= 0:
+                        continue
+                    teacher_hours = TeacherHours.query.filter_by(
+                        teacher_id=teacher.id,
+                        course_id=placeholder_course.id,
+                        month=month,
+                    ).first()
+                    if not teacher_hours:
+                        teacher_hours = TeacherHours(
+                            teacher_id=teacher.id,
+                            teacher_name=teacher.name,
+                            course_id=placeholder_course.id,
+                            course_name=placeholder_course.name,
+                            month=month,
+                            total_hours=0.0,
+                            incentive=0.0,
+                            remark='',
+                        )
+                        db.session.add(teacher_hours)
+                        db.session.flush()
+                    hours_list.append(teacher_hours)
 
-            for teacher in teachers:
-
-                if teacher.id not in existing_teacher_ids:
-
-                    # 创建一个临时的TeacherHours对象，但不添加到session
-
-                    # 使用make_transient使其脱离session管理
-
-                    from sqlalchemy.orm import make_transient
-
-                    temp_hours = TeacherHours()
-
-                    temp_hours.id = -teacher.id  # 使用负数作为临时ID
-
-                    temp_hours.teacher_id = teacher.id
-
-                    temp_hours.teacher_name = teacher.name
-
-                    temp_hours.month = month
-
-                    temp_hours.total_hours = 0.0
-
-                    temp_hours.incentive = 0.0
-
-                    temp_hours.remark = None
-
-                    temp_hours.updated_at = None
-
-                    temp_hours.base_salary = getattr(teacher, 'base_salary', 0.0) if teacher else 0.0
-
-                    make_transient(temp_hours)
-
-                    hours_list.append(temp_hours)
+                db.session.commit()
 
         
 
@@ -159,7 +165,10 @@ def get_teacher_hours():
 
             # 获取教师的所有课程成本配置
 
-            teacher_costs = TeacherCourseCost.query.filter_by(teacher_id=hours.teacher_id).all()
+            teacher_costs = TeacherCourseCost.query.filter(
+                TeacherCourseCost.teacher_id == hours.teacher_id,
+                or_(TeacherCourseCost.status == '启用', TeacherCourseCost.status.is_(None)),
+            ).all()
 
             cost_map = {cost.course_id: cost.cost_per_class for cost in teacher_costs}
 
@@ -872,8 +881,11 @@ def get_teacher_hours():
             # 这样可以避免显示"0课时"和"暂无上课记录"的空分组
 
             if not course_details:
-
-                continue  # 跳过没有已确认课程的记录
+                # 但全职老师即使 0 课时，也需要结算底薪
+                if employment_type == '全职' and base_salary > 0:
+                    course_details = []
+                else:
+                    continue  # 跳过没有已确认课程的记录
 
             
 

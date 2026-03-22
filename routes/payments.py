@@ -288,15 +288,20 @@ def get_payments():
                 StudentCourse.student_id == student_id,
                 StudentCourse.course_id == course_id,
                 StudentCourse.status != '删除',
-                StudentCourse.is_confirmed == True
+                StudentCourse.is_confirmed == True,
+                StudentCourse.marketing_lead_id.is_(None),
             ).all()
             consumed_hours = 0
             for cr in consumed_courses:
-                if cr.status == '正常':
+                st = (cr.status or '').strip()
+                if st == '正常' or st == '':
                     consumed_hours += 1
-                elif cr.status == '跑空':
+                elif st == '跑空':
                     consumed_hours += 0.5
-                # 请假不消耗课时
+                elif st == '请假':
+                    pass  # 请假不消耗课时
+                else:
+                    consumed_hours += 1
             total_remaining_hours = total_paid_hours - consumed_hours
         else:
             total_remaining_hours = total_paid_hours

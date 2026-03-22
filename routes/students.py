@@ -42,6 +42,16 @@ from werkzeug.utils import secure_filename
 bp = Blueprint('students', __name__)
 
 
+def _paid_remaining_consumption_delta(status):
+    """单条已确认正式排课对「缴费剩余课时」维度的消耗增量（与列表接口一致）。"""
+    st = (status or '').strip()
+    if st == '请假':
+        return -1.0
+    if st == '跑空':
+        return 0.5
+    return 1.0
+
+
 def get_valid_student_ids_for_management_page():
     """
     获取 /students 页面中有效的学生ID列表（与 get_students 中 trial_success_only=true 的逻辑一致）
@@ -1016,20 +1026,26 @@ def get_student_remaining_hours(student_id):
             return jsonify({'student_id': student_id, 'course_id': course_id, 'remaining_hours': 0}), 200
         course_name = course.name if course else ''
         total_paid_hours = calculate_remaining_hours_from_payments(student_id, course_id, course_name=course_name or None)
+        # 试课排课（marketing_lead_id）不占正式缴费课时，与 confirm_course 不调用 update_class_hours_stats 一致
         consumed_courses = StudentCourse.query.filter(
             StudentCourse.student_id == student_id,
             StudentCourse.course_id == course_id,
             StudentCourse.status != '删除',
-            StudentCourse.is_confirmed == True
+            StudentCourse.is_confirmed == True,
+            StudentCourse.marketing_lead_id.is_(None),
         ).all()
         consumed_hours = 0
         for cr in consumed_courses:
-            if cr.status == '正常':
+            st = (cr.status or '').strip()
+            if st == '正常' or st == '':
                 consumed_hours += 1
-            elif cr.status == '请假':
+            elif st == '请假':
                 consumed_hours -= 1
-            elif cr.status == '跑空':
+            elif st == '跑空':
                 consumed_hours += 0.5
+            else:
+                # 与模型默认「正常」一致；避免空格、历史脏值导致确认后不记入消耗
+                consumed_hours += 1
         remaining_hours = total_paid_hours - consumed_hours
         return jsonify({
             'student_id': student_id,
@@ -1188,8 +1204,18 @@ def get_student_paid_courses(student_id):
 def get_paid_courses_need_scheduling():
     """获取所有已缴费但需要排课的学生课程列表。按 (student_id, course_id) 返回，同一学生多门课程会对应多条记录。"""
     try:
-        from datetime import date
+        from utils.date_utils import month_calendar_week_end_date
         from services.finance_service import calculate_remaining_hours_from_payments
+
+        through_month = (request.args.get('through_month') or '').strip()
+        through_week_raw = (request.args.get('through_week') or '').strip()
+        through_end_date = None
+        if through_month and through_week_raw:
+            try:
+                if len(through_month) == 7 and through_month[4] == '-':
+                    through_end_date = month_calendar_week_end_date(through_month, int(through_week_raw))
+            except (ValueError, TypeError):
+                through_end_date = None
         
         # 获取所有有缴费记录的学生和课程组合（过滤已删除的学生）
         from models import Student
@@ -1281,25 +1307,30 @@ def get_paid_courses_need_scheduling():
             else:
                 total_paid_hours = 0
             
-            # 计算已消耗课时（已确认的排课）
+            # 计算已消耗课时（已确认且非试课的排课；试课不占缴费课时）
             consumed_courses = StudentCourse.query.filter(
                 StudentCourse.student_id == student_id,
                 StudentCourse.course_id == course_id,
                 StudentCourse.status != '删除',
-                StudentCourse.is_confirmed == True
+                StudentCourse.is_confirmed == True,
+                StudentCourse.marketing_lead_id.is_(None),
             ).all()
             
-            consumed_hours = 0
-            for course_record in consumed_courses:
-                if course_record.status == '正常':
-                    consumed_hours += 1
-                elif course_record.status == '请假':
-                    consumed_hours -= 1  # 请假不消耗课时
-                elif course_record.status == '跑空':
-                    consumed_hours += 0.5
-            
-            # 计算剩余课时
-            remaining_hours = total_paid_hours - consumed_hours
+            consumed_hours = sum(_paid_remaining_consumption_delta(r.status) for r in consumed_courses)
+
+            consumed_hours_through_week = None
+            if through_end_date is not None:
+                consumed_hours_through_week = sum(
+                    _paid_remaining_consumption_delta(r.status)
+                    for r in consumed_courses
+                    if r.course_date <= through_end_date
+                )
+
+            # 剩余课时：与「累计」同一截止——带 through 时用截至该周日的已确认消耗；否则用全量已确认消耗
+            if through_end_date is not None:
+                remaining_hours = total_paid_hours - consumed_hours_through_week
+            else:
+                remaining_hours = total_paid_hours - consumed_hours
             
             # 只要设置了课程字段，都进入预排课列表（不管是否有剩余课时）
             # 获取学生信息（包括标记状态）
@@ -1330,6 +1361,7 @@ def get_paid_courses_need_scheduling():
                 'subject': info['subject'],
                 'total_paid_hours': total_paid_hours,
                 'consumed_hours': consumed_hours,
+                'consumed_hours_through_week': consumed_hours_through_week,
                 'remaining_hours': remaining_hours,
                 'default_time_slot': default_schedule.default_time_slot if default_schedule else '',
                 'default_weekday': default_schedule.default_weekday if default_schedule else '',

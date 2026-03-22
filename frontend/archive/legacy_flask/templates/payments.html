@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>缴费管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>缴费管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            <!-- 合计栏 -->
+            <div id="payment-totals-summary" style="margin-bottom: 20px; padding: 15px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="display: flex; justify-content: space-around; align-items: center; flex-wrap: wrap; gap: 20px;">
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px;">缴费总额</div>
+                        <div style="font-size: 20px; font-weight: bold;" id="total-paid-amount">0.00</div>
+                    </div>
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px;">优惠总额</div>
+                        <div style="font-size: 20px; font-weight: bold;" id="total-discount">0.00</div>
+                    </div>
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px;">退费总额</div>
+                        <div style="font-size: 20px; font-weight: bold;" id="total-refund-amount">0.00</div>
+                    </div>
+                    <div style="text-align: center; color: white;">
+                        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 5px;">剩余费用</div>
+                        <div style="font-size: 20px; font-weight: bold;" id="total-remaining-cost">0.00</div>
+                    </div>
+                </div>
+            </div>
+            <div class="toolbar">
+                <button class="btn btn-secondary" id="btn-payment-record" onclick="showPaymentRecord()">缴费记录</button>
+                <button class="btn btn-secondary" id="btn-payment-reminder" onclick="showPaymentReminder()">缴费提醒</button>
+                <button class="btn btn-primary" onclick="exportPayments()">导出Excel</button>
+                <select id="payment-year" onchange="onPaymentYearChange()">
+                    <option value="">全部年份</option>
+                </select>
+                <select id="payment-month" onchange="onPaymentFilterChange()" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="">全部月份</option>
+                    <option value="1">1月</option>
+                    <option value="2">2月</option>
+                    <option value="3">3月</option>
+                    <option value="4">4月</option>
+                    <option value="5">5月</option>
+                    <option value="6">6月</option>
+                    <option value="7">7月</option>
+                    <option value="8">8月</option>
+                    <option value="9">9月</option>
+                    <option value="10">10月</option>
+                    <option value="11">11月</option>
+                    <option value="12">12月</option>
+                </select>
+                <select id="payment-student-filter" onchange="onPaymentFilterChange()">
+                    <option value="">全部学生</option>
+                </select>
+                <select id="payment-type-filter" onchange="onPaymentFilterChange()">
+                    <option value="">全部类型</option>
+                    <option value="缴费">缴费</option>
+                    <option value="退费">退费</option>
+                </select>
+                <select id="payment-status-filter" onchange="onPaymentFilterChange()">
+                    <option value="">全部状态</option>
+                    <option value="进行中">进行中</option>
+                    <option value="结束">结束</option>
+                </select>
+                <div style="margin-left: auto; display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="showAddPaymentModal()">新增缴费</button>
+                    <button class="btn btn-warning" onclick="showRefundModal()">新增退费</button>
+                </div>
+            </div>
+            <!-- 缴费记录视图 -->
+            <div id="payment-record-view">
+                <table class="data-table">
+                    <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>类型</th>
+                                <th>日期</th>
+                                <th>学生姓名</th>
+                                <th>课程名称</th>
+                                <th>原始费用</th>
+                                <th>优惠</th>
+                                <th>金额</th>
+                                <th>节数</th>
+                                <th>单价</th>
+                                <th>剩余课时</th>
+                                <th>剩余费用</th>
+                                <th>状态</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                    </thead>
+                    <tbody id="payments-table-body"></tbody>
+                </table>
+                <!-- 分页控件 -->
+                <div id="payment-pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 20px; padding: 10px;">
+                    <button id="payment-prev-btn" class="btn btn-secondary" onclick="changePaymentPage(-1)" disabled>上一页</button>
+                    <span id="payment-page-info" style="padding: 0 10px;">第 1 页，共 1 页</span>
+                    <button id="payment-next-btn" class="btn btn-secondary" onclick="changePaymentPage(1)" disabled>下一页</button>
+                </div>
+            </div>
+            <!-- 缴费提醒视图 -->
+            <div id="payment-reminder-view" style="display: none;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>学生姓名</th>
+                            <th>年级</th>
+                            <th>剩余课时</th>
+                            <th>联系电话</th>
+                            <th>家长姓名</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="payment-reminder-table-body"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化年份下拉框
+            const currentYear = new Date().getFullYear();
+            const yearSelect = document.getElementById('payment-year');
+            // 生成最近10年的选项
+            for (let i = currentYear; i >= currentYear - 10; i--) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = i + '年';
+                if (i === currentYear) {
+                    option.selected = true;
+                }
+                yearSelect.appendChild(option);
+            }
+            // 初始化月份选择器，设置为当前月份
+            const monthSelect = document.getElementById('payment-month');
+            if (monthSelect) {
+                const currentMonth = new Date().getMonth() + 1; // 0-11 -> 1-12
+                monthSelect.value = currentMonth;
+            }
+            // 默认显示缴费记录视图
+            showPaymentRecord();
+        });
+
+        // 导出缴费记录
+        function exportPayments() {
+            const year = document.getElementById('payment-year').value;
+            const month = document.getElementById('payment-month').value;
+            let url = '/api/export/payments';
+            const params = [];
+            if (year) params.push(`year=${year}`);
+            if (month) params.push(`month=${month}`);
+            if (params.length > 0) url += '?' + params.join('&');
+            window.open(url, '_blank');
+        }
+    </script>
+</body>
+</html>
+

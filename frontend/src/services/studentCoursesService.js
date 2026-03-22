@@ -2,9 +2,14 @@ import api from './api'
 
 export const studentCoursesService = {
   // 获取已缴费需要排课的学生课程列表
-  getPaidCoursesNeedScheduling: async () => {
-    const response = await api.get('/students/paid-courses-need-scheduling')
-    // 返回格式：{ courses: [...], total: ... }
+  // throughMonth/throughWeek：与排课页「月+周」一致时，累计与剩余课时均按截至该周日的已确认消耗计算
+  getPaidCoursesNeedScheduling: async (opts = {}) => {
+    const params = {}
+    if (opts.throughMonth && opts.throughWeek != null && opts.throughWeek !== '') {
+      params.through_month = opts.throughMonth
+      params.through_week = String(opts.throughWeek)
+    }
+    const response = await api.get('/students/paid-courses-need-scheduling', { params })
     return response.courses || []
   },
 

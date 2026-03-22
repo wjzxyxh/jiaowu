@@ -219,7 +219,112 @@
   margin-top: 24px;
 }
 
-/* ==================== 课程成本分组表格 ==================== */
+/* ==================== 课程成本：筛选 + 按教师分行列表 ==================== */
+
+.cost-list-toolbar {
+  margin-bottom: 16px;
+}
+
+.cost-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px 16px;
+}
+
+.cost-filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 140px;
+}
+
+.cost-filter-label {
+  font-size: 12px;
+  color: #666;
+}
+
+.cost-filter-item select {
+  min-width: 160px;
+  padding: 6px 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.cost-filter-clear {
+  align-self: flex-end;
+}
+
+.cost-teacher-rows-table .teacher-name-cell {
+  font-weight: 600;
+  color: #333;
+  vertical-align: middle;
+}
+
+.cost-no-lines-cell {
+  color: #999;
+  font-size: 14px;
+  vertical-align: middle;
+}
+
+.cost-orphan-hint {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #888;
+}
+
+/* 课程成本行：停用状态灰显 */
+.cost-teacher-rows-table tbody tr.cost-row-readonly td {
+  background-color: #e8e8e8 !important;
+  color: #555;
+}
+
+.cost-teacher-rows-table tbody tr.cost-row-readonly td.teacher-name-cell {
+  background-color: #dedede !important;
+}
+
+.cost-teacher-rows-table tbody tr.cost-row-readonly .cost-per-class-cell {
+  color: #8f6a45 !important;
+}
+
+.cost-status-cell {
+  vertical-align: middle;
+}
+
+.cost-status-toggle {
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.cost-status-toggle:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.cost-status-toggle.is-active {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #a5d6a7;
+}
+
+.cost-status-toggle.is-stopped {
+  background: #ececec;
+  color: #666;
+  border-color: #bdbdbd;
+}
+
+.cost-status-text {
+  font-size: 13px;
+  color: #555;
+}
+
+/* ==================== 课程成本分组表格（课程信息页等仍可用） ==================== */
 
 .cost-grouped-table .subject-cell {
   background: #fafafa;

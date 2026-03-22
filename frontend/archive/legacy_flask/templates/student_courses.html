@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生课程 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .student-courses-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .page-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .table-container {
+            overflow-x: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
+        thead {
+            background: #f8f9fa;
+        }
+        th {
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #495057;
+            border-bottom: 2px solid #dee2e6;
+        }
+        td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+        .btn-link {
+            color: #667eea;
+            text-decoration: none;
+            padding: 6px 12px;
+            border: 1px solid #667eea;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: inline-block;
+        }
+        .btn-link:hover {
+            background: #667eea;
+            color: white;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        .remaining-hours {
+            color: #28a745;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>学生课程</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+
+            <div class="student-courses-container">
+                <h2 style="margin: 0 0 20px 0; font-size: 20px; color: #333;">
+                    已缴费需要排课的学生课程列表
+                </h2>
+                
+                <div id="loading" class="loading">
+                    <div>正在加载数据...</div>
+                </div>
+                
+                <div id="empty-state" class="empty-state" style="display: none;">
+                    <div class="empty-state-icon">📭</div>
+                    <div style="font-size: 18px; margin-bottom: 10px;">暂无需要排课的学生课程</div>
+                    <div style="font-size: 14px; color: #999;">所有已缴费的学生课程都已排完课</div>
+                </div>
+                
+                <div id="table-container" class="table-container" style="display: none;">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>学生姓名</th>
+                                <th>年级</th>
+                                <th>课程名称</th>
+                                <th>科目</th>
+                                <th>默认上课时间</th>
+                                <th>默认上课星期</th>
+                                <th style="text-align: right;">总课时</th>
+                                <th style="text-align: right;">已消耗</th>
+                                <th style="text-align: right;">剩余课时</th>
+                                <th style="text-align: center;">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="courses-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 编辑默认排课设置模态框 -->
+    <div id="edit-schedule-modal" class="modal" style="display: none;">
+        <div class="modal-content" style="max-width: 500px;">
+            <div style="padding: 20px; border-bottom: 1px solid #eee;">
+                <h2 style="margin: 0; font-size: 20px;">设置默认排课</h2>
+            </div>
+            <div style="padding: 20px;">
+                <form id="schedule-form">
+                    <input type="hidden" id="edit-student-id">
+                    <input type="hidden" id="edit-course-id">
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">学生姓名</label>
+                        <input type="text" id="edit-student-name" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5;">
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">课程名称</label>
+                        <input type="text" id="edit-course-name" readonly style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; background: #f5f5f5;">
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">默认上课时段</label>
+                        <select id="edit-time-slot" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                            <option value="">-- 请选择时段 --</option>
+                        </select>
+                    </div>
+                    <div style="margin-bottom: 20px;">
+                        <label style="display: block; margin-bottom: 8px; font-weight: 500;">默认上课星期</label>
+                        <select id="edit-weekday" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px;">
+                            <option value="">-- 请选择星期 --</option>
+                            <option value="周一">周一</option>
+                            <option value="周二">周二</option>
+                            <option value="周三">周三</option>
+                            <option value="周四">周四</option>
+                            <option value="周五">周五</option>
+                            <option value="周六">周六</option>
+                            <option value="周日">周日</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px;">
+                        <button type="button" onclick="closeScheduleModal()" style="padding: 10px 20px; border: 1px solid #ddd; background: white; border-radius: 6px; cursor: pointer;">取消</button>
+                        <button type="submit" style="padding: 10px 20px; border: none; background: #667eea; color: white; border-radius: 6px; cursor: pointer;">保存</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局API错误处理：检测会话失效
+        let sessionExpiredHandled = false; // 防止重复弹窗
+        
+        (function() {
+            // 保存原始的fetch函数
+            const originalFetch = window.fetch;
+            
+            // 重写fetch函数，添加全局错误处理
+            window.fetch = function(...args) {
+                return originalFetch.apply(this, args)
+                    .then(async response => {
+                        // 检查是否是401错误
+                        if (response.status === 401 && !sessionExpiredHandled) {
+                            try {
+                                const data = await response.json();
+                                if (data.session_expired) {
+                                    sessionExpiredHandled = true;
+                                    
+                                    // 显示确认弹窗
+                                    const confirmed = confirm('您的账号在其他地方登录，当前会话已失效。\n\n点击"确定"将跳转到登录页面重新登录。\n点击"取消"可以继续浏览（但操作可能失败）。');
+                                    
+                                    if (confirmed) {
+                                        // 用户确认，清除本地数据并跳转到登录页
+                                        console.warn('用户确认会话失效，跳转到登录页');
+                                        localStorage.clear();
+                                        sessionStorage.clear();
+                                        window.location.href = '/login';
+                                    } else {
+                                        // 用户取消，重置标志，允许继续操作（但可能会失败）
+                                        console.warn('用户取消跳转，继续当前会话（操作可能失败）');
+                                        sessionExpiredHandled = false;
+                                    }
+                                    
+                                    // 返回一个rejected promise，阻止后续处理
+                                    return Promise.reject(new Error('Session expired'));
+                                }
+                            } catch (e) {
+                                // 如果解析JSON失败，继续处理
+                            }
+                        }
+                        return Promise.resolve(response);
+                    });
+            };
+        })();
+        
+        let isRefreshing = false; // 标记是否正在刷新
+        
+        // 加载学生课程列表
+        async function loadStudentCourses(isInitialLoad = false) {
+            const loading = document.getElementById('loading');
+            const emptyState = document.getElementById('empty-state');
+            const tableContainer = document.getElementById('table-container');
+            const tbody = document.getElementById('courses-tbody');
+            
+            // 如果是刷新（非首次加载），不显示 loading，避免闪烁
+            if (isInitialLoad) {
+                loading.style.display = 'block';
+                emptyState.style.display = 'none';
+                tableContainer.style.display = 'none';
+            } else {
+                // 刷新时，如果已经有数据，保持显示状态
+                isRefreshing = true;
+            }
+            
+            try {
+                const response = await fetch('/api/students/paid-courses-need-scheduling');
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || '获取学生课程列表失败');
+                }
+                
+                // 首次加载时隐藏 loading
+                if (isInitialLoad) {
+                    loading.style.display = 'none';
+                }
+                
+                if (data.courses && data.courses.length > 0) {
+                    // 使用 DocumentFragment 和 requestAnimationFrame 实现平滑更新
+                    const fragment = document.createDocumentFragment();
+                    
+                    data.courses.forEach(course => {
+                        const tr = document.createElement('tr');
+                        tr.innerHTML = `
+                            <td>${escapeHtml(course.student_name)}</td>
+                            <td>${escapeHtml(course.grade || '-')}</td>
+                            <td>${escapeHtml(course.course_name)}</td>
+                            <td>${escapeHtml(course.subject)}</td>
+                            <td>${escapeHtml(course.default_time_slot || '-')}</td>
+                            <td>${escapeHtml(course.default_weekday || '-')}</td>
+                            <td style="text-align: right;">${course.total_paid_hours}</td>
+                            <td style="text-align: right;">${course.consumed_hours}</td>
+                            <td style="text-align: right;" class="remaining-hours">${course.remaining_hours.toFixed(1)}</td>
+                            <td style="text-align: center;">
+                                <a href="/courses?student_id=${course.student_id}&course_id=${course.course_id}" 
+                                   target="_blank"
+                                   class="btn-link"
+                                   style="margin-right: 8px;">
+                                    去排课
+                                </a>
+                                <button onclick="showEditScheduleModal(${course.student_id}, ${course.course_id}, '${escapeHtml(course.student_name)}', '${escapeHtml(course.course_name)}')" 
+                                        class="btn-link"
+                                        style="border: 1px solid #28a745; color: #28a745; background: white;">
+                                    编辑默认
+                                </button>
+                            </td>
+                        `;
+                        fragment.appendChild(tr);
+                    });
+                    
+                    // 使用 requestAnimationFrame 确保在下一帧一次性替换，避免闪烁
+                    requestAnimationFrame(() => {
+                        tbody.innerHTML = '';
+                        tbody.appendChild(fragment);
+                        tableContainer.style.display = 'block';
+                        emptyState.style.display = 'none';
+                        isRefreshing = false;
+                    });
+                } else {
+                    tableContainer.style.display = 'none';
+                    emptyState.style.display = 'block';
+                    isRefreshing = false;
+                }
+            } catch (error) {
+                console.error('加载学生课程列表失败:', error);
+                if (isInitialLoad) {
+                    loading.style.display = 'none';
+                }
+                tableContainer.style.display = 'none';
+                emptyState.style.display = 'block';
+                emptyState.innerHTML = `
+                    <div class="empty-state-icon">⚠️</div>
+                    <div style="font-size: 18px; margin-bottom: 10px;">加载失败</div>
+                    <div style="font-size: 14px; color: #999;">${error.message}</div>
+                `;
+                isRefreshing = false;
+            }
+        }
+        
+        // HTML转义函数
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // 页面加载时加载数据
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStudentCourses(true); // 首次加载，显示 loading
+        });
+        
+        // 定期刷新数据（每30秒），只在页面可见时刷新
+        let refreshInterval = null;
+        
+        function startAutoRefresh() {
+            if (refreshInterval) return; // 避免重复设置
+            
+            refreshInterval = setInterval(() => {
+                // 只在页面可见且不在刷新状态时刷新
+                if (!document.hidden && !isRefreshing) {
+                    loadStudentCourses(false); // 刷新时不显示 loading
+                }
+            }, 30000);
+        }
+        
+        function stopAutoRefresh() {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+                refreshInterval = null;
+            }
+        }
+        
+        // 页面可见性变化时控制自动刷新
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                stopAutoRefresh();
+            } else {
+                startAutoRefresh();
+            }
+        });
+        
+        // 启动自动刷新
+        startAutoRefresh();
+        
+        // 监听 localStorage 变化（用于跨标签页同步）
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'calendar_refresh' && e.newValue && !isRefreshing) {
+                loadStudentCourses(false);
+            }
+        });
+        
+        // 显示编辑默认排课设置模态框
+        async function showEditScheduleModal(studentId, courseId, studentName, courseName) {
+            const modal = document.getElementById('edit-schedule-modal');
+            const form = document.getElementById('schedule-form');
+            const studentIdInput = document.getElementById('edit-student-id');
+            const courseIdInput = document.getElementById('edit-course-id');
+            const studentNameInput = document.getElementById('edit-student-name');
+            const courseNameInput = document.getElementById('edit-course-name');
+            const timeSlotSelect = document.getElementById('edit-time-slot');
+            const weekdaySelect = document.getElementById('edit-weekday');
+            
+            studentIdInput.value = studentId;
+            courseIdInput.value = courseId;
+            studentNameInput.value = studentName;
+            courseNameInput.value = courseName;
+            
+            // 加载时段选项
+            try {
+                const timeSlotsResponse = await fetch('/api/time-slots?status=启用');
+                const timeSlots = await timeSlotsResponse.json();
+                timeSlotSelect.innerHTML = '<option value="">-- 请选择时段 --</option>';
+                timeSlots.forEach(slot => {
+                    const option = document.createElement('option');
+                    option.value = slot.name;
+                    option.textContent = slot.name;
+                    timeSlotSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('加载时段列表失败:', error);
+            }
+            
+            // 加载当前学生-课程的默认设置
+            try {
+                const response = await fetch(`/api/students/${studentId}/courses/${courseId}/default-schedule`);
+                const data = await response.json();
+                if (response.ok) {
+                    timeSlotSelect.value = data.default_time_slot || '';
+                    weekdaySelect.value = data.default_weekday || '';
+                }
+            } catch (error) {
+                console.error('加载默认设置失败:', error);
+            }
+            
+            modal.style.display = 'block';
+        }
+        
+        // 关闭编辑模态框
+        function closeScheduleModal() {
+            document.getElementById('edit-schedule-modal').style.display = 'none';
+        }
+        
+        // 保存默认排课设置
+        document.getElementById('schedule-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const studentId = document.getElementById('edit-student-id').value;
+            const courseId = document.getElementById('edit-course-id').value;
+            const defaultTimeSlot = document.getElementById('edit-time-slot').value;
+            const defaultWeekday = document.getElementById('edit-weekday').value;
+            
+            try {
+                const response = await fetch(`/api/students/${studentId}/courses/${courseId}/default-schedule`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        default_time_slot: defaultTimeSlot,
+                        default_weekday: defaultWeekday
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('保存成功！');
+                    closeScheduleModal();
+                    // 刷新列表以显示更新后的默认值
+                    loadStudentCourses();
+                } else {
+                    throw new Error(data.error || '保存失败');
+                }
+            } catch (error) {
+                console.error('保存默认设置失败:', error);
+                alert('保存失败：' + error.message);
+            }
+        });
+        
+        // 点击模态框外部关闭
+        document.getElementById('edit-schedule-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeScheduleModal();
+            }
+        });
+    </script>
+</body>
+</html>

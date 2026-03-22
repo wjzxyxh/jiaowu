@@ -1,0 +1,971 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>其它管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            color: #667eea;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .number-input-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .number-input-group input {
+            flex: 1;
+            text-align: center;
+            font-size: 18px;
+            font-weight: bold;
+        }
+        .number-input-group button {
+            width: 40px;
+            height: 40px;
+            font-size: 20px;
+            font-weight: bold;
+            border: 1px solid #ddd;
+            background: #f8f9fa;
+            cursor: pointer;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .number-input-group button:hover {
+            background: #e9ecef;
+        }
+        .number-input-group button:active {
+            background: #dee2e6;
+        }
+        .number-input-group button.decrease {
+            color: #dc3545;
+        }
+        .number-input-group button.increase {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>其它管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab('time-slots')">时段管理</button>
+                <button class="tab" onclick="switchTab('classrooms')">教室管理</button>
+                <button class="tab" onclick="switchTab('finance')">财务管理</button>
+            </div>
+
+            <!-- 时段管理 -->
+            <div id="time-slots-tab" class="tab-content active">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="showAddTimeSlotModal()">新增时段</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>时段名称</th>
+                            <th>开始时间</th>
+                            <th>结束时间</th>
+                            <th>排序</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="time-slots-table-body"></tbody>
+                </table>
+            </div>
+
+            <!-- 教室管理 -->
+            <div id="classrooms-tab" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="showAddClassroomModal()">新增教室</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>教室名称</th>
+                            <th>排序</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="classrooms-table-body"></tbody>
+                </table>
+            </div>
+
+            <!-- 财务管理 -->
+            <div id="finance-tab" class="tab-content">
+                <div class="toolbar">
+                    <button class="btn btn-primary" onclick="loadFinanceConfigs()">刷新</button>
+                </div>
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>配置项</th>
+                            <th>说明</th>
+                            <th>当前值</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="finance-config-table-body"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 标签页切换
+        function switchTab(tabName) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName + '-tab').classList.add('active');
+            event.target.classList.add('active');
+            
+            // 加载对应数据
+            if (tabName === 'time-slots') {
+                loadTimeSlots();
+            } else if (tabName === 'classrooms') {
+                loadClassrooms();
+            } else if (tabName === 'finance') {
+                loadFinanceConfigs();
+            }
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 首先尝试从缓存加载数据（如果有的话）
+            const cachedData = getTimeSlotsFromCache();
+            if (cachedData) {
+                console.log('页面加载：使用缓存数据，时段数量:', cachedData.length);
+                renderTimeSlotsTable(cachedData);
+                // 在后台更新数据
+                setTimeout(() => {
+                    loadTimeSlots();
+                }, 1000);
+                return;
+            }
+            // 没有缓存，延迟加载，避免立即触发429错误
+            setTimeout(() => {
+                loadTimeSlots();
+            }, 500);
+        });
+
+        // ==================== 时段管理 ====================
+        
+        // 辅助函数：渲染时段表格
+        function renderTimeSlotsTable(slots) {
+            const tbody = document.getElementById('time-slots-table-body');
+            if (!tbody) {
+                console.error('找不到time-slots-table-body元素');
+                return false;
+            }
+            
+            if (!Array.isArray(slots) || slots.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">暂无时段数据</td></tr>';
+                return false;
+            }
+            
+            // 确保数据有效
+            const validSlots = slots.filter(s => s && typeof s === 'object');
+            if (validSlots.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">暂无有效时段数据</td></tr>';
+                return false;
+            }
+            
+            tbody.innerHTML = validSlots.map(s => {
+                // 安全地获取值，避免null/undefined
+                const id = s.id != null ? s.id : '';
+                const name = s.name != null ? String(s.name) : '';
+                const startTime = s.start_time != null ? String(s.start_time) : '';
+                const endTime = s.end_time != null ? String(s.end_time) : '';
+                const sortOrder = s.sort_order != null ? s.sort_order : 0;
+                const status = s.status != null ? String(s.status) : '启用';
+                const statusClass = status === '启用' ? 'normal' : 'deleted';
+                
+                return `
+                    <tr>
+                        <td>${id}</td>
+                        <td>${name}</td>
+                        <td>${startTime}</td>
+                        <td>${endTime}</td>
+                        <td>${sortOrder}</td>
+                        <td><span class="status-badge status-${statusClass}">${status}</span></td>
+                        <td>
+                            <button class="btn btn-warning" onclick="showEditTimeSlotModal(${id})">编辑</button>
+                            <button class="btn btn-danger" onclick="deleteTimeSlot(${id})">删除</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            return true;
+        }
+        
+        // 辅助函数：尝试从多个来源获取时段数据
+        function getTimeSlotsFromCache() {
+            // 1. 尝试从localStorage获取
+            const cachedTimeSlots = localStorage.getItem('cached_time_slots');
+            if (cachedTimeSlots) {
+                try {
+                    const cachedSlots = JSON.parse(cachedTimeSlots);
+                    if (Array.isArray(cachedSlots) && cachedSlots.length > 0) {
+                        console.log('从缓存获取时段数据，数量:', cachedSlots.length);
+                        return cachedSlots;
+                    }
+                } catch (e) {
+                    console.warn('解析缓存失败:', e);
+                }
+            }
+            
+            // 2. 尝试从全局变量获取
+            if (window.allTimeSlots && Array.isArray(window.allTimeSlots) && window.allTimeSlots.length > 0) {
+                console.log('从全局变量获取时段数据，数量:', window.allTimeSlots.length);
+                return window.allTimeSlots;
+            }
+            
+            // 3. 尝试从其他可能的来源获取（比如从courses页面预加载的数据）
+            // 检查是否有其他全局变量存储了时段数据
+            if (window.timeSlotsCache && Array.isArray(window.timeSlotsCache) && window.timeSlotsCache.length > 0) {
+                console.log('从timeSlotsCache获取时段数据，数量:', window.timeSlotsCache.length);
+                return window.timeSlotsCache;
+            }
+            
+            console.log('没有找到任何缓存数据');
+            return null;
+        }
+
+        // 请求节流：避免频繁调用API
+        let timeSlotsLoading = false;
+        let timeSlotsLastLoadTime = 0;
+        const TIME_SLOTS_LOAD_INTERVAL = 2000; // 2秒内只允许调用一次
+        
+        function loadTimeSlots() {
+            // 节流检查：如果正在加载或距离上次加载时间太短，则跳过
+            const now = Date.now();
+            if (timeSlotsLoading || (now - timeSlotsLastLoadTime < TIME_SLOTS_LOAD_INTERVAL)) {
+                console.log('时段列表加载请求被节流，使用缓存数据');
+                const cachedData = getTimeSlotsFromCache();
+                if (cachedData) {
+                    renderTimeSlotsTable(cachedData);
+                }
+                return;
+            }
+            
+            console.log('开始加载时段列表...');
+            timeSlotsLoading = true;
+            timeSlotsLastLoadTime = now;
+            
+            const tbody = document.getElementById('time-slots-table-body');
+            if (!tbody) {
+                console.error('找不到time-slots-table-body元素');
+                timeSlotsLoading = false;
+                return;
+            }
+            
+            // 先尝试从缓存显示数据（如果有的话）
+            const cachedData = getTimeSlotsFromCache();
+            if (cachedData) {
+                renderTimeSlotsTable(cachedData);
+            }
+            
+            fetch('/api/time-slots')
+                .then(res => {
+                    console.log('时段列表API响应状态:', res.status);
+                    if (!res.ok) {
+                        // 如果是429错误，尝试使用缓存
+                        if (res.status === 429) {
+                            console.warn('API返回429错误');
+                            const cachedData = getTimeSlotsFromCache();
+                            if (cachedData) {
+                                console.log('使用缓存数据（429错误）');
+                                return Promise.resolve(cachedData);
+                            }
+                            // 429错误但没有缓存
+                            return Promise.resolve({ is429Error: true, data: [] });
+                        }
+                        throw new Error(`HTTP error! status: ${res.status}`);
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    console.log('时段列表数据:', data);
+                    
+                    // 检查是否是429错误返回的特殊对象
+                    let dataArray = [];
+                    let is429Error = false;
+                    
+                    if (data && typeof data === 'object' && data.is429Error) {
+                        is429Error = true;
+                        dataArray = Array.isArray(data.data) ? data.data : [];
+                    } else {
+                        dataArray = Array.isArray(data) ? data : [];
+                    }
+                    
+                    // 如果成功获取数据，更新缓存
+                    if (dataArray.length > 0 && !is429Error) {
+                        console.log('更新缓存，时段数量:', dataArray.length);
+                        localStorage.setItem('cached_time_slots', JSON.stringify(dataArray));
+                        localStorage.setItem('cached_time_slots_timestamp', Date.now().toString());
+                        window.allTimeSlots = dataArray;
+                        renderTimeSlotsTable(dataArray);
+                        return;
+                    }
+                    
+                    // 如果没有数据
+                    if (dataArray.length === 0) {
+                        if (is429Error) {
+                            // 429错误，再次尝试从缓存获取（可能在API调用期间其他页面已加载数据）
+                            const cachedData = getTimeSlotsFromCache();
+                            if (cachedData && cachedData.length > 0) {
+                                console.log('429错误后从缓存获取数据，数量:', cachedData.length);
+                                renderTimeSlotsTable(cachedData);
+                                return;
+                            }
+                            // 429错误且无缓存，显示友好提示
+                            console.log('显示429错误提示（无缓存数据）');
+                            const retryId = 'retry-time-slot-' + Date.now();
+                            if (tbody) {
+                                tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #856404; background: #fff3cd; padding: 20px; border: 1px solid #ffc107; border-radius: 4px;">
+                                    <strong>⚠️ 请求过于频繁</strong><br>
+                                    <small style="display: block; margin: 10px 0;">服务器暂时无法处理请求，请稍后再试</small>
+                                    <button class="btn btn-warning" id="${retryId}" onclick="loadTimeSlots()" style="margin-top: 10px; padding: 8px 20px;">立即重试</button>
+                                </td></tr>`;
+                            }
+                        } else {
+                            // 正常情况下的空数据
+                            if (tbody) {
+                                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">暂无时段数据</td></tr>';
+                            }
+                        }
+                        return;
+                    }
+                    
+                    // 渲染数据
+                    renderTimeSlotsTable(dataArray);
+                })
+                .catch(err => {
+                    console.error('加载时段列表失败:', err);
+                    // 尝试使用缓存
+                    const cachedData = getTimeSlotsFromCache();
+                    if (cachedData) {
+                        console.log('使用缓存数据（API失败）');
+                        renderTimeSlotsTable(cachedData);
+                    } else {
+                        // 如果缓存也不可用，显示错误消息
+                        if (tbody) {
+                            tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #dc3545;">加载失败，请刷新页面重试</td></tr>';
+                        }
+                    }
+                })
+                .finally(() => {
+                    timeSlotsLoading = false;
+                });
+        }
+
+        function showAddTimeSlotModal() {
+            const modalBody = `
+                <h2>新增时段</h2>
+                <form id="time-slot-form" onsubmit="saveTimeSlot(event)">
+                    <div class="form-group">
+                        <label>时段名称 *</label>
+                        <input type="text" name="name" placeholder="如：8:10-9:30" required>
+                    </div>
+                    <div class="form-group">
+                        <label>开始时间 *</label>
+                        <input type="text" name="start_time" placeholder="如：8:10" required>
+                    </div>
+                    <div class="form-group">
+                        <label>结束时间 *</label>
+                        <input type="text" name="end_time" placeholder="如：9:30" required>
+                    </div>
+                    <div class="form-group">
+                        <label>排序顺序</label>
+                        <input type="number" name="sort_order" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select name="status">
+                            <option value="启用" selected>启用</option>
+                            <option value="停用">停用</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            showModal(modalBody);
+        }
+
+        function showEditTimeSlotModal(id) {
+            fetch('/api/time-slots')
+                .then(res => res.json())
+                .then(slots => {
+                    const slot = slots.find(s => s.id === id);
+                    if (!slot) return;
+                    
+                    const modalBody = `
+                        <h2>编辑时段</h2>
+                        <form id="time-slot-form" onsubmit="saveTimeSlot(event, ${id})">
+                            <div class="form-group">
+                                <label>时段名称 *</label>
+                                <input type="text" name="name" value="${slot.name}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>开始时间 *</label>
+                                <input type="text" name="start_time" value="${slot.start_time}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>结束时间 *</label>
+                                <input type="text" name="end_time" value="${slot.end_time}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>排序顺序</label>
+                                <input type="number" name="sort_order" value="${slot.sort_order}" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>状态</label>
+                                <select name="status">
+                                    <option value="启用" ${slot.status === '启用' ? 'selected' : ''}>启用</option>
+                                    <option value="停用" ${slot.status === '停用' ? 'selected' : ''}>停用</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn" onclick="closeModal()">取消</button>
+                                <button type="submit" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    `;
+                    showModal(modalBody);
+                });
+        }
+
+        function saveTimeSlot(e, id) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.sort_order = parseInt(data.sort_order) || 0;
+            
+            const url = id ? `/api/time-slots/${id}` : '/api/time-slots';
+            const method = id ? 'PUT' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(() => {
+                closeModal();
+                loadTimeSlots();
+            });
+        }
+
+        function deleteTimeSlot(id) {
+            if (!confirm('确定要删除这个时段吗？')) return;
+            
+            fetch(`/api/time-slots/${id}`, { method: 'DELETE' })
+                .then(() => loadTimeSlots());
+        }
+
+        // ==================== 教室管理 ====================
+
+        // 教室管理请求节流
+        let classroomsLoading = false;
+        let classroomsLastLoadTime = 0;
+        const CLASSROOMS_LOAD_INTERVAL = 2000;
+        
+        function loadClassrooms() {
+            // 节流检查
+            const now = Date.now();
+            if (classroomsLoading || (now - classroomsLastLoadTime < CLASSROOMS_LOAD_INTERVAL)) {
+                console.log('教室列表加载请求被节流');
+                return;
+            }
+            
+            classroomsLoading = true;
+            classroomsLastLoadTime = now;
+            
+            fetch('/api/classrooms')
+                .then(res => {
+                    if (!res.ok) {
+                        if (res.status === 429) {
+                            console.warn('教室API返回429错误');
+                            return Promise.resolve({ is429Error: true, data: [] });
+                        }
+                        throw new Error(`HTTP error! status: ${res.status}`);
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    const tbody = document.getElementById('classrooms-table-body');
+                    if (!tbody) {
+                        classroomsLoading = false;
+                        return;
+                    }
+                    
+                    // 检查是否是429错误返回的特殊对象
+                    let dataArray = [];
+                    let is429Error = false;
+                    
+                    if (data && typeof data === 'object' && data.is429Error) {
+                        is429Error = true;
+                        dataArray = Array.isArray(data.data) ? data.data : [];
+                    } else {
+                        dataArray = Array.isArray(data) ? data : [];
+                    }
+                    
+                    if (dataArray.length === 0) {
+                        if (is429Error) {
+                            const retryId = 'retry-classroom-' + Date.now();
+                            tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #856404; background: #fff3cd; padding: 20px; border: 1px solid #ffc107; border-radius: 4px;">
+                                <strong>⚠️ 请求过于频繁</strong><br>
+                                <small style="display: block; margin: 10px 0;">服务器暂时无法处理请求，请稍后再试</small>
+                                <button class="btn btn-warning" id="${retryId}" onclick="loadClassrooms()" style="margin-top: 10px; padding: 8px 20px;">立即重试</button>
+                            </td></tr>`;
+                        } else {
+                            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">暂无教室数据</td></tr>';
+                        }
+                        return;
+                    }
+                    
+                    tbody.innerHTML = dataArray.map(r => `
+                        <tr>
+                            <td>${r.id || ''}</td>
+                            <td>${r.name || ''}</td>
+                            <td>${r.sort_order || 0}</td>
+                            <td><span class="status-badge status-${r.status === '启用' ? 'normal' : 'deleted'}">${r.status || '启用'}</span></td>
+                            <td>
+                                <button class="btn btn-warning" onclick="showEditClassroomModal(${r.id})">编辑</button>
+                                <button class="btn btn-danger" onclick="deleteClassroom(${r.id})">删除</button>
+                            </td>
+                        </tr>
+                    `).join('');
+                })
+                .catch(err => {
+                    console.error('加载教室列表失败:', err);
+                    const tbody = document.getElementById('classrooms-table-body');
+                    if (tbody) {
+                        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #dc3545;">加载失败，请刷新页面重试</td></tr>';
+                    }
+                })
+                .finally(() => {
+                    classroomsLoading = false;
+                });
+        }
+
+        function showAddClassroomModal() {
+            const modalBody = `
+                <h2>新增教室</h2>
+                <form id="classroom-form" onsubmit="saveClassroom(event)">
+                    <div class="form-group">
+                        <label>教室名称 *</label>
+                        <input type="text" name="name" placeholder="如：A1" required>
+                    </div>
+                    <div class="form-group">
+                        <label>排序顺序</label>
+                        <input type="number" name="sort_order" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>状态</label>
+                        <select name="status">
+                            <option value="启用" selected>启用</option>
+                            <option value="停用">停用</option>
+                        </select>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            showModal(modalBody);
+        }
+
+        function showEditClassroomModal(id) {
+            fetch('/api/classrooms')
+                .then(res => res.json())
+                .then(rooms => {
+                    const room = rooms.find(r => r.id === id);
+                    if (!room) return;
+                    
+                    const modalBody = `
+                        <h2>编辑教室</h2>
+                        <form id="classroom-form" onsubmit="saveClassroom(event, ${id})">
+                            <div class="form-group">
+                                <label>教室名称 *</label>
+                                <input type="text" name="name" value="${room.name}" required>
+                            </div>
+                            <div class="form-group">
+                                <label>排序顺序</label>
+                                <input type="number" name="sort_order" value="${room.sort_order}" min="0">
+                            </div>
+                            <div class="form-group">
+                                <label>状态</label>
+                                <select name="status">
+                                    <option value="启用" ${room.status === '启用' ? 'selected' : ''}>启用</option>
+                                    <option value="停用" ${room.status === '停用' ? 'selected' : ''}>停用</option>
+                                </select>
+                            </div>
+                            <div class="form-actions">
+                                <button type="button" class="btn" onclick="closeModal()">取消</button>
+                                <button type="submit" class="btn btn-primary">保存</button>
+                            </div>
+                        </form>
+                    `;
+                    showModal(modalBody);
+                });
+        }
+
+        function saveClassroom(e, id) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.sort_order = parseInt(data.sort_order) || 0;
+            
+            const url = id ? `/api/classrooms/${id}` : '/api/classrooms';
+            const method = id ? 'PUT' : 'POST';
+            
+            fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            })
+            .then(async res => {
+                const result = await res.json();
+                if (!res.ok) {
+                    throw new Error(result.error || '保存失败');
+                }
+                return result;
+            })
+            .then(() => {
+                closeModal();
+                loadClassrooms();
+            })
+            .catch(err => {
+                alert('保存失败：' + err.message);
+            });
+        }
+
+        function deleteClassroom(id) {
+            if (!confirm('确定要删除这个教室吗？')) return;
+            
+            fetch(`/api/classrooms/${id}`, { method: 'DELETE' })
+                .then(() => loadClassrooms());
+        }
+
+        // ==================== 财务管理 ====================
+
+        // 财务配置请求节流
+        let financeConfigsLoading = false;
+        let financeConfigsLastLoadTime = 0;
+        const FINANCE_CONFIGS_LOAD_INTERVAL = 2000;
+        
+        function loadFinanceConfigs() {
+            // 节流检查
+            const now = Date.now();
+            if (financeConfigsLoading || (now - financeConfigsLastLoadTime < FINANCE_CONFIGS_LOAD_INTERVAL)) {
+                console.log('财务配置加载请求被节流');
+                return;
+            }
+            
+            financeConfigsLoading = true;
+            financeConfigsLastLoadTime = now;
+            
+            fetch('/api/finance-config')
+                .then(res => {
+                    if (!res.ok) {
+                        // 如果是429错误，尝试使用缓存
+                        if (res.status === 429) {
+                            const cachedFinanceConfig = localStorage.getItem('cached_finance_config');
+                            if (cachedFinanceConfig) {
+                                try {
+                                    const cachedConfigs = JSON.parse(cachedFinanceConfig);
+                                    if (Array.isArray(cachedConfigs) && cachedConfigs.length > 0) {
+                                        console.warn('API返回429错误，使用缓存的财务配置数据');
+                                        return Promise.resolve(cachedConfigs);
+                                    }
+                                } catch (e) {
+                                    console.warn('解析财务配置缓存失败:', e);
+                                }
+                            }
+                            // 429错误但没有缓存，返回标记对象
+                            console.warn('API返回429错误，且无缓存数据，将显示友好提示');
+                            return Promise.resolve({ is429Error: true, data: [] });
+                        }
+                        throw new Error(`HTTP error! status: ${res.status}`);
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    const tbody = document.getElementById('finance-config-table-body');
+                    
+                    // 检查是否是429错误返回的特殊对象
+                    let dataArray = [];
+                    let is429Error = false;
+                    
+                    if (data && typeof data === 'object' && data.is429Error) {
+                        // 这是429错误返回的特殊对象
+                        is429Error = true;
+                        dataArray = Array.isArray(data.data) ? data.data : [];
+                    } else {
+                        // 正常的数据
+                        dataArray = Array.isArray(data) ? data : [];
+                    }
+                    
+                    // 如果成功获取数据，更新缓存
+                    if (dataArray.length > 0 && !is429Error) {
+                        localStorage.setItem('cached_finance_config', JSON.stringify(dataArray));
+                        localStorage.setItem('cached_finance_config_timestamp', Date.now().toString());
+                    }
+                    
+                    if (dataArray.length === 0) {
+                        if (is429Error) {
+                            // 429错误且无缓存，显示友好提示和重试按钮
+                            const retryId = 'retry-finance-' + Date.now();
+                            tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #856404; background: #fff3cd; padding: 20px; border: 1px solid #ffc107; border-radius: 4px;">
+                                <strong>⚠️ 请求过于频繁</strong><br>
+                                <small style="display: block; margin: 10px 0;">服务器暂时无法处理请求，请稍后再试</small>
+                                <button class="btn btn-warning" id="${retryId}" onclick="loadFinanceConfigs()" style="margin-top: 10px; padding: 8px 20px;">立即重试</button>
+                            </td></tr>`;
+                        } else {
+                            // 正常情况下的空数据
+                            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">暂无配置数据</td></tr>';
+                        }
+                        return;
+                    }
+                    
+                    tbody.innerHTML = dataArray.map(config => {
+                        const configName = config.key === 'min_hours_for_scheduling' 
+                            ? '最低排课课时' 
+                            : config.key === 'min_hours_for_reminder' 
+                            ? '提醒课时阈值' 
+                            : config.key;
+                        return `
+                            <tr>
+                                <td>${configName}</td>
+                                <td>${config.description || ''}</td>
+                                <td><strong>${config.value}</strong></td>
+                                <td>
+                                    <button class="btn btn-warning" onclick="showEditFinanceConfigModal(${config.id || 0}, '${config.key}', ${config.value}, '${(config.description || '').replace(/'/g, "\\'")}')">编辑</button>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                })
+                .catch(err => {
+                    console.error('加载财务配置失败:', err);
+                    // 尝试使用缓存或全局变量
+                    const cachedFinanceConfig = localStorage.getItem('cached_finance_config');
+                    if (cachedFinanceConfig) {
+                        try {
+                            const cachedConfigs = JSON.parse(cachedFinanceConfig);
+                            if (Array.isArray(cachedConfigs) && cachedConfigs.length > 0) {
+                                console.warn('使用缓存的财务配置数据（API失败）');
+                                const tbody = document.getElementById('finance-config-table-body');
+                                if (tbody) {
+                                    tbody.innerHTML = cachedConfigs.map(config => {
+                                        const configName = config.key === 'min_hours_for_scheduling' 
+                                            ? '最低排课课时' 
+                                            : config.key === 'min_hours_for_reminder' 
+                                            ? '提醒课时阈值' 
+                                            : config.key;
+                                        return `
+                                            <tr>
+                                                <td>${configName}</td>
+                                                <td>${config.description || ''}</td>
+                                                <td><strong>${config.value}</strong></td>
+                                                <td>
+                                                    <button class="btn btn-warning" onclick="showEditFinanceConfigModal(${config.id || 0}, '${config.key}', ${config.value}, '${(config.description || '').replace(/'/g, "\\'")}')">编辑</button>
+                                                </td>
+                                            </tr>
+                                        `;
+                                    }).join('');
+                                }
+                                return;
+                            }
+                        } catch (e) {
+                            console.warn('解析财务配置缓存失败:', e);
+                        }
+                    }
+                    // 如果缓存也不可用，显示错误消息
+                    const tbody = document.getElementById('finance-config-table-body');
+                    if (tbody) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #dc3545;">加载失败，请刷新页面重试</td></tr>';
+                    }
+                })
+                .finally(() => {
+                    financeConfigsLoading = false;
+                });
+        }
+
+        function showEditFinanceConfigModal(id, key, value, description) {
+            const configName = key === 'min_hours_for_scheduling' 
+                ? '最低排课课时' 
+                : key === 'min_hours_for_reminder' 
+                ? '提醒课时阈值' 
+                : key;
+            
+            const modalBody = `
+                <h2>编辑财务配置</h2>
+                <form id="finance-config-form" onsubmit="saveFinanceConfig(event, ${id}, '${key}')">
+                    <div class="form-group">
+                        <label>配置项</label>
+                        <input type="text" value="${configName}" disabled style="background: #f5f5f5;">
+                    </div>
+                    <div class="form-group">
+                        <label>说明</label>
+                        <input type="text" name="description" value="${description}" disabled style="background: #f5f5f5;">
+                    </div>
+                    <div class="form-group">
+                        <label>配置值 *</label>
+                        <div class="number-input-group">
+                            <button type="button" class="decrease" onclick="decreaseConfigValue()">-</button>
+                            <input type="number" id="config-value-input" name="value" value="${value}" step="1" required readonly style="background: #fff;">
+                            <button type="button" class="increase" onclick="increaseConfigValue()">+</button>
+                        </div>
+                        <small style="color: #666; display: block; margin-top: 5px;">
+                            ${key === 'min_hours_for_scheduling' 
+                                ? '当学生剩余课时低于此值时，将无法进行排课' 
+                                : '当学生剩余课时低于此值时，系统会进行缴费提醒'}
+                        </small>
+                    </div>
+                    <div class="form-actions">
+                        <button type="button" class="btn" onclick="closeModal()">取消</button>
+                        <button type="submit" class="btn btn-primary">保存</button>
+                    </div>
+                </form>
+            `;
+            showModal(modalBody);
+        }
+
+        function decreaseConfigValue() {
+            const input = document.getElementById('config-value-input');
+            if (input) {
+                const currentValue = parseInt(input.value) || 0;
+                input.value = currentValue - 1;
+            }
+        }
+
+        function increaseConfigValue() {
+            const input = document.getElementById('config-value-input');
+            if (input) {
+                const currentValue = parseInt(input.value) || 0;
+                input.value = currentValue + 1;
+            }
+        }
+
+        function saveFinanceConfig(e, id, key) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                value: parseInt(formData.get('value')),
+                description: formData.get('description')
+            };
+            
+            // 如果id为0，说明是默认配置，需要先创建
+            if (id === 0) {
+                fetch('/api/finance-config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        key: key,
+                        value: data.value,
+                        description: data.description
+                    })
+                })
+                .then(async res => {
+                    const result = await res.json();
+                    if (!res.ok) {
+                        throw new Error(result.error || '保存失败');
+                    }
+                    return result;
+                })
+                .then(() => {
+                    closeModal();
+                    loadFinanceConfigs();
+                })
+                .catch(err => {
+                    alert('保存失败：' + err.message);
+                });
+            } else {
+                fetch(`/api/finance-config/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                .then(async res => {
+                    const result = await res.json();
+                    if (!res.ok) {
+                        throw new Error(result.error || '保存失败');
+                    }
+                    return result;
+                })
+                .then(() => {
+                    closeModal();
+                    loadFinanceConfigs();
+                })
+                .catch(err => {
+                    alert('保存失败：' + err.message);
+                });
+            }
+        }
+    </script>
+</body>
+</html>
+

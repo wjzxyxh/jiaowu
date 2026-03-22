@@ -27,6 +27,7 @@ from config import Config
 import os
 from datetime import datetime, date, timedelta
 from sqlalchemy import func, extract, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -534,73 +535,103 @@ def create_teacher_course_cost():
 
     """创建教师课程成本"""
 
-    data = request.json
+    try:
 
-    
+        data = request.get_json(silent=True)
 
-    # 检查是否已存在相同的教师-课程组合
+        if not data or not isinstance(data, dict):
 
-    existing = TeacherCourseCost.query.filter_by(
+            return jsonify({'error': '请求体须为 JSON，并包含教师、课程与成本等必填字段'}), 400
 
-        teacher_id=data['teacher_id'],
+        for key in ('teacher_id', 'teacher_name', 'course_id', 'course_name', 'cost_per_class'):
 
-        course_id=data['course_id']
+            if key not in data:
 
-    ).first()
+                return jsonify({'error': f'缺少必填字段: {key}'}), 400
 
-    
+        existing = TeacherCourseCost.query.filter_by(
 
-    if existing:
+            teacher_id=data['teacher_id'],
 
-        return jsonify({'error': '该教师和课程的组合已存在，请先删除或编辑现有记录'}), 400
+            course_id=data['course_id']
 
-    
+        ).first()
 
-    cost = TeacherCourseCost(
+        if existing:
 
-        teacher_id=data['teacher_id'],
+            return jsonify({'error': '该教师和课程的组合已存在，请先删除或编辑现有记录'}), 400
 
-        teacher_name=data['teacher_name'],
+        _st = data.get('status', '启用')
 
-        course_id=data['course_id'],
+        if _st not in ('启用', '停用'):
 
-        course_name=data['course_name'],
+            _st = '启用'
 
-        cost_per_class=float(data['cost_per_class'])
+        cost = TeacherCourseCost(
 
-    )
+            teacher_id=data['teacher_id'],
 
-    db.session.add(cost)
+            teacher_name=data['teacher_name'],
 
-    db.session.flush()  # 先flush，让cost获得id
+            course_id=data['course_id'],
 
-    
+            course_name=data['course_name'],
 
-    # 记录操作历史
+            cost_per_class=float(data['cost_per_class']),
 
-    history = TeacherCourseCostHistory(
+            status=_st,
 
-        cost_id=cost.id,
+        )
 
-        teacher_id=cost.teacher_id,
+        db.session.add(cost)
 
-        teacher_name=cost.teacher_name,
+        db.session.flush()
 
-        course_id=cost.course_id,
+        history = TeacherCourseCostHistory(
 
-        course_name=cost.course_name,
+            cost_id=cost.id,
 
-        cost_per_class=cost.cost_per_class,
+            teacher_id=cost.teacher_id,
 
-        operation='创建'
+            teacher_name=cost.teacher_name,
 
-    )
+            course_id=cost.course_id,
 
-    db.session.add(history)
+            course_name=cost.course_name,
 
-    db.session.commit()
+            cost_per_class=cost.cost_per_class,
 
-    return jsonify(cost.to_dict()), 201
+            operation='创建'
+
+        )
+
+        db.session.add(history)
+
+        db.session.commit()
+
+        return jsonify(cost.to_dict()), 201
+
+    except ValueError as e:
+
+        db.session.rollback()
+
+        return jsonify({'error': f'金额等数值无效: {str(e)}'}), 400
+
+    except IntegrityError:
+
+        db.session.rollback()
+
+        return jsonify({'error': '数据约束冲突，请刷新后重试'}), 409
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        import traceback
+
+        print(f'create_teacher_course_cost 失败: {e}\n{traceback.format_exc()}')
+
+        return jsonify({'error': f'保存失败: {str(e)}'}), 500
 
 
 
@@ -612,91 +643,111 @@ def create_teacher_course_cost():
 @login_required
 def update_teacher_course_cost(cost_id):
 
-    """更新教师课程成本"""
+    """更新教师课程成本（可部分字段，如仅传 status 切换启用/停用）"""
 
     cost = TeacherCourseCost.query.get_or_404(cost_id)
 
-    data = request.json
+    try:
 
-    
+        data = request.get_json(silent=True)
 
-    # 如果修改了教师或课程，检查是否与其他记录冲突
+        if data is None:
 
-    new_teacher_id = data.get('teacher_id', cost.teacher_id)
+            data = {}
 
-    new_course_id = data.get('course_id', cost.course_id)
+        if not isinstance(data, dict):
 
-    
+            return jsonify({'error': '请求体须为 JSON 对象'}), 400
 
-    # 检查是否与其他记录冲突（排除当前记录）
+        new_teacher_id = data.get('teacher_id', cost.teacher_id)
 
-    if new_teacher_id != cost.teacher_id or new_course_id != cost.course_id:
+        new_course_id = data.get('course_id', cost.course_id)
 
-        existing = TeacherCourseCost.query.filter(
+        if new_teacher_id != cost.teacher_id or new_course_id != cost.course_id:
 
-            TeacherCourseCost.teacher_id == new_teacher_id,
+            existing = TeacherCourseCost.query.filter(
 
-            TeacherCourseCost.course_id == new_course_id,
+                TeacherCourseCost.teacher_id == new_teacher_id,
 
-            TeacherCourseCost.id != cost_id
+                TeacherCourseCost.course_id == new_course_id,
 
-        ).first()
+                TeacherCourseCost.id != cost_id
 
-        
+            ).first()
 
-        if existing:
+            if existing:
 
-            return jsonify({'error': '该教师和课程的组合已存在'}), 400
+                return jsonify({'error': '该教师和课程的组合已存在'}), 400
 
-    
+        old_cost_per_class = cost.cost_per_class
 
-    # 保存旧值用于历史记录
+        cost.teacher_id = new_teacher_id
 
-    old_cost_per_class = cost.cost_per_class
+        cost.teacher_name = data.get('teacher_name', cost.teacher_name)
 
-    
+        cost.course_id = new_course_id
 
-    cost.teacher_id = new_teacher_id
+        cost.course_name = data.get('course_name', cost.course_name)
 
-    cost.teacher_name = data.get('teacher_name', cost.teacher_name)
+        cost.cost_per_class = float(data.get('cost_per_class', cost.cost_per_class))
 
-    cost.course_id = new_course_id
+        if 'status' in data:
 
-    cost.course_name = data.get('course_name', cost.course_name)
+            _st = data.get('status')
 
-    cost.cost_per_class = float(data.get('cost_per_class', cost.cost_per_class))
+            if _st in ('启用', '停用'):
 
-    cost.updated_at = datetime.now()
+                cost.status = _st
 
-    
+        cost.updated_at = datetime.now()
 
-    # 记录操作历史（包含旧值和新值）
+        history = TeacherCourseCostHistory(
 
-    history = TeacherCourseCostHistory(
+            cost_id=cost.id,
 
-        cost_id=cost.id,
+            teacher_id=cost.teacher_id,
 
-        teacher_id=cost.teacher_id,
+            teacher_name=cost.teacher_name,
 
-        teacher_name=cost.teacher_name,
+            course_id=cost.course_id,
 
-        course_id=cost.course_id,
+            course_name=cost.course_name,
 
-        course_name=cost.course_name,
+            cost_per_class=cost.cost_per_class,
 
-        cost_per_class=cost.cost_per_class,
+            old_cost_per_class=old_cost_per_class,
 
-        old_cost_per_class=old_cost_per_class,
+            operation='更新'
 
-        operation='更新'
+        )
 
-    )
+        db.session.add(history)
 
-    db.session.add(history)
+        db.session.commit()
 
-    db.session.commit()
+        return jsonify(cost.to_dict())
 
-    return jsonify(cost.to_dict())
+    except ValueError as e:
+
+        db.session.rollback()
+
+        return jsonify({'error': f'金额等数值无效: {str(e)}'}), 400
+
+    except IntegrityError:
+
+        db.session.rollback()
+
+        return jsonify({'error': '数据约束冲突，请刷新后重试'}), 409
+
+    except Exception as e:
+
+        db.session.rollback()
+
+        import traceback
+
+        print(f'update_teacher_course_cost 失败: {e}\n{traceback.format_exc()}')
+
+        return jsonify({'error': f'更新失败: {str(e)}'}), 500
 
 
 

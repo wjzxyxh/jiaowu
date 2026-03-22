@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import html2canvas from 'html2canvas'
+import { downloadCanvasPng } from '../utils/canvasDownload'
 import { useAuth } from '../contexts/AuthContext'
 import { usePermissions } from '../hooks/usePermissions'
 import { courseService } from '../services/courseService'
@@ -785,16 +786,9 @@ const Courses = () => {
         html2canvas(el, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
           .then((canvas) => {
             const fileName = `排课表_${target.monthFilter}_第${target.weekFilter}周.png`
-            const link = document.createElement('a')
-            link.download = fileName
-            link.href = canvas.toDataURL('image/png')
-            link.click()
-            canvas.toBlob((blob) => {
-              if (blob && navigator.clipboard && navigator.clipboard.write) {
-                navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
-                  .catch((clipErr) => console.warn('剪贴板写入失败:', clipErr))
-              }
-            }, 'image/png')
+            return downloadCanvasPng(canvas, fileName)
+          })
+          .then(() => {
             setScreenshotTarget(null)
           })
           .catch((err) => {

@@ -14,6 +14,25 @@ import Modal from '../components/Modal'
 import { buildConfirmFailureMessage } from '../utils/confirmCourseError'
 import './AllCourses.css'
 
+/** 根据年份与月份（1–12，空为全年）生成 date_start / date_end（YYYY-MM-DD） */
+function dateRangeFromYearMonth(yearStr, monthStr) {
+  if (!yearStr) return { date_start: '', date_end: '' }
+  const y = parseInt(yearStr, 10)
+  if (Number.isNaN(y)) return { date_start: '', date_end: '' }
+  if (!monthStr) {
+    return { date_start: `${y}-01-01`, date_end: `${y}-12-31` }
+  }
+  const m = parseInt(monthStr, 10)
+  if (m < 1 || m > 12) {
+    return { date_start: `${y}-01-01`, date_end: `${y}-12-31` }
+  }
+  const pad = (n) => String(n).padStart(2, '0')
+  const start = `${y}-${pad(m)}-01`
+  const lastDay = new Date(y, m, 0).getDate()
+  const end = `${y}-${pad(m)}-${String(lastDay).padStart(2, '0')}`
+  return { date_start: start, date_end: end }
+}
+
 const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) => {
   const queryClient = useQueryClient()
   const { user } = useAuth()
@@ -30,10 +49,11 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     subject: '',
     grade: '',
     year: String(currentYear), // 年份筛选：默认当前年份
+    month: '', // '' 全年 | '1'..'12' 公历月，与 year 一起决定 date_start / date_end
     date_start: `${currentYear}-01-01`, // 默认当前年1月1日
     date_end: `${currentYear}-12-31`, // 默认当前年12月31日
     status: '',
-    is_confirmed: 'false', // '' 全部 | 'true' 已确认 | 'false' 未确认（默认未确认）
+    is_confirmed: '', // '' 全部 | 'true' 已确认 | 'false' 未确认（默认全部，避免已确认课表被藏掉）
   })
   const [searchInput, setSearchInput] = useState('')
   const [selectedIds, setSelectedIds] = useState([])
@@ -66,6 +86,8 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       const params = { page, per_page: pageSize, ...filters }
       if (!params.is_confirmed) delete params.is_confirmed
       delete params.order_by
+      delete params.month
+      delete params.year
       return allCoursesService.getAllCourses(params)
     },
   })
@@ -194,6 +216,7 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
             next.date_end = prev.date_end ? (prev.date_end > maxDate ? prev.date_end : maxDate) : maxDate
             // 自动调整日期时清空年份筛选（因为日期范围可能不是完整年份）
             next.year = ''
+            next.month = ''
             return next
           })
           setPage(1)
@@ -263,15 +286,33 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   // 处理筛选变化
   const handleFilterChange = (key, value) => {
     const newFilters = { ...filters, [key]: value }
-    // 如果选择年份，自动设置该年的开始和结束日期
     if (key === 'year') {
-      if (value) {
-        const year = parseInt(value)
-        newFilters.date_start = `${year}-01-01`
-        newFilters.date_end = `${year}-12-31`
-      } else {
+      if (!value) {
         newFilters.date_start = ''
         newFilters.date_end = ''
+        newFilters.month = ''
+      } else {
+        const range = dateRangeFromYearMonth(value, newFilters.month)
+        newFilters.date_start = range.date_start
+        newFilters.date_end = range.date_end
+      }
+    } else if (key === 'month') {
+      newFilters.month = value
+      if (!value) {
+        if (newFilters.year) {
+          const range = dateRangeFromYearMonth(newFilters.year, '')
+          newFilters.date_start = range.date_start
+          newFilters.date_end = range.date_end
+        } else {
+          newFilters.date_start = ''
+          newFilters.date_end = ''
+        }
+      } else {
+        const yStr = newFilters.year || String(currentYear)
+        if (!newFilters.year) newFilters.year = yStr
+        const range = dateRangeFromYearMonth(yStr, value)
+        newFilters.date_start = range.date_start
+        newFilters.date_end = range.date_end
       }
     }
     setFilters(newFilters)
@@ -286,10 +327,11 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
       subject: '',
       grade: '',
       year: '',
+      month: '',
       date_start: '',
       date_end: '',
       status: '',
-      is_confirmed: 'false',
+      is_confirmed: '',
     })
     setPage(1)
   }
@@ -303,6 +345,8 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
     }
     return years
   }, [])
+
+  const monthOptions = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), [])
 
   // 全选/取消全选
   const toggleSelectAll = () => {
@@ -479,11 +523,11 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
   // 显示统计
   const handleShowStatistics = async () => {
     try {
-      const statsData = await allCoursesService.getAllCourses({
-        page: 1,
-        per_page: 10000,
-        ...filters,
-      })
+      const statsParams = { page: 1, per_page: 10000, ...filters }
+      if (!statsParams.is_confirmed) delete statsParams.is_confirmed
+      delete statsParams.month
+      delete statsParams.year
+      const statsData = await allCoursesService.getAllCourses(statsParams)
       const courses = statsData.courses || []
 
       const stats = {
@@ -600,6 +644,16 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
             {yearOptions.map((year) => (
               <option key={year} value={String(year)}>
                 {year}年
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="filter-group">
+          <select value={filters.month} onChange={(e) => handleFilterChange('month', e.target.value)}>
+            <option value="">全部月份</option>
+            {monthOptions.map((m) => (
+              <option key={m} value={String(m)}>
+                {m}月
               </option>
             ))}
           </select>
@@ -776,7 +830,12 @@ const AllCourses = ({ initialStudentId, initialCourseId, openAddModalOnMount }) 
           ) : (
             <tr>
               <td colSpan="13" style={{ textAlign: 'center', padding: '20px', color: '#999' }}>
-                暂无排课数据
+                <div>暂无排课数据</div>
+                {!isLoading && (
+                  <div style={{ fontSize: 13, marginTop: 10, color: '#666', maxWidth: 420, marginLeft: 'auto', marginRight: 'auto' }}>
+                    若应有记录，请检查年份、确认状态等筛选是否过窄，或点击「清除筛选」后再试。
+                  </div>
+                )}
               </td>
             </tr>
           )}

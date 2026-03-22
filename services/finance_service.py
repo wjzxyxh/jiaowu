@@ -5,6 +5,7 @@ import calendar
 from datetime import date
 from extensions import db
 from models import FinanceConfig, Payment, ClassHoursStats, TeacherHours, Teacher, StudentCourse, TeacherCourseCost, TeacherExperienceCost
+from sqlalchemy import or_
 from sqlalchemy.orm import joinedload
 from utils.date_utils import get_current_month
 
@@ -294,167 +295,168 @@ def update_finance_record(month=None):
     # 计算老师工资
     teacher_cost = 0
     teacher_hours_list = TeacherHours.query.filter_by(month=month).all()
-    
-    for th in teacher_hours_list:
-        teacher = db.session.get(Teacher, th.teacher_id)
-        if teacher:
-            employment_type = teacher.employment_type if teacher.employment_type else '兼职'
-            if employment_type not in ['兼职', '全职']:
-                continue
-            
-            # 获取底薪（仅全职教师）
-            if employment_type == '全职':
-                base_salary = getattr(th, 'base_salary', None) or (teacher.base_salary if teacher else 0.0)
+
+    # TeacherHours 按课程拆分多行，同一老师同一月份共享激励/备注；按老师汇总一次，避免重复累计。
+    teacher_ids_in_hours = {th.teacher_id for th in teacher_hours_list}
+    fulltime_ids = {
+        t.id
+        for t in Teacher.query.filter_by(employment_type='全职', status='启用').all()
+        if (t.base_salary or 0.0) > 0
+    }
+    teacher_ids = sorted(teacher_ids_in_hours | fulltime_ids)
+
+    for teacher_id in teacher_ids:
+        teacher = db.session.get(Teacher, teacher_id)
+        if not teacher:
+            continue
+        employment_type = teacher.employment_type if teacher.employment_type else '兼职'
+        if employment_type not in ['兼职', '全职']:
+            continue
+
+        base_salary = (teacher.base_salary or 0.0) if employment_type == '全职' else 0.0
+
+        th_any = next((th for th in teacher_hours_list if th.teacher_id == teacher_id), None)
+        incentive = (getattr(th_any, 'incentive', None) or 0.0) if th_any else 0.0
+
+        courses = StudentCourse.query.options(
+            joinedload(StudentCourse.course)
+        ).filter(
+            StudentCourse.teacher_id == teacher_id,
+            StudentCourse.course_date >= start_date,
+            StudentCourse.course_date <= end_date,
+            StudentCourse.status != '删除',
+            StudentCourse.is_confirmed == True
+        ).all()
+
+        teacher_costs = TeacherCourseCost.query.filter(
+            TeacherCourseCost.teacher_id == teacher_id,
+            or_(TeacherCourseCost.status == '启用', TeacherCourseCost.status.is_(None)),
+        ).all()
+        cost_map = {cost.course_id: cost.cost_per_class for cost in teacher_costs}
+
+        teacher_experience_costs = TeacherExperienceCost.query.filter_by(teacher_id=teacher_id).all()
+        experience_cost_map_by_student = {}
+        experience_cost_map_by_course = {}
+
+        for cost in teacher_experience_costs:
+            if cost.student_id:
+                key = (cost.course_id, cost.student_id)
+                if key not in experience_cost_map_by_student:
+                    experience_cost_map_by_student[key] = []
+                experience_cost_map_by_student[key].append(cost)
             else:
-                base_salary = 0.0
-            
-            incentive = getattr(th, 'incentive', None) or 0.0
-            
-            # 获取该老师当月的课程（只统计已确认的课程）
-            courses = StudentCourse.query.options(
-                joinedload(StudentCourse.course)
-            ).filter(
-                StudentCourse.teacher_id == th.teacher_id,
-                StudentCourse.course_date >= start_date,
-                StudentCourse.course_date <= end_date,
-                StudentCourse.status != '删除',
-                StudentCourse.is_confirmed == True
-            ).all()
-            
-            # 获取教师的所有课程成本配置
-            teacher_costs = TeacherCourseCost.query.filter_by(teacher_id=th.teacher_id).all()
-            cost_map = {cost.course_id: cost.cost_per_class for cost in teacher_costs}
-            
-            # 获取教师的所有经验成本配置
-            teacher_experience_costs = TeacherExperienceCost.query.filter_by(teacher_id=th.teacher_id).all()
-            experience_cost_map_by_student = {}
-            experience_cost_map_by_course = {}
-            
-            for cost in teacher_experience_costs:
-                if cost.student_id:
-                    key = (cost.course_id, cost.student_id)
-                    if key not in experience_cost_map_by_student:
-                        experience_cost_map_by_student[key] = []
-                    experience_cost_map_by_student[key].append(cost)
-                else:
-                    if cost.course_id not in experience_cost_map_by_course:
-                        experience_cost_map_by_course[cost.course_id] = []
-                    experience_cost_map_by_course[cost.course_id].append(cost)
-            
-            # 计算该老师的课时成本和经验
-            course_cost = 0.0
-            experience_cost = 0.0
-            for course in courses:
-                course_id = course.course_id if course.course_id and course.course else None
-                course_date = course.course_date
-                course_year_month = course_date.strftime('%Y-%m')
-                
-                if course.status == '正常':
-                    if course_id and course_id in cost_map:
-                        course_cost += cost_map[course_id]
-                    
-                    # 计算经验
-                    if course_id:
-                        student_key = (course_id, course.student_id)
-                        matched_experience_cost = None
-                        
-                        # 优先匹配"教师-课程-学生"
-                        if student_key in experience_cost_map_by_student:
+                if cost.course_id not in experience_cost_map_by_course:
+                    experience_cost_map_by_course[cost.course_id] = []
+                experience_cost_map_by_course[cost.course_id].append(cost)
+
+        course_cost = 0.0
+        experience_cost = 0.0
+        for course in courses:
+            course_id = course.course_id if course.course_id and course.course else None
+            course_date = course.course_date
+            course_year_month = course_date.strftime('%Y-%m')
+
+            if course.status == '正常':
+                if course_id and course_id in cost_map:
+                    course_cost += cost_map[course_id]
+
+                if course_id:
+                    student_key = (course_id, course.student_id)
+                    matched_experience_cost = None
+
+                    if student_key in experience_cost_map_by_student:
+                        for cost_record in experience_cost_map_by_student[student_key]:
+                            if cost_record.start_date:
+                                start_year_month = cost_record.start_date.strftime('%Y-%m')
+                                if course_year_month < start_year_month:
+                                    continue
+                            if cost_record.end_date:
+                                end_year_month = cost_record.end_date.strftime('%Y-%m')
+                                if course_year_month > end_year_month:
+                                    continue
+                            matched_experience_cost = cost_record
+                            break
+
+                        if not matched_experience_cost:
                             for cost_record in experience_cost_map_by_student[student_key]:
-                                if cost_record.start_date:
-                                    start_year_month = cost_record.start_date.strftime('%Y-%m')
-                                    if course_year_month < start_year_month:
-                                        continue
-                                if cost_record.end_date:
-                                    end_year_month = cost_record.end_date.strftime('%Y-%m')
-                                    if course_year_month > end_year_month:
-                                        continue
-                                matched_experience_cost = cost_record
-                                break
-                            
-                            if not matched_experience_cost:
-                                for cost_record in experience_cost_map_by_student[student_key]:
-                                    if not cost_record.start_date and not cost_record.end_date:
-                                        matched_experience_cost = cost_record
-                                        break
-                        
-                        # 如果没有匹配到"教师-课程-学生"，则使用"教师-课程"
-                        if not matched_experience_cost and course_id in experience_cost_map_by_course:
+                                if not cost_record.start_date and not cost_record.end_date:
+                                    matched_experience_cost = cost_record
+                                    break
+
+                    if not matched_experience_cost and course_id in experience_cost_map_by_course:
+                        for cost_record in experience_cost_map_by_course[course_id]:
+                            if cost_record.start_date:
+                                start_year_month = cost_record.start_date.strftime('%Y-%m')
+                                if course_year_month < start_year_month:
+                                    continue
+                            if cost_record.end_date:
+                                end_year_month = cost_record.end_date.strftime('%Y-%m')
+                                if course_year_month > end_year_month:
+                                    continue
+                            matched_experience_cost = cost_record
+                            break
+
+                        if not matched_experience_cost:
                             for cost_record in experience_cost_map_by_course[course_id]:
-                                if cost_record.start_date:
-                                    start_year_month = cost_record.start_date.strftime('%Y-%m')
-                                    if course_year_month < start_year_month:
-                                        continue
-                                if cost_record.end_date:
-                                    end_year_month = cost_record.end_date.strftime('%Y-%m')
-                                    if course_year_month > end_year_month:
-                                        continue
-                                matched_experience_cost = cost_record
-                                break
-                            
-                            if not matched_experience_cost:
-                                for cost_record in experience_cost_map_by_course[course_id]:
-                                    if not cost_record.start_date and not cost_record.end_date:
-                                        matched_experience_cost = cost_record
-                                        break
-                        
-                        if matched_experience_cost:
-                            experience_cost += matched_experience_cost.experience_cost
-                            
-                elif course.status == '跑空':
-                    if course_id and course_id in cost_map:
-                        course_cost += cost_map[course_id] * 0.5
-                    
-                    # 计算经验（跑空也算0.5）
-                    if course_id:
-                        student_key = (course_id, course.student_id)
-                        matched_experience_cost = None
-                        
-                        if student_key in experience_cost_map_by_student:
+                                if not cost_record.start_date and not cost_record.end_date:
+                                    matched_experience_cost = cost_record
+                                    break
+
+                    if matched_experience_cost:
+                        experience_cost += matched_experience_cost.experience_cost
+
+            elif course.status == '跑空':
+                if course_id and course_id in cost_map:
+                    course_cost += cost_map[course_id] * 0.5
+
+                if course_id:
+                    student_key = (course_id, course.student_id)
+                    matched_experience_cost = None
+
+                    if student_key in experience_cost_map_by_student:
+                        for cost_record in experience_cost_map_by_student[student_key]:
+                            if cost_record.start_date:
+                                start_year_month = cost_record.start_date.strftime('%Y-%m')
+                                if course_year_month < start_year_month:
+                                    continue
+                            if cost_record.end_date:
+                                end_year_month = cost_record.end_date.strftime('%Y-%m')
+                                if course_year_month > end_year_month:
+                                    continue
+                            matched_experience_cost = cost_record
+                            break
+
+                        if not matched_experience_cost:
                             for cost_record in experience_cost_map_by_student[student_key]:
-                                if cost_record.start_date:
-                                    start_year_month = cost_record.start_date.strftime('%Y-%m')
-                                    if course_year_month < start_year_month:
-                                        continue
-                                if cost_record.end_date:
-                                    end_year_month = cost_record.end_date.strftime('%Y-%m')
-                                    if course_year_month > end_year_month:
-                                        continue
-                                matched_experience_cost = cost_record
-                                break
-                            
-                            if not matched_experience_cost:
-                                for cost_record in experience_cost_map_by_student[student_key]:
-                                    if not cost_record.start_date and not cost_record.end_date:
-                                        matched_experience_cost = cost_record
-                                        break
-                        
-                        if not matched_experience_cost and course_id in experience_cost_map_by_course:
+                                if not cost_record.start_date and not cost_record.end_date:
+                                    matched_experience_cost = cost_record
+                                    break
+
+                    if not matched_experience_cost and course_id in experience_cost_map_by_course:
+                        for cost_record in experience_cost_map_by_course[course_id]:
+                            if cost_record.start_date:
+                                start_year_month = cost_record.start_date.strftime('%Y-%m')
+                                if course_year_month < start_year_month:
+                                    continue
+                            if cost_record.end_date:
+                                end_year_month = cost_record.end_date.strftime('%Y-%m')
+                                if course_year_month > end_year_month:
+                                    continue
+                            matched_experience_cost = cost_record
+                            break
+
+                        if not matched_experience_cost:
                             for cost_record in experience_cost_map_by_course[course_id]:
-                                if cost_record.start_date:
-                                    start_year_month = cost_record.start_date.strftime('%Y-%m')
-                                    if course_year_month < start_year_month:
-                                        continue
-                                if cost_record.end_date:
-                                    end_year_month = cost_record.end_date.strftime('%Y-%m')
-                                    if course_year_month > end_year_month:
-                                        continue
-                                matched_experience_cost = cost_record
-                                break
-                            
-                            if not matched_experience_cost:
-                                for cost_record in experience_cost_map_by_course[course_id]:
-                                    if not cost_record.start_date and not cost_record.end_date:
-                                        matched_experience_cost = cost_record
-                                        break
-                        
-                        if matched_experience_cost:
-                            experience_cost += matched_experience_cost.experience_cost * 0.5
-            
-            # 总工资 = 课时成本 + 底薪 + 经验 + 激励
-            teacher_total = course_cost + base_salary + experience_cost + incentive
-            teacher_cost += teacher_total
-    
+                                if not cost_record.start_date and not cost_record.end_date:
+                                    matched_experience_cost = cost_record
+                                    break
+
+                    if matched_experience_cost:
+                        experience_cost += matched_experience_cost.experience_cost * 0.5
+
+        teacher_total = course_cost + base_salary + experience_cost + incentive
+        teacher_cost += teacher_total
+
     finance.teacher_cost = teacher_cost
     
     # 营销成本 = 营销 + 教务

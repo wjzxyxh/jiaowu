@@ -1,0 +1,13 @@
+# 每天 03:15 执行备份（可按需修改 OnCalendar）
+# 修改后执行: sudo systemctl daemon-reload && sudo systemctl restart jiaowu-oss-backup.timer
+
+[Unit]
+Description=Timer for Jiaowu OSS database backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

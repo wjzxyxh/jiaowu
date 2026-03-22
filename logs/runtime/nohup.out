@@ -1,0 +1,536 @@
+2026-02-08 18:14:13 - app - INFO - 日志系统初始化完成
+2026-02-08 18:14:14 - app - INFO - 应用初始化完成，配置: default
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+ * Serving Flask app 'app'
+ * Debug mode: on
+2026-02-08 18:14:15 - app - INFO - 日志系统初始化完成
+2026-02-08 18:14:15 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+[登录调试] 开始登录，用户名: admin
+[登录调试] 查询用户结果: 找到用户
+[登录调试] 用户ID: 1, 用户名: admin, 是否激活: True
+[登录调试] 开始验证密码
+[登录调试] 密码验证结果: True
+[登录调试] 密码验证成功，开始登录流程
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+2026-02-08 18:15:33 - app - INFO - 日志系统初始化完成
+2026-02-08 18:15:34 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 查询总数 = 0, 页码 = 1, 每页 = 1000
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] all_courses API: 查询总数 = 0, 页码 = 1, 每页 = 20
+[DEBUG] all_courses API: 返回课程数量 = 0
+[DEBUG] all_courses API: 返回课程数量 = 0
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 转换后的数据示例（前3条）: 无数据
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 转换后的数据示例（前3条）: 无数据
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+2026-02-08 18:23:15 - app - INFO - 日志系统初始化完成
+2026-02-08 18:23:17 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+2026-02-08 18:32:34 - app - INFO - 日志系统初始化完成
+2026-02-08 18:32:36 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 查询总数 = 0, 页码 = 1, 每页 = 20
+[DEBUG] all_courses API: 返回课程数量 = 0
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 转换后的数据示例（前3条）: 无数据
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] all_courses API: 查询总数 = 0, 页码 = 1, 每页 = 1000
+[DEBUG] all_courses API: 返回课程数量 = 0
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[DEBUG] all_courses API: 转换后的数据示例（前3条）: 无数据
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+[登录调试] 开始登录，用户名: admin
+[登录调试] 查询用户结果: 找到用户
+[登录调试] 用户ID: 1, 用户名: admin, 是否激活: True
+[登录调试] 开始验证密码
+[登录调试] 密码验证结果: True
+[登录调试] 密码验证成功，开始登录流程
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] get_valid_student_ids_for_management_page: 来源1=0, 来源2=28, 来源3=0, 来源4=28, 来源5=0, union_ids=27, 最终有效学生数=27
+2026-02-08 18:46:12 - app - INFO - 日志系统初始化完成
+2026-02-08 18:46:14 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+2026-02-08 18:46:37 - app - INFO - 日志系统初始化完成
+2026-02-08 18:46:38 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+2026-02-08 18:47:20 - app - INFO - 日志系统初始化完成
+2026-02-08 18:47:22 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+[调试] scope_leads=True, 但 filter_trial_lead_ids 为空，返回全部试课排课
+[调试] 查询结果数量: 0
+API查询: month=2026-02, week=1
+日期范围: 2026-02-02 到 2026-02-08
+查询结果数量: 0
+Stats request: month=2026-02, student_id=None, course_id=None
+[DEBUG] /api/stats API: 删除了 21 条不在 /students 页面中的学生的课时统计记录
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+2026-02-08 18:53:50 - app - INFO - 日志系统初始化完成
+2026-02-08 18:53:51 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!
+学生表的excluded_from_scheduling字段已存在
+学生表的默认上课时段字段已存在
+学生表的默认上课星期字段已存在
+学生表的source字段已存在
+学生课程默认排课设置表已存在
+教师表的status字段已存在
+教师表的employment_type字段已存在
+教师表的bio字段已存在
+教师表的resume_path字段已存在
+教师表的resume_filename字段已存在
+学生课程表的时段字段已存在
+学生课程表的教室字段已存在
+学生课程表的试课状态字段已存在
+学生课程表的备注字段已存在
+课时统计表结构正常
+缴费表的type字段已存在
+老师课时表的incentive字段已存在
+老师课时表的remark字段已存在
+老师课时表的base_salary字段已存在
+老师课时表的is_settled字段已存在
+老师课时表的settled_at字段已存在
+财务记录表的revenue_mode字段已存在
+课时统计表的course_id字段已存在
+老师课时表的course_id字段已存在
+学生课程表的is_confirmed字段已存在
+学生课程表的marketing_lead_id字段已存在
+教师简历表已存在
+用户权限表已存在
+用户权限表的功能权限字段已存在
+学生课程默认排课设置表已存在
+学生课程默认排课设置表的 scheduling_paused 字段已存在
+学生课程默认排课设置表的 default_teacher_id 字段已存在
+学生课程默认排课设置表的 default_classroom 字段已存在
+用户表的session_token字段已存在
+营销线索表的 trial_status 字段已存在
+使用端口: 5000
+教务管理系统后端API启动成功！
+Debug模式: 已启用
+API地址: http://localhost:5000
+前端开发服务器: http://localhost:3000
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+Stats request: month=2026-02, student_id=None, course_id=None
+2026-02-08 18:58:43 - app - INFO - 日志系统初始化完成
+2026-02-08 18:58:47 - app - INFO - 应用初始化完成，配置: default
+ * Debugger is active!

@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生管理 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>学生管理</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="closeWindow()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar">
+                <button class="btn btn-primary" onclick="showAddStudentModal()">新增学生</button>
+                <button class="btn btn-secondary" onclick="exportStudents()">导出Excel</button>
+                <button class="btn btn-secondary" onclick="importStudents()">导入Excel</button>
+                <input type="file" id="import-file" accept=".xlsx,.xls" style="display: none;" onchange="handleImportFile(event)">
+                
+                <!-- 筛选区域 -->
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px;">
+                    <input type="text" id="student-search" placeholder="搜索姓名/电话/家长..." style="width: 200px;" onkeyup="handleSearchKeyup(event)">
+                    
+                    <select id="student-status-filter" onchange="loadStudents()" style="width: 120px;">
+                        <option value="">全部状态</option>
+                        <option value="在校">在校</option>
+                        <option value="离校">离校</option>
+                    </select>
+                    
+                    <select id="student-grade-filter" onchange="loadStudents()" style="width: 120px;">
+                        <option value="">全部年级</option>
+                    </select>
+                    
+                    <label style="display: flex; align-items: center; gap: 5px;">
+                        <span>入学日期:</span>
+                        <input type="date" id="enrollment-date-start" style="width: 150px;" onchange="loadStudents()">
+                        <span>至</span>
+                        <input type="date" id="enrollment-date-end" style="width: 150px;" onchange="loadStudents()">
+                    </label>
+                    
+                    <button class="btn btn-secondary" onclick="clearFilters()">清除筛选</button>
+                </div>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">序号</th>
+                        <th>姓名</th>
+                        <th>年级</th>
+                        <th>入学日期</th>
+                        <th>状态</th>
+                        <th>联系电话</th>
+                        <th>家长姓名</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="students-table-body"></tbody>
+            </table>
+            
+            <!-- 分页控件 -->
+            <div id="pagination-container" style="margin-top: 20px; display: flex; justify-content: center; align-items: center; gap: 10px;">
+                <button id="prev-page-btn" class="btn btn-secondary" onclick="changePage(-1)" disabled>上一页</button>
+                <span id="page-info" style="padding: 0 15px;">第 1 页，共 1 页（共 0 条）</span>
+                <button id="next-page-btn" class="btn btn-secondary" onclick="changePage(1)" disabled>下一页</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- 模态框 -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal()">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 关闭窗口函数
+        function closeWindow() {
+            // 尝试关闭窗口（仅当通过 window.open() 打开时有效）
+            if (window.opener) {
+                window.close();
+            } else {
+                // 如果不是通过 window.open() 打开的，返回首页
+                window.location.href = '/';
+            }
+        }
+
+        // 导出学生列表
+        function exportStudents() {
+            window.open('/api/export/students', '_blank');
+        }
+
+        // 导入学生
+        function importStudents() {
+            document.getElementById('import-file').click();
+        }
+
+        // 处理导入文件
+        function handleImportFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            if (!confirm('确定要导入学生数据吗？\n\n注意：已存在的学生将被跳过。')) {
+                event.target.value = '';
+                return;
+            }
+
+            fetch('/api/import/students', {
+                method: 'POST',
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.error) {
+                    alert('导入失败：' + data.error);
+                } else {
+                    alert(data.message);
+                    if (data.errors && data.errors.length > 0) {
+                        console.log('导入错误：', data.errors);
+                    }
+                    currentPage = 1;
+                    loadStudents();
+                }
+            })
+            .catch(error => {
+                console.error('导入失败:', error);
+                alert('导入失败：' + error.message);
+            })
+            .finally(() => {
+                event.target.value = '';
+            });
+        }
+
+        // 全局变量：当前页码和筛选条件
+        let currentPage = 1;
+        const perPage = 20;
+        
+        // 加载学生列表（支持筛选和分页）
+        function loadStudents(page = null) {
+            try {
+                if (page !== null) {
+                    currentPage = page;
+                }
+                
+                // 获取筛选条件
+                const status = document.getElementById('student-status-filter').value;
+                const grade = document.getElementById('student-grade-filter').value;
+                const enrollmentDateStart = document.getElementById('enrollment-date-start').value;
+                const enrollmentDateEnd = document.getElementById('enrollment-date-end').value;
+                const searchKeyword = document.getElementById('student-search').value.trim();
+                
+                // 构建查询参数
+                const params = new URLSearchParams();
+                if (status) params.append('status', status);
+                if (grade) params.append('grade', grade);
+                if (enrollmentDateStart) params.append('enrollment_date_start', enrollmentDateStart);
+                if (enrollmentDateEnd) params.append('enrollment_date_end', enrollmentDateEnd);
+                if (searchKeyword) params.append('search', searchKeyword);
+                params.append('page', currentPage);
+                params.append('per_page', perPage);
+                
+                const url = `/api/students?${params.toString()}`;
+                
+                fetch(url)
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.error) {
+                            alert('加载失败：' + data.error);
+                            return;
+                        }
+                        
+                        const students = data.students || [];
+                        const pagination = data.pagination || {};
+                        
+                        // 如果当前页没有数据且不是第一页，自动跳转到第一页
+                        if (students.length === 0 && currentPage > 1 && pagination.total > 0) {
+                            currentPage = 1;
+                            loadStudents(1);
+                            return;
+                        }
+                        
+                        // 渲染表格
+                        const tbody = document.getElementById('students-table-body');
+                        if (students.length === 0) {
+                            tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; padding: 20px;">暂无数据</td></tr>';
+                        } else {
+                            // 计算序号起始值（跨页连续）
+                            const startIndex = (pagination.page - 1) * pagination.per_page + 1;
+                            
+                            tbody.innerHTML = students.map((s, index) => {
+                                const rowIndex = startIndex + index;
+                                return `
+                                <tr>
+                                    <td>${rowIndex}</td>
+                                    <td>${s.name || '-'}</td>
+                                    <td>${s.grade || '-'}</td>
+                                    <td>${s.enrollment_date || '-'}</td>
+                                    <td><span class="status-badge status-${s.status === '在校' ? 'normal' : 'deleted'}">${s.status || '-'}</span></td>
+                                    <td>${s.phone || '-'}</td>
+                                    <td>${s.parent_name || '-'}</td>
+                                    <td>
+                                        <button class="btn btn-warning" onclick="showEditStudentModal(${s.id})">编辑</button>
+                                        <button class="btn btn-danger" onclick="deleteStudent(${s.id})" data-student-id="${s.id}">删除</button>
+                                    </td>
+                                </tr>
+                            `;
+                            }).join('');
+                        }
+                        
+                        // 更新分页控件
+                        updatePagination(pagination);
+                    })
+                    .catch(error => {
+                        console.error('加载学生列表失败:', error);
+                        alert('加载失败：' + error.message);
+                    });
+            } catch (error) {
+                console.error('loadStudents error:', error);
+                alert('加载失败：' + error.message);
+            }
+        }
+        
+        // 更新分页控件
+        function updatePagination(pagination) {
+            const prevBtn = document.getElementById('prev-page-btn');
+            const nextBtn = document.getElementById('next-page-btn');
+            const pageInfo = document.getElementById('page-info');
+            
+            if (prevBtn && nextBtn && pageInfo) {
+                prevBtn.disabled = !pagination.has_prev;
+                nextBtn.disabled = !pagination.has_next;
+                pageInfo.textContent = `第 ${pagination.page} 页，共 ${pagination.total_pages} 页（共 ${pagination.total} 条）`;
+            }
+        }
+        
+        // 切换页码
+        function changePage(delta) {
+            const newPage = currentPage + delta;
+            if (newPage >= 1) {
+                loadStudents(newPage);
+            }
+        }
+        
+        // 清除筛选条件
+        function clearFilters() {
+            document.getElementById('student-search').value = '';
+            document.getElementById('student-status-filter').value = '';
+            document.getElementById('student-grade-filter').value = '';
+            document.getElementById('enrollment-date-start').value = '';
+            document.getElementById('enrollment-date-end').value = '';
+            currentPage = 1;
+            loadStudents();
+        }
+        
+        // 搜索框回车事件
+        function handleSearchKeyup(event) {
+            if (event.key === 'Enter') {
+                currentPage = 1;
+                loadStudents();
+            }
+        }
+        
+        // 加载年级列表（用于筛选下拉框）
+        function loadGradeOptions() {
+            fetch('/api/students?per_page=1000')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.error) return;
+                    
+                    const students = data.students || [];
+                    const grades = [...new Set(students.map(s => s.grade).filter(g => g))].sort();
+                    
+                    const gradeSelect = document.getElementById('student-grade-filter');
+                    if (gradeSelect) {
+                        // 保留"全部年级"选项
+                        const allOption = gradeSelect.querySelector('option[value=""]');
+                        gradeSelect.innerHTML = '';
+                        if (allOption) {
+                            gradeSelect.appendChild(allOption);
+                        }
+                        
+                        // 添加年级选项
+                        grades.forEach(grade => {
+                            const option = document.createElement('option');
+                            option.value = grade;
+                            option.textContent = grade;
+                            gradeSelect.appendChild(option);
+                        });
+                    }
+                })
+                .catch(error => {
+                    console.error('加载年级列表失败:', error);
+                });
+        }
+        
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadGradeOptions();
+            loadStudents();
+            
+            // 使用事件委托处理删除按钮点击
+            document.addEventListener('click', function(e) {
+                if (e.target && e.target.classList.contains('btn-danger') && e.target.textContent === '删除') {
+                    const studentId = e.target.getAttribute('data-student-id') || e.target.getAttribute('onclick')?.match(/deleteStudent\((\d+)\)/)?.[1];
+                    if (studentId) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        deleteStudent(parseInt(studentId));
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+

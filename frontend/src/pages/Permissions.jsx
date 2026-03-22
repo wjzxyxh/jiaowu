@@ -1,8 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useAuth } from '../contexts/AuthContext'
 import { permissionService } from '../services/permissionService'
 import Modal from '../components/Modal'
 import './Permissions.css'
+
+function userAdminApiErrorMessage(err) {
+  if (err == null) return '未知错误'
+  if (typeof err === 'string') return err
+  return err.error || err.message || err?.response?.data?.error || '未知错误'
+}
 
 const Permissions = () => {
   const [selectedUserId, setSelectedUserId] = useState(null)
@@ -15,7 +22,10 @@ const Permissions = () => {
   const [localPermissions, setLocalPermissions] = useState([])
   const [searchKeyword, setSearchKeyword] = useState('')
   const [roleFilter, setRoleFilter] = useState('all')
+  /** 用户状态筛选：默认仅显示启用账号 */
+  const [statusFilter, setStatusFilter] = useState('enabled')
   const queryClient = useQueryClient()
+  const { user: currentAuthUser } = useAuth()
   const prevPermissionsKeyRef = useRef(null)
   const prevSelectedUserIdRef = useRef(null)
   const userPermissionsRef = useRef([])
@@ -68,39 +78,57 @@ const Permissions = () => {
   }, [selectedUserId, permsLoading])
 
   // 用户管理 mutations
+  const invalidateUserAdminRelated = (touchedUserId) => {
+    queryClient.invalidateQueries({ queryKey: ['users'] })
+    queryClient.invalidateQueries({ queryKey: ['permissions-current-user'] })
+    if (touchedUserId != null) {
+      queryClient.invalidateQueries({ queryKey: ['user-permissions', touchedUserId] })
+    }
+  }
+
   const createUserMutation = useMutation({
     mutationFn: (data) => permissionService.createUser(data),
     onSuccess: () => {
-      queryClient.invalidateQueries(['users'])
+      invalidateUserAdminRelated(null)
       setShowAddUserModal(false)
       alert('子管理员创建成功！')
     },
     onError: (error) => {
-      alert('创建子管理员失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('创建子管理员失败：' + userAdminApiErrorMessage(error))
     },
   })
 
   const updateUserMutation = useMutation({
     mutationFn: ({ userId, data }) => permissionService.updateUser(userId, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['users'])
+    onSuccess: (_d, v) => {
+      invalidateUserAdminRelated(v.userId)
       setShowEditUserModal(false)
       setEditingUser(null)
       alert('子管理员更新成功！')
     },
     onError: (error) => {
-      alert('更新子管理员失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('更新子管理员失败：' + userAdminApiErrorMessage(error))
     },
   })
 
   const deleteUserMutation = useMutation({
     mutationFn: (userId) => permissionService.deleteUser(userId),
-    onSuccess: () => {
-      queryClient.invalidateQueries(['users'])
+    onSuccess: (_d, userId) => {
+      invalidateUserAdminRelated(userId)
       alert('子管理员删除成功！')
     },
     onError: (error) => {
-      alert('删除子管理员失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('删除子管理员失败：' + userAdminApiErrorMessage(error))
+    },
+  })
+
+  const patchUserActiveMutation = useMutation({
+    mutationFn: ({ userId, is_active }) => permissionService.updateUser(userId, { is_active }),
+    onSuccess: (_d, v) => {
+      invalidateUserAdminRelated(v.userId)
+    },
+    onError: (error) => {
+      alert('更新账号状态失败：' + userAdminApiErrorMessage(error))
     },
   })
 
@@ -202,7 +230,7 @@ const Permissions = () => {
       // 标记所有用户权限缓存为过期，下次访问时会自动刷新
       queryClient.invalidateQueries({ queryKey: ['user-permissions'] })
     } catch (error) {
-      alert('保存权限失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('保存权限失败：' + userAdminApiErrorMessage(error))
     }
   }
 
@@ -212,8 +240,22 @@ const Permissions = () => {
       alert('不能编辑系统管理员')
       return
     }
+    if (!user.is_active) {
+      alert('该账号已停用，请先在列表中点击状态恢复为「启用」后再编辑')
+      return
+    }
     setEditingUser(user)
     setShowEditUserModal(true)
+  }
+
+  const handleToggleUserActive = (user) => {
+    if (user.role === 'admin') return
+    if (user.id === currentAuthUser?.id && user.is_active) {
+      if (!window.confirm('确定要停用当前登录账号吗？停用后将无法再次登录，需由其他管理员重新启用。')) {
+        return
+      }
+    }
+    patchUserActiveMutation.mutate({ userId: user.id, is_active: !user.is_active })
   }
 
   // 删除用户
@@ -327,9 +369,15 @@ const Permissions = () => {
       if (roleFilter !== 'all' && user.role !== roleFilter) {
         return false
       }
+      if (statusFilter === 'enabled' && !user.is_active) {
+        return false
+      }
+      if (statusFilter === 'disabled' && user.is_active) {
+        return false
+      }
       return true
     })
-  }, [users, searchKeyword, roleFilter])
+  }, [users, searchKeyword, roleFilter, statusFilter])
 
   if (usersLoading) return <div className="loading">加载中...</div>
 
@@ -371,6 +419,20 @@ const Permissions = () => {
                 <option value="finance">财务</option>
                 <option value="readonly">只读</option>
               </select>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                style={{
+                  padding: '8px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '4px',
+                  fontSize: '14px',
+                }}
+              >
+                <option value="enabled">启用</option>
+                <option value="disabled">停用</option>
+                <option value="all">全部状态</option>
+              </select>
               <button className="btn btn-primary" onClick={() => setShowAddUserModal(true)}>
                 新增子管理员
               </button>
@@ -402,9 +464,10 @@ const Permissions = () => {
                 filteredUsers.map((user) => {
                   const roleInfo = roleMap[user.role] || { name: user.role, class: '' }
                   const isAdmin = user.role === 'admin'
+                  const rowInactive = !user.is_active
                   const permissionSummary = isAdmin ? { granted: modules.length, total: modules.length, text: '全部授权' } : getUserPermissionSummary(user.id)
                   return (
-                    <tr key={user.id}>
+                    <tr key={user.id} className={rowInactive ? 'user-row-inactive' : undefined}>
                       <td>{user.id}</td>
                       <td>{user.username}</td>
                       <td>{user.real_name || '-'}</td>
@@ -412,9 +475,21 @@ const Permissions = () => {
                         <span className={`role-badge ${roleInfo.class}`}>{roleInfo.name}</span>
                       </td>
                       <td>
-                        <span className={`status-badge ${user.is_active ? 'status-active' : 'status-inactive'}`}>
-                          {user.is_active ? '启用' : '禁用'}
-                        </span>
+                        {isAdmin ? (
+                          <span className="status-badge status-active" title="系统管理员不可停用">
+                            启用
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`user-status-toggle ${user.is_active ? 'is-active' : 'is-stopped'}`}
+                            disabled={patchUserActiveMutation.isPending}
+                            onClick={() => handleToggleUserActive(user)}
+                            title={user.is_active ? '点击设为停用（灰显且不可编辑）' : '点击恢复启用'}
+                          >
+                            {user.is_active ? '启用' : '停用'}
+                          </button>
+                        )}
                       </td>
                       <td>
                         <span
@@ -445,8 +520,14 @@ const Permissions = () => {
                         <button
                           className="btn btn-warning btn-sm"
                           onClick={() => handleShowEditUser(user)}
-                          disabled={isAdmin}
-                          title={isAdmin ? '不能编辑管理员' : ''}
+                          disabled={isAdmin || rowInactive}
+                          title={
+                            isAdmin
+                              ? '不能编辑管理员'
+                              : rowInactive
+                                ? '已停用账号不可编辑，请先启用'
+                                : ''
+                          }
                           style={{ marginRight: '5px' }}
                         >
                           编辑
@@ -674,7 +755,7 @@ const EditUserModal = ({ user, onClose, onSave }) => {
             onChange={(e) => setFormData({ ...formData, is_active: e.target.value === 'true' })}
           >
             <option value="true">启用</option>
-            <option value="false">禁用</option>
+            <option value="false">停用</option>
           </select>
         </div>
         <div className="form-actions">

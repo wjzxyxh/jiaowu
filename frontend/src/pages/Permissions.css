@@ -106,6 +106,53 @@
   background: #f8f9fa;
 }
 
+/* 已停用账号整行灰显 */
+.users-table tr.user-row-inactive {
+  color: #888;
+  background: #f3f4f6;
+}
+
+.users-table tr.user-row-inactive:hover {
+  background: #e8eaed;
+}
+
+.users-table tr.user-row-inactive .role-badge {
+  opacity: 0.88;
+}
+
+/* 列表内状态切换（启用 / 停用） */
+.user-status-toggle {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: filter 0.15s, opacity 0.15s;
+}
+
+.user-status-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.user-status-toggle.is-active {
+  background: #d4edda;
+  color: #155724;
+  border-color: #c3e6cb;
+}
+
+.user-status-toggle.is-stopped {
+  background: #f8d7da;
+  color: #721c24;
+  border-color: #f5c6cb;
+}
+
+.user-status-toggle:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
 .role-badge {
   display: inline-block;
   padding: 4px 12px;

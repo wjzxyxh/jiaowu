@@ -26,7 +26,7 @@ from services import (
 from config import Config
 import os
 from datetime import datetime, date, timedelta
-from sqlalchemy import func, extract
+from sqlalchemy import func, extract, or_
 from sqlalchemy.orm import joinedload
 import calendar
 import io
@@ -196,7 +196,10 @@ def _compute_finance_result(month):
 
         # 获取教师课程成本配置
 
-        teacher_costs = TeacherCourseCost.query.filter_by(teacher_id=teacher_id).all()
+        teacher_costs = TeacherCourseCost.query.filter(
+            TeacherCourseCost.teacher_id == teacher_id,
+            or_(TeacherCourseCost.status == '启用', TeacherCourseCost.status.is_(None)),
+        ).all()
 
         cost_map = {cost.course_id: cost.cost_per_class for cost in teacher_costs}
 

@@ -116,15 +116,16 @@ def update_class_hours_stats(student_id, month=None, course_id=None):
 
         actual_hours = 0
         for course_record in course_records:
-            if course_record.status == '正常':
+            st = (course_record.status or '').strip()
+            if st == '正常' or st == '':
                 actual_hours += 1
-            elif course_record.status == '请假':
+            elif st == '请假':
                 actual_hours += 0  # 请假不计入实际课时
-            elif course_record.status == '跑空':
+            elif st == '跑空':
                 actual_hours += 0.5
             else:
-                # 记录未知状态的课程（调试用）
-                print(f"警告: 未知课程状态 '{course_record.status}' 在学生 {student_id} 的课程 {cid} 中，日期 {course_record.course_date}")
+                # 非标准状态按正常课计，避免确认上课后课时统计不增加
+                actual_hours += 1
         
         if stats.actual_hours == 0 and actual_hours == 0:
             stats.actual_hours = stats.original_hours

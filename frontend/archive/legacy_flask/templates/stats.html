@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学生课时 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>学生课时</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="closeWindow()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar">
+                <input type="month" id="stats-month" value="" onchange="loadStats()">
+                <select id="stats-student-filter" style="margin-left: 10px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="loadStats()">
+                    <option value="">全部学生</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportStats()" style="margin-left: 10px;">导出Excel</button>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>姓名</th>
+                        <th>课程名称</th>
+                        <th>当月课时</th>
+                        <th>上月累计课时</th>
+                        <th>本月累计课时</th>
+                        <th>剩余课时</th>
+                        <th>当月上课日期(时段)</th>
+                    </tr>
+                </thead>
+                <tbody id="stats-table-body"></tbody>
+            </table>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 关闭窗口函数
+        function closeWindow() {
+            // 尝试关闭窗口（仅当通过 window.open() 打开时有效）
+            if (window.opener) {
+                window.close();
+            } else {
+                // 如果不是通过 window.open() 打开的，返回首页
+                window.location.href = '/';
+            }
+        }
+
+        // 导出课时统计
+        function exportStats() {
+            const month = document.getElementById('stats-month').value;
+            const studentId = document.getElementById('stats-student-filter').value;
+            let url = `/api/export/stats?month=${month}`;
+            if (studentId) url += `&student_id=${studentId}`;
+            window.open(url, '_blank');
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            document.getElementById('stats-month').value = currentMonth;
+            // loadStats 会自动加载学生列表
+            loadStats();
+        });
+    </script>
+</body>
+</html>
+

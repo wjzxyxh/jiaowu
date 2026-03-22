@@ -551,6 +551,13 @@ def upgrade_teacher_course_cost_table():
                     conn.execute(text('ALTER TABLE teacher_course_costs ADD COLUMN end_date DATE'))
                 print('已为教师课程成本表添加end_date字段')
             
+            columns = [col['name'] for col in inspector.get_columns('teacher_course_costs')]
+            if 'status' not in columns:
+                with db.engine.begin() as conn:
+                    conn.execute(text("ALTER TABLE teacher_course_costs ADD COLUMN status VARCHAR(20)"))
+                    conn.execute(text("UPDATE teacher_course_costs SET status = '启用' WHERE status IS NULL OR status = ''"))
+                print('已为教师课程成本表添加 status 字段（启用/停用）')
+            
             # 删除旧的唯一约束（如果存在）
             # 注意：MySQL不支持直接删除唯一约束，需要删除索引
             # 这里只处理SQLite的情况，MySQL的约束管理更复杂，建议手动处理
@@ -568,6 +575,7 @@ def upgrade_teacher_course_cost_table():
                                     course_id INTEGER NOT NULL,
                                     course_name VARCHAR(50) NOT NULL,
                                     cost_per_class FLOAT NOT NULL,
+                                    status VARCHAR(20) DEFAULT '启用',
                                     start_date DATE,
                                     end_date DATE,
                                     created_at DATETIME,
@@ -578,8 +586,8 @@ def upgrade_teacher_course_cost_table():
                             '''))
                             conn.execute(text('''
                                 INSERT INTO teacher_course_costs_new 
-                                (id, teacher_id, teacher_name, course_id, course_name, cost_per_class, start_date, end_date, created_at, updated_at)
-                                SELECT id, teacher_id, teacher_name, course_id, course_name, cost_per_class, NULL, NULL, created_at, updated_at
+                                (id, teacher_id, teacher_name, course_id, course_name, cost_per_class, status, start_date, end_date, created_at, updated_at)
+                                SELECT id, teacher_id, teacher_name, course_id, course_name, cost_per_class, '启用', start_date, end_date, created_at, updated_at
                                 FROM teacher_course_costs
                             '''))
                             conn.execute(text('DROP TABLE teacher_course_costs'))

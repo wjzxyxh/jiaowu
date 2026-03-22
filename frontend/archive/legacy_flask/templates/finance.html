@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>财务统计 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .finance-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .finance-card {
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .finance-card h4 {
+            margin: 0 0 10px 0;
+            color: #666;
+            font-size: 14px;
+            font-weight: normal;
+        }
+        .finance-card .value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+        .finance-card.income .value {
+            color: #28a745;
+        }
+        .finance-card.cost .value {
+            color: #dc3545;
+        }
+        .finance-card.profit .value {
+            color: #007bff;
+        }
+        .finance-section {
+            margin-bottom: 30px;
+        }
+        .finance-section h3 {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #007bff;
+            color: #333;
+        }
+        .cost-table, .profit-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .cost-table th, .profit-table th {
+            background: #f8f9fa;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+        }
+        .cost-table td, .profit-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        .cost-table tr:hover, .profit-table tr:hover {
+            background: #f8f9fa;
+        }
+        .cost-table .amount, .profit-table .amount {
+            text-align: left;
+            font-weight: 500;
+        }
+        .cost-table .total-row {
+            background: #e9ecef;
+            font-weight: bold;
+        }
+        .profit-table .total-row {
+            background: #d4edda;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .teacher-cost-detail {
+            margin-top: 15px;
+        }
+        .teacher-cost-item {
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .teacher-cost-item:last-child {
+            border-bottom: none;
+        }
+        .teacher-cost-item span {
+            display: inline-block;
+            margin-right: 15px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: inline-block;
+            width: 120px;
+            margin-right: 10px;
+        }
+        .form-group input {
+            width: 200px;
+            padding: 6px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .btn-save {
+            background: #007bff;
+            color: #fff;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .btn-save:hover {
+            background: #0056b3;
+        }
+        /* 标签页样式 */
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            border-bottom: 2px solid #dee2e6;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab-button:hover {
+            color: #007bff;
+            background: #f8f9fa;
+        }
+        .tab-button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+            font-weight: 600;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        /* 收入明细样式 */
+        .revenue-detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            background: #fff;
+        }
+        .revenue-detail-table th {
+            background: #e9ecef;
+            padding: 8px;
+            text-align: left;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid #dee2e6;
+        }
+        .revenue-detail-table td {
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            font-size: 13px;
+        }
+        .revenue-detail-table tr:hover {
+            background: #f8f9fa;
+        }
+        .revenue-detail-table .amount {
+            text-align: left;
+        }
+        .revenue-detail-table .total-row {
+            background: #d4edda;
+            font-weight: bold;
+        }
+        .revenue-detail-section {
+            margin-bottom: 15px;
+        }
+        .revenue-detail-section h4 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>财务统计</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            <div class="toolbar" style="display: flex; align-items: center; gap: 15px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-weight: normal; margin: 0;">查看方式：</label>
+                    <select id="finance-view-mode" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" onchange="switchFinanceViewMode()">
+                        <option value="month">月份</option>
+                        <option value="year">年份</option>
+                    </select>
+                </div>
+                <div id="month-selector" style="display: flex; align-items: center; gap: 10px;">
+                    <label style="font-weight: normal; margin: 0;">选择月份：</label>
+                    <input type="month" id="finance-month" value="" onchange="loadFinance()">
+                </div>
+                <div id="year-selector" style="display: none; align-items: center; gap: 10px;">
+                    <label style="font-weight: normal; margin: 0;">选择年份：</label>
+                    <input type="number" id="finance-year" value="" min="2020" max="2099" style="width: 120px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" onchange="loadFinance()">
+                </div>
+            </div>
+
+            <!-- 标签页切换 -->
+            <div class="tab-container">
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchTab('overview', this)">总览</button>
+                    <button class="tab-button" onclick="switchTab('cost', this)">成本</button>
+                    <button class="tab-button" onclick="switchTab('salary', this)">工资</button>
+                    <button class="tab-button" onclick="switchTab('profit', this)">利润</button>
+                </div>
+
+                <!-- 总览页面 -->
+                <div id="overview-tab" class="tab-content active">
+                    <!-- 财务概览 -->
+                    <div class="finance-overview">
+                        <div class="finance-card income">
+                            <h4 id="revenue-label">当月收入</h4>
+                            <div class="value" id="monthly-revenue">0.00</div>
+                            <div style="font-size: 12px; color: #999; margin-top: 5px;">元</div>
+                        </div>
+                        <div class="finance-card">
+                            <h4>总课耗</h4>
+                            <div class="value" id="total-class-hours">0.00</div>
+                            <div style="font-size: 12px; color: #999; margin-top: 5px;">课时</div>
+                        </div>
+                        <div class="finance-card cost">
+                            <h4>总成本</h4>
+                            <div class="value" id="total-cost">0.00</div>
+                            <div style="font-size: 12px; color: #999; margin-top: 5px;">元</div>
+                        </div>
+                        <div class="finance-card profit">
+                            <h4 id="profit-label">当月利润</h4>
+                            <div class="value" id="monthly-profit">0.00</div>
+                            <div style="font-size: 12px; color: #999; margin-top: 5px;">元</div>
+                        </div>
+                    </div>
+
+                    <!-- 缴费情况 -->
+                    <div class="finance-section">
+                        <h3>缴费情况</h3>
+                        <div class="finance-overview">
+                            <div class="finance-card">
+                                <h4 id="payment-paid-label">当月缴费</h4>
+                                <div class="value" id="payment-count-paid">0</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 5px;">笔</div>
+                                <div style="font-size: 14px; color: #28a745; margin-top: 5px;" id="payment-amount-paid">0.00 元</div>
+                            </div>
+                            <div class="finance-card">
+                                <h4 id="payment-refund-label">当月退费</h4>
+                                <div class="value" id="payment-count-refund">0</div>
+                                <div style="font-size: 12px; color: #999; margin-top: 5px;">笔</div>
+                                <div style="font-size: 14px; color: #dc3545; margin-top: 5px;" id="payment-amount-refund">0.00 元</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 成本页面 -->
+                <div id="cost-tab" class="tab-content">
+                    <div class="finance-section">
+                        <h3>成本表</h3>
+                <table class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>成本项目</th>
+                            <th>金额（元）</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>&nbsp;&nbsp;兼职老师工资</td>
+                            <td class="amount" id="part-time-salary">0.00</td>
+                            <td>自动计算</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;全职老师工资</td>
+                            <td class="amount" id="full-time-salary">0.00</td>
+                            <td>自动计算</td>
+                        </tr>
+                        <tr>
+                            <td><strong>老师工资</strong></td>
+                            <td class="amount" id="teacher-cost-amount">0.00</td>
+                            <td id="teacher-cost-detail">兼职老师工资 + 全职老师工资</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;房租</td>
+                            <td class="amount">
+                                <input type="number" id="rent" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;水电</td>
+                            <td class="amount">
+                                <input type="number" id="utilities" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td><strong>房租水电小计</strong></td>
+                            <td class="amount" id="rent-utilities-total">0.00</td>
+                            <td>房租 + 水电</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;营销</td>
+                            <td class="amount">
+                                <input type="number" id="marketing-flyer" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;教务</td>
+                            <td class="amount">
+                                <input type="number" id="marketing-labor" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td><strong>营销成本小计</strong></td>
+                            <td class="amount" id="marketing-cost-total">0.00</td>
+                            <td>营销 + 教务</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;打印纸</td>
+                            <td class="amount">
+                                <input type="number" id="other-paper" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td>&nbsp;&nbsp;打印粉</td>
+                            <td class="amount">
+                                <input type="number" id="other-toner" step="0.01" style="width: 150px; text-align: left;" onchange="updateFinanceCosts()">
+                            </td>
+                            <td>手动输入</td>
+                        </tr>
+                        <tr>
+                            <td><strong>其它成本小计</strong></td>
+                            <td class="amount" id="other-cost-total">0.00</td>
+                            <td>打印纸 + 打印粉</td>
+                        </tr>
+                        <tr class="total-row">
+                            <td><strong>成本合计</strong></td>
+                            <td class="amount" id="total-cost-detail">0.00</td>
+                            <td>所有成本项目之和</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                    </div>
+                </div>
+
+                <!-- 工资页面 -->
+                <div id="salary-tab" class="tab-content">
+                    <div class="finance-section">
+                        <h3>老师工资明细</h3>
+                        <div class="teacher-cost-detail" id="teacher-cost-detail-section">
+                            <table class="cost-table">
+                                <thead>
+                                    <tr>
+                                        <th>老师姓名</th>
+                                        <th>底薪</th>
+                                        <th>课时成本</th>
+                                        <th>经验</th>
+                                        <th>激励</th>
+                                        <th>小计</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="teacher-cost-detail-body">
+                                </tbody>
+                                <tfoot>
+                                    <tr class="total-row">
+                                        <td><strong>总计</strong></td>
+                                        <td class="amount" id="total-base-salary">0.00</td>
+                                        <td class="amount" id="total-course-cost">0.00</td>
+                                        <td class="amount" id="total-experience-cost">0.00</td>
+                                        <td class="amount" id="total-incentive">0.00</td>
+                                        <td class="amount" id="total-salary">0.00</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 利润页面 -->
+                <div id="profit-tab" class="tab-content">
+                    <div class="finance-section">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="margin: 0;">利润表</h3>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <label style="font-weight: normal; margin: 0;">计算模式：</label>
+                                <select id="revenue-mode-select" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;" onchange="updateRevenueMode()">
+                                    <option value="课耗模式">课耗模式</option>
+                                    <option value="缴费模式">缴费模式</option>
+                                </select>
+                            </div>
+                        </div>
+                        <table class="profit-table">
+                            <thead>
+                                <tr>
+                                    <th>项目</th>
+                                    <th>金额（元）</th>
+                                    <th>说明</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <strong>营业收入</strong>
+                                        <button id="revenue-detail-toggle" onclick="toggleRevenueDetail()" style="margin-left: 10px; padding: 2px 8px; font-size: 12px; background: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer;">查看明细</button>
+                                    </td>
+                                    <td class="amount" id="revenue-amount">0.00</td>
+                                    <td id="revenue-description">当月课耗 × 学生单价</td>
+                                </tr>
+                                <tr id="revenue-detail-row" style="display: none;">
+                                    <td colspan="3" style="padding: 0;">
+                                        <div id="revenue-detail-content" style="padding: 15px; background: #f8f9fa; border-top: 1px solid #dee2e6;">
+                                            <!-- 明细内容将在这里动态加载 -->
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>营业成本</strong></td>
+                                    <td class="amount" id="cost-amount">0.00</td>
+                                    <td>老师工资 + 房租水电 + 营销成本 + 其它成本</td>
+                                </tr>
+                                <tr class="total-row">
+                                    <td><strong>净利润</strong></td>
+                                    <td class="amount" id="profit-amount">0.00</td>
+                                    <td>营业收入 - 营业成本</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 标签页切换功能
+        function switchTab(tabName, buttonElement) {
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // 移除所有按钮的active状态
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            // 激活对应的按钮
+            if (buttonElement) {
+                buttonElement.classList.add('active');
+            }
+        }
+
+        // 切换查看模式
+        function switchFinanceViewMode() {
+            const viewMode = document.getElementById('finance-view-mode').value;
+            const monthSelector = document.getElementById('month-selector');
+            const yearSelector = document.getElementById('year-selector');
+            
+            if (viewMode === 'month') {
+                monthSelector.style.display = 'flex';
+                yearSelector.style.display = 'none';
+                // 如果没有设置月份，设置为当前月份
+                if (!document.getElementById('finance-month').value) {
+                    const currentMonth = new Date().toISOString().slice(0, 7);
+                    document.getElementById('finance-month').value = currentMonth;
+                }
+            } else {
+                monthSelector.style.display = 'none';
+                yearSelector.style.display = 'flex';
+                // 如果没有设置年份，设置为当前年份
+                if (!document.getElementById('finance-year').value) {
+                    const currentYear = new Date().getFullYear();
+                    document.getElementById('finance-year').value = currentYear;
+                }
+            }
+            loadFinance();
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            const currentYear = new Date().getFullYear();
+            document.getElementById('finance-month').value = currentMonth;
+            document.getElementById('finance-year').value = currentYear;
+            loadFinance();
+        });
+    </script>
+</body>
+</html>

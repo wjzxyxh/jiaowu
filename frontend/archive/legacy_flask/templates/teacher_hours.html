@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>老师课时 - 教务管理系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 16px;
+            color: #666;
+            transition: all 0.3s;
+        }
+        .tab:hover {
+            color: #667eea;
+        }
+        .tab.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+            font-weight: bold;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .data-table th:nth-child(3),
+        .data-table td:nth-child(3) {
+            width: 250px;
+            max-width: 280px;
+        }
+        .data-table {
+            table-layout: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>老师课时</h1>
+        </header>
+
+        <main>
+            <div class="page-header">
+                <button class="btn-back" onclick="window.close()">← 关闭窗口</button>
+            </div>
+            
+            <div class="tabs">
+                <button class="tab" onclick="switchTeacherHoursTab('fulltime')">全职</button>
+                <button class="tab active" onclick="switchTeacherHoursTab('parttime')">兼职</button>
+            </div>
+            
+            <div class="toolbar">
+                <input type="month" id="teacher-hours-month" value="" onchange="loadTeacherHours()">
+                <select id="teacher-hours-filter" style="margin-left: 10px; padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="loadTeacherHours()">
+                    <option value="">全部老师</option>
+                </select>
+                <button class="btn btn-primary" onclick="exportTeacherHours()" style="margin-left: 10px;">导出Excel</button>
+                <button class="btn btn-success" id="batch-settle-btn" onclick="batchSettleTeacherHours(true)" style="margin-left: 10px; padding: 6px 12px; background: #28a745; color: white;">批量确认结算</button>
+                <button class="btn btn-secondary" id="batch-cancel-settle-btn" onclick="batchSettleTeacherHours(false)" style="margin-left: 10px; padding: 6px 12px; background: #6c757d; color: white;">批量取消结算</button>
+            </div>
+            
+            <!-- 全职教师课时 -->
+            <div id="fulltime-tab" class="tab-content">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-teacher-hours" onchange="toggleSelectAllTeacherHours()"></th>
+                            <th>姓名</th>
+                            <th>月份</th>
+                            <th>上课时间</th>
+                            <th>课时</th>
+                            <th>底薪</th>
+                            <th>课时费</th>
+                            <th>经验</th>
+                            <th>激励</th>
+                            <th>总工资</th>
+                            <th>备注</th>
+                            <th>结算状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fulltime-teacher-hours-table-body"></tbody>
+                </table>
+            </div>
+            
+            <!-- 兼职教师课时 -->
+            <div id="parttime-tab" class="tab-content active">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-teacher-hours-parttime" onchange="toggleSelectAllTeacherHours()"></th>
+                            <th>姓名</th>
+                            <th>月份</th>
+                            <th>上课时间</th>
+                            <th>课时</th>
+                            <th>课时费</th>
+                            <th>经验</th>
+                            <th>激励</th>
+                            <th>总工资</th>
+                            <th>备注</th>
+                            <th>结算状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="parttime-teacher-hours-table-body"></tbody>
+                </table>
+            </div>
+        </main>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script>
+        // 确保 currentTab 是全局变量，默认为兼职
+        window.currentTab = 'parttime';
+        
+        // 标签页切换
+        function switchTeacherHoursTab(tab) {
+            window.currentTab = tab;
+            // 隐藏所有标签页内容
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            // 移除所有标签按钮的active类
+            document.querySelectorAll('.tab').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // 显示选中的标签页
+            document.getElementById(tab + '-tab').classList.add('active');
+            event.target.classList.add('active');
+            
+            // 清空并重新加载老师筛选列表
+            const teacherFilter = document.getElementById('teacher-hours-filter');
+            if (teacherFilter) {
+                teacherFilter.innerHTML = '<option value="">全部老师</option>';
+            }
+            
+            // 加载对应数据
+            loadTeacherHours();
+        }
+        
+        // 导出教师课时统计
+        function exportTeacherHours() {
+            const month = document.getElementById('teacher-hours-month').value;
+            const teacherId = document.getElementById('teacher-hours-filter').value;
+            let url = `/api/export/teacher-hours?month=${month}`;
+            if (teacherId) url += `&teacher_id=${teacherId}`;
+            window.open(url, '_blank');
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentMonth = new Date().toISOString().slice(0, 7);
+            document.getElementById('teacher-hours-month').value = currentMonth;
+            // 初始化批量按钮状态
+            if (typeof updateBatchSettleButtons === 'function') {
+                updateBatchSettleButtons();
+            }
+            loadTeacherHours();
+        });
+    </script>
+</body>
+</html>
+

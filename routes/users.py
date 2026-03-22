@@ -151,7 +151,9 @@ def update_user(user_id):
 
         
 
-        data = request.json
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            data = {}
 
         if 'password' in data and data['password']:
             # 验证密码长度（bcrypt限制72字节）
@@ -171,8 +173,16 @@ def update_user(user_id):
             user.real_name = data.get('real_name', '').strip()
 
         if 'is_active' in data:
-
-            user.is_active = data['is_active']
+            raw_active = data['is_active']
+            if isinstance(raw_active, bool):
+                new_active = raw_active
+            elif isinstance(raw_active, str):
+                new_active = raw_active.strip().lower() in ('1', 'true', 'yes', '启用')
+            else:
+                new_active = bool(raw_active)
+            if user.role == 'admin' and not new_active:
+                return jsonify({'error': '不能停用系统管理员账号'}), 400
+            user.is_active = new_active
 
         
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { usePermissions } from '../hooks/usePermissions'
 import { courseManageService } from '../services/courseManageService'
@@ -8,16 +8,30 @@ import api from '../services/api'
 import Modal from '../components/Modal'
 import './CoursesManage.css'
 
+/** 课程成本相关 API 错误文案（兼容 axios 拦截器抛出的对象） */
+function teacherCostApiErrorMessage(err) {
+  if (err == null) return '未知错误'
+  if (typeof err === 'string') return err
+  return err.error || err.message || err?.response?.data?.error || '未知错误'
+}
+
 const CoursesManage = () => {
   const { hasFunctionPermission } = usePermissions()
   const [activeTab, setActiveTab] = useState('courses')
   const [showModal, setShowModal] = useState(false)
   const [showHistoryModal, setShowHistoryModal] = useState(false)
-  const [showChipDetailModal, setShowChipDetailModal] = useState(false)
-  const [selectedChipCost, setSelectedChipCost] = useState(null)
   const [editingItem, setEditingItem] = useState(null)
   const [historyData, setHistoryData] = useState([])
   const queryClient = useQueryClient()
+
+  /** 课程成本写入库后，刷新依赖课酬/财务统计的页面数据 */
+  const invalidateTeacherCostRelated = () => {
+    queryClient.invalidateQueries({ queryKey: ['teacher-course-costs'] })
+    queryClient.invalidateQueries({ queryKey: ['teacher-hours'] })
+    queryClient.invalidateQueries({ queryKey: ['finance'] })
+    queryClient.invalidateQueries({ queryKey: ['stats'] })
+    queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] })
+  }
 
   // 课程管理数据
   const { data: courses = [], isLoading: coursesLoading } = useQuery({
@@ -56,6 +70,139 @@ const CoursesManage = () => {
   })
 
   const students = studentsData?.students || studentsData || []
+
+  // 课程成本列表：筛选条件（科目、课程类型、教师、状态；状态默认「启用」）
+  const [costListFilters, setCostListFilters] = useState({
+    subject: '',
+    courseType: '',
+    teacher: '',
+    status: '启用',
+  })
+
+  const teacherCostRows = useMemo(() => {
+    return teacherCosts.map((tc) => {
+      const course = courses.find((c) => c.id === tc.course_id)
+      const status = tc.status === '停用' ? '停用' : '启用'
+      return {
+        ...tc,
+        status,
+        subject: course?.subject || '未分类',
+        courseType: course?.name || tc.course_name || '',
+      }
+    })
+  }, [teacherCosts, courses])
+
+  const isTeacherCostStopped = (line) => line.status === '停用'
+
+  const patchTeacherCostStatusMutation = useMutation({
+    mutationFn: async ({ id, status }) => {
+      return api.put(`/teacher-course-costs/${id}`, { status })
+    },
+    onSuccess: () => {
+      invalidateTeacherCostRelated()
+    },
+    onError: (error) => {
+      alert('更新状态失败：' + teacherCostApiErrorMessage(error))
+    },
+  })
+
+  const enabledTeachersSorted = useMemo(() => {
+    return [...teachers].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'zh-CN'))
+  }, [teachers])
+
+  const costsByTeacherId = useMemo(() => {
+    const m = {}
+    teacherCostRows.forEach((r) => {
+      if (!m[r.teacher_id]) m[r.teacher_id] = []
+      m[r.teacher_id].push(r)
+    })
+    return m
+  }, [teacherCostRows])
+
+  const costFilterOptions = useMemo(() => {
+    const subjects = new Set()
+    const courseTypes = new Set()
+    teacherCostRows.forEach((r) => {
+      subjects.add(r.subject)
+      courseTypes.add(r.courseType)
+    })
+    courses
+      .filter((c) => c.status === '启用')
+      .forEach((c) => {
+        if (c.subject) subjects.add(c.subject)
+        if (c.name) courseTypes.add(c.name)
+      })
+    return {
+      subjects: Array.from(subjects).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+      courseTypes: Array.from(courseTypes).sort((a, b) => a.localeCompare(b, 'zh-CN')),
+    }
+  }, [teacherCostRows, courses])
+
+  /** 每位启用教师一块；成本行经科目/课程/状态筛选；无匹配成本时整块可隐藏（仍保留无成本教师） */
+  const teacherCostTableBlocks = useMemo(() => {
+    const hasLineDimFilter = Boolean(
+      costListFilters.subject ||
+        costListFilters.courseType ||
+        costListFilters.status !== '',
+    )
+
+    const lineSort = (a, b) => {
+      const bySub = a.subject.localeCompare(b.subject, 'zh-CN')
+      if (bySub !== 0) return bySub
+      return a.courseType.localeCompare(b.courseType, 'zh-CN')
+    }
+
+    const filterLines = (lines) =>
+      lines.filter((r) => {
+        if (costListFilters.subject && r.subject !== costListFilters.subject) return false
+        if (costListFilters.courseType && r.courseType !== costListFilters.courseType) return false
+        if (costListFilters.status !== '') {
+          const st = r.status === '停用' ? '停用' : '启用'
+          if (st !== costListFilters.status) return false
+        }
+        return true
+      })
+
+    const blocks = []
+
+    enabledTeachersSorted.forEach((t) => {
+      if (costListFilters.teacher && t.name !== costListFilters.teacher) return
+      const allLines = costsByTeacherId[t.id] || []
+      const lines = filterLines(allLines).sort(lineSort)
+      if (lines.length === 0 && hasLineDimFilter && allLines.length > 0) return
+      blocks.push({ kind: 'teacher', teacher: t, lines })
+    })
+
+    const listedIds = new Set(enabledTeachersSorted.map((t) => t.id))
+    const orphanById = {}
+    teacherCostRows.forEach((r) => {
+      if (listedIds.has(r.teacher_id)) return
+      if (!orphanById[r.teacher_id]) orphanById[r.teacher_id] = []
+      orphanById[r.teacher_id].push(r)
+    })
+    Object.keys(orphanById)
+      .map((id) => Number(id))
+      .sort((a, b) => {
+        const an = orphanById[a][0]?.teacher_name || ''
+        const bn = orphanById[b][0]?.teacher_name || ''
+        return an.localeCompare(bn, 'zh-CN')
+      })
+      .forEach((tid) => {
+        const allLines = orphanById[tid]
+        const name = allLines[0]?.teacher_name || `教师#${tid}`
+        if (costListFilters.teacher && name !== costListFilters.teacher) return
+        const lines = filterLines(allLines).sort(lineSort)
+        if (lines.length === 0 && hasLineDimFilter && allLines.length > 0) return
+        blocks.push({ kind: 'orphan', teacherId: tid, teacherName: name, lines })
+      })
+
+    return blocks
+  }, [enabledTeachersSorted, costsByTeacherId, teacherCostRows, costListFilters])
+
+  const openNewTeacherCostForTeacher = (teacher) => {
+    setEditingItem({ type: 'teacher-cost', data: { teacher_id: teacher.id } })
+    setShowModal(true)
+  }
 
   // ==================== 课程管理 ====================
 
@@ -144,11 +291,11 @@ const CoursesManage = () => {
       return api.delete(`/teacher-course-costs/${id}`)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['teacher-course-costs'])
+      invalidateTeacherCostRelated()
       alert('删除成功')
     },
     onError: (error) => {
-      alert('删除失败：' + (error?.response?.data?.error || error?.message))
+      alert('删除失败：' + teacherCostApiErrorMessage(error))
     },
   })
 
@@ -157,13 +304,13 @@ const CoursesManage = () => {
       return api.post('/teacher-course-costs', data)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['teacher-course-costs'])
+      invalidateTeacherCostRelated()
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
     },
     onError: (error) => {
-      alert('保存失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('保存失败：' + teacherCostApiErrorMessage(error))
     },
   })
 
@@ -172,13 +319,13 @@ const CoursesManage = () => {
       return api.put(`/teacher-course-costs/${id}`, data)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['teacher-course-costs'])
+      invalidateTeacherCostRelated()
       setShowModal(false)
       setEditingItem(null)
       alert('保存成功！')
     },
     onError: (error) => {
-      alert('保存失败：' + (error?.response?.data?.error || error?.message || '未知错误'))
+      alert('保存失败：' + teacherCostApiErrorMessage(error))
     },
   })
 
@@ -199,7 +346,7 @@ const CoursesManage = () => {
       setHistoryData(data)
       setShowHistoryModal(true)
     } catch (error) {
-      alert('获取操作记录失败：' + (error?.response?.data?.error || error?.message))
+      alert('获取操作记录失败：' + teacherCostApiErrorMessage(error))
     }
   }
 
@@ -212,15 +359,17 @@ const CoursesManage = () => {
     const teacherOption = teacherSelect.options[teacherSelect.selectedIndex]
     const courseOption = courseSelect.options[courseSelect.selectedIndex]
 
+    const statusRaw = formData.get('cost_record_status')
     const data = {
       teacher_id: parseInt(formData.get('teacher_id')),
       teacher_name: teacherOption.getAttribute('data-name') || teacherOption.textContent.split(' (')[0],
       course_id: parseInt(formData.get('course_id')),
       course_name: courseOption.getAttribute('data-name') || courseOption.textContent.split(' (')[0],
       cost_per_class: parseFloat(formData.get('cost_per_class')),
+      status: statusRaw === '停用' ? '停用' : '启用',
     }
 
-    if (editingItem?.type === 'teacher-cost' && editingItem.data) {
+    if (editingItem?.type === 'teacher-cost' && editingItem.data?.id) {
       updateTeacherCostMutation.mutate({ id: editingItem.data.id, data })
     } else {
       createTeacherCostMutation.mutate(data)
@@ -289,7 +438,7 @@ const CoursesManage = () => {
       setHistoryData(data)
       setShowHistoryModal(true)
     } catch (error) {
-      alert('获取操作记录失败：' + (error?.response?.data?.error || error?.message))
+      alert('获取操作记录失败：' + teacherCostApiErrorMessage(error))
     }
   }
 
@@ -457,98 +606,203 @@ const CoursesManage = () => {
         </div>
       )}
 
-      {/* 课程成本标签页 */}
+      {/* 课程成本标签页：每行以教师为分组；每位启用教师均出现，多条成本拆多行（教师列合并） */}
       {activeTab === 'teacher-costs' && (
         <div className="tab-content active">
-          {(() => {
-            // 按科目分组课程
-            const subjectMap = {}
-            const enabledCourses = courses.filter(c => c.status === '启用')
-            enabledCourses.forEach(course => {
-              const subject = course.subject || '未分类'
-              if (!subjectMap[subject]) {
-                subjectMap[subject] = []
-              }
-              subjectMap[subject].push(course)
-            })
-
-            // 为每个课程匹配教师成本
-            const costByCourseId = {}
-            teacherCosts.forEach(tc => {
-              if (!costByCourseId[tc.course_id]) {
-                costByCourseId[tc.course_id] = []
-              }
-              costByCourseId[tc.course_id].push(tc)
-            })
-
-            const subjects = Object.keys(subjectMap).sort()
-
-            if (subjects.length === 0) {
-              return (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                  暂无课程数据，请先在"课程信息"中添加课程
-                </div>
-              )
-            }
-
-            // 构建表格行：每个课程一行，教师以标签形式展示
-            const tableRows = []
-            subjects.forEach(subject => {
-              const subjectCourses = subjectMap[subject]
-              subjectCourses.forEach((course, idx) => {
-                tableRows.push({
-                  subject,
-                  course,
-                  teachers: costByCourseId[course.id] || [],
-                  isFirstOfSubject: idx === 0,
-                  subjectRowSpan: subjectCourses.length,
-                })
-              })
-            })
-
-            return (
-              <div className="table-wrapper">
-                <table className="data-table cost-grouped-table">
-                  <thead>
-                    <tr>
-                      <th>科目</th>
-                      <th>课程</th>
-                      <th>授课教师 / 每次课成本</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tableRows.map((row, index) => (
-                      <tr key={index} className={`${row.isFirstOfSubject ? 'subject-first-row' : ''} course-first-row`}>
-                        {row.isFirstOfSubject && (
-                          <td rowSpan={row.subjectRowSpan} className="subject-cell">
-                            <span className="subject-tag">{row.subject}</span>
+          <div className="cost-list-toolbar">
+            <div className="cost-filter-bar">
+              <label className="cost-filter-item">
+                <span className="cost-filter-label">教师</span>
+                <select
+                  value={costListFilters.teacher}
+                  onChange={(e) => setCostListFilters((f) => ({ ...f, teacher: e.target.value }))}
+                >
+                  <option value="">全部教师</option>
+                  {enabledTeachersSorted.map((t) => (
+                    <option key={t.id} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="cost-filter-item">
+                <span className="cost-filter-label">科目</span>
+                <select
+                  value={costListFilters.subject}
+                  onChange={(e) => setCostListFilters((f) => ({ ...f, subject: e.target.value }))}
+                >
+                  <option value="">全部科目</option>
+                  {costFilterOptions.subjects.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="cost-filter-item">
+                <span className="cost-filter-label">课程类型</span>
+                <select
+                  value={costListFilters.courseType}
+                  onChange={(e) => setCostListFilters((f) => ({ ...f, courseType: e.target.value }))}
+                >
+                  <option value="">全部课程类型</option>
+                  {costFilterOptions.courseTypes.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="cost-filter-item">
+                <span className="cost-filter-label">状态</span>
+                <select
+                  value={costListFilters.status}
+                  onChange={(e) => setCostListFilters((f) => ({ ...f, status: e.target.value }))}
+                >
+                  <option value="启用">启用</option>
+                  <option value="停用">停用</option>
+                  <option value="">全部</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="btn btn-secondary cost-filter-clear"
+                onClick={() =>
+                  setCostListFilters({ subject: '', courseType: '', teacher: '', status: '启用' })
+                }
+              >
+                清除筛选
+              </button>
+            </div>
+          </div>
+          <div className="table-wrapper">
+            <table className="data-table cost-teacher-rows-table">
+              <thead>
+                <tr>
+                  <th>教师</th>
+                  <th>科目</th>
+                  <th>课程类型</th>
+                  <th style={{ textAlign: 'right' }}>每次课成本</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                {enabledTeachersSorted.length === 0 && teacherCostTableBlocks.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: '#999' }}>
+                      暂无启用教师，请先在教师管理中维护并启用教师
+                    </td>
+                  </tr>
+                ) : teacherCostTableBlocks.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" style={{ textAlign: 'center', padding: '32px', color: '#999' }}>
+                      当前筛选下无数据，请调整筛选或点击「清除筛选」
+                    </td>
+                  </tr>
+                ) : (
+                  teacherCostTableBlocks.flatMap((block) => {
+                    const keyBase = block.kind === 'teacher' ? `t-${block.teacher.id}` : `o-${block.teacherId}`
+                    if (block.lines.length === 0) {
+                      return [
+                        <tr key={`${keyBase}-empty`}>
+                          <td className="teacher-name-cell">
+                            {block.kind === 'teacher' ? (
+                              block.teacher.name
+                            ) : (
+                              <>
+                                {block.teacherName}
+                                <span className="cost-orphan-hint">（非启用教师，仅历史成本）</span>
+                              </>
+                            )}
+                          </td>
+                          <td colSpan="4" className="cost-no-lines-cell">
+                            暂无课程成本
+                          </td>
+                          <td className="action-cell">
+                            {block.kind === 'teacher' && hasFunctionPermission('courses_manage', 'edit') && (
+                              <button
+                                type="button"
+                                className="btn btn-primary"
+                                style={{ padding: '4px 12px', fontSize: 13 }}
+                                onClick={() => openNewTeacherCostForTeacher(block.teacher)}
+                              >
+                                新增成本
+                              </button>
+                            )}
+                          </td>
+                        </tr>,
+                      ]
+                    }
+                    return block.lines.map((line, idx) => (
+                      <tr key={line.id} className={isTeacherCostStopped(line) ? 'cost-row-readonly' : undefined}>
+                        {idx === 0 && (
+                          <td rowSpan={block.lines.length} className="teacher-name-cell">
+                            {block.kind === 'teacher' ? (
+                              block.teacher.name
+                            ) : (
+                              <>
+                                {block.teacherName}
+                                <span className="cost-orphan-hint">（非启用教师）</span>
+                              </>
+                            )}
                           </td>
                         )}
-                        <td className="course-name-cell">{row.course.name}</td>
-                        <td className="teachers-chips-cell">
-                          {row.teachers.length > 0 ? (
-                            <div className="teacher-chips">
-                              {row.teachers.map(tc => (
-                                <div key={tc.id} className="teacher-chip" onClick={() => {
-                                  setSelectedChipCost(tc)
-                                  setShowChipDetailModal(true)
-                                }} title="点击查看详情">
-                                  <span className="chip-name">{tc.teacher_name}</span>
-                                  <span className="chip-cost">¥{tc.cost_per_class.toFixed(2)}</span>
-                                </div>
-                              ))}
-                            </div>
+                        <td>{line.subject}</td>
+                        <td>{line.courseType}</td>
+                        <td
+                          className="cost-per-class-cell"
+                          style={{ textAlign: 'right', color: '#e67e22', fontWeight: 600 }}
+                        >
+                          ¥{Number(line.cost_per_class).toFixed(2)}
+                        </td>
+                        <td className="cost-status-cell">
+                          {hasFunctionPermission('courses_manage', 'edit') ? (
+                            <button
+                              type="button"
+                              className={`cost-status-toggle ${isTeacherCostStopped(line) ? 'is-stopped' : 'is-active'}`}
+                              disabled={patchTeacherCostStatusMutation.isPending}
+                              onClick={() =>
+                                patchTeacherCostStatusMutation.mutate({
+                                  id: line.id,
+                                  status: isTeacherCostStopped(line) ? '启用' : '停用',
+                                })
+                              }
+                              title={isTeacherCostStopped(line) ? '点击恢复为启用' : '点击设为停用（灰显且不可编辑）'}
+                            >
+                              {line.status}
+                            </button>
                           ) : (
-                            <span style={{ color: '#bbb', fontSize: '13px' }}>暂无教师</span>
+                            <span className="cost-status-text">{line.status}</span>
                           )}
                         </td>
+                        <td className="action-cell" style={{ whiteSpace: 'nowrap' }}>
+                          {hasFunctionPermission('courses_manage', 'edit') && !isTeacherCostStopped(line) && (
+                            <button type="button" className="btn btn-warning" onClick={() => handleEditTeacherCost(line)}>
+                              编辑
+                            </button>
+                          )}
+                          {hasFunctionPermission('courses_manage', 'delete') && !isTeacherCostStopped(line) && (
+                            <button type="button" className="btn btn-danger" onClick={() => handleDeleteTeacherCost(line.id)}>
+                              删除
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="btn btn-info"
+                            style={{ background: '#17a2b8', color: 'white' }}
+                            onClick={() => handleShowTeacherCostHistory(line.id)}
+                          >
+                            操作记录
+                          </button>
+                        </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )
-          })()}
+                    ))
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
@@ -669,8 +923,15 @@ const CoursesManage = () => {
 
       {/* 课程成本模态框 */}
       {showModal && editingItem?.type === 'teacher-cost' && (
-        <Modal isOpen={showModal} onClose={handleCloseModal} title={editingItem.data ? '编辑课程成本' : '新增课程成本'}>
-          <form onSubmit={handleSubmitTeacherCost}>
+        <Modal
+          isOpen={showModal}
+          onClose={handleCloseModal}
+          title={editingItem.data?.id ? '编辑课程成本' : '新增课程成本'}
+        >
+          <form
+            key={`tc-form-${editingItem.data?.id ?? 'new'}-${editingItem.data?.teacher_id ?? ''}-${editingItem.data?.course_id ?? ''}-${editingItem.data?.status ?? ''}`}
+            onSubmit={handleSubmitTeacherCost}
+          >
             <div className="form-group">
               <label>教师 *</label>
               <select name="teacher_id" required defaultValue={editingItem.data?.teacher_id || ''}>
@@ -697,7 +958,25 @@ const CoursesManage = () => {
             </div>
             <div className="form-group">
               <label>每次课成本 *</label>
-              <input type="number" name="cost_per_class" step="0.01" defaultValue={editingItem.data != null ? editingItem.data.cost_per_class : 145} required min="0" placeholder="请输入每次课的成本" />
+              <input
+                type="number"
+                name="cost_per_class"
+                step="0.01"
+                defaultValue={editingItem.data?.cost_per_class != null ? editingItem.data.cost_per_class : 145}
+                required
+                min="0"
+                placeholder="请输入每次课的成本"
+              />
+            </div>
+            <div className="form-group">
+              <label>状态</label>
+              <select
+                name="cost_record_status"
+                defaultValue={editingItem.data?.status === '停用' ? '停用' : '启用'}
+              >
+                <option value="启用">启用</option>
+                <option value="停用">停用</option>
+              </select>
             </div>
             <div className="form-actions">
               <button type="button" className="btn" onClick={handleCloseModal}>
@@ -734,33 +1013,6 @@ const CoursesManage = () => {
         />
       )}
 
-      {/* 教师成本详情弹窗（双击触发） */}
-      {showChipDetailModal && selectedChipCost && (
-        <Modal isOpen={showChipDetailModal} onClose={() => { setShowChipDetailModal(false); setSelectedChipCost(null) }} title="课程成本详情">
-          <div className="chip-detail-content">
-            <div className="chip-detail-row">
-              <span className="chip-detail-label">教师</span>
-              <span className="chip-detail-value">{selectedChipCost.teacher_name}</span>
-            </div>
-            <div className="chip-detail-row">
-              <span className="chip-detail-label">课程</span>
-              <span className="chip-detail-value">{selectedChipCost.course_name}</span>
-            </div>
-            <div className="chip-detail-row">
-              <span className="chip-detail-label">每次课成本</span>
-              <span className="chip-detail-value" style={{ color: '#e67e22', fontWeight: 600 }}>¥{selectedChipCost.cost_per_class.toFixed(2)}</span>
-            </div>
-          </div>
-          <div className="form-actions" style={{ marginTop: '24px', justifyContent: 'center', gap: '12px' }}>
-            <button className="btn btn-danger" onClick={() => {
-              setShowChipDetailModal(false)
-              handleDeleteTeacherCost(selectedChipCost.id)
-              setSelectedChipCost(null)
-            }}>删除</button>
-            <button className="btn" onClick={() => { setShowChipDetailModal(false); setSelectedChipCost(null) }}>关闭</button>
-          </div>
-        </Modal>
-      )}
     </div>
   )
 }

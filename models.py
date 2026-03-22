@@ -543,6 +543,7 @@ class TeacherCourseCost(db.Model):
     course_id = db.Column(db.Integer, db.ForeignKey('courses.id'), nullable=False, comment='课程ID')
     course_name = db.Column(db.String(50), nullable=False, comment='课程名称')
     cost_per_class = db.Column(db.Float, nullable=False, comment='每次课成本')
+    status = db.Column(db.String(20), nullable=False, default='启用', comment='启用/停用，停用不参与课酬计算且前端禁止编辑')
     start_date = db.Column(db.Date, nullable=True, comment='生效开始日期')
     end_date = db.Column(db.Date, nullable=True, comment='生效结束日期')
     created_at = db.Column(db.DateTime, default=datetime.now)
@@ -559,6 +560,7 @@ class TeacherCourseCost(db.Model):
             'course_id': self.course_id,
             'course_name': self.course_name,
             'cost_per_class': self.cost_per_class,
+            'status': self.status or '启用',
             'created_at': self.created_at.strftime('%Y-%m-%d %H:%M:%S') if self.created_at else None,
             'updated_at': self.updated_at.strftime('%Y-%m-%d %H:%M:%S') if self.updated_at else None
         }

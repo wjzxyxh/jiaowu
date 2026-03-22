@@ -1,0 +1,74 @@
+2026-03-22T14:48:40+08:00 [oss-backup] start pid=1763384 env=/tmp/pycharm_project_231/.oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T064841Z.db
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 290, in <module>
+    raise SystemExit(main())
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 188, in main
+    _sqlite_safe_backup(db_path, local_copy)
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 65, in _sqlite_safe_backup
+    src = sqlite3.connect(f"file:{src_uri}?mode=ro", uri=True)
+sqlite3.OperationalError: unable to open database file
+2026-03-22T14:48:52+08:00 [oss-backup] start pid=1763588 env=/etc/jiaowu/oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T064852Z.db
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 290, in <module>
+    raise SystemExit(main())
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 188, in main
+    _sqlite_safe_backup(db_path, local_copy)
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 65, in _sqlite_safe_backup
+    src = sqlite3.connect(f"file:{src_uri}?mode=ro", uri=True)
+sqlite3.OperationalError: unable to open database file
+2026-03-22T14:49:03+08:00 [oss-backup] start pid=1763769 env=/tmp/pycharm_project_231/.oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T064903Z.db
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 290, in <module>
+    raise SystemExit(main())
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 188, in main
+    _sqlite_safe_backup(db_path, local_copy)
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 65, in _sqlite_safe_backup
+    src = sqlite3.connect(f"file:{src_uri}?mode=ro", uri=True)
+sqlite3.OperationalError: unable to open database file
+2026-03-22T14:49:21+08:00 [oss-backup] start pid=1763925 env=/tmp/pycharm_project_231/.oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T064922Z.db
+上传: jiaowu_primary_20260322T064922Z.db -> oss://your-bucket-name/jiaowu-backups/sqlite/jiaowu_primary_20260322T064922Z.db
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 291, in <module>
+    raise SystemExit(main())
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 279, in main
+    oss2.resumable_upload(bucket, oss_key, str(local_path))
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/resumable.py", line 97, in resumable_upload
+    result = bucket.put_object(key, f, headers=headers, progress_callback=progress_callback)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 858, in put_object
+    resp = self.__do_object('PUT', key, data=data, headers=headers)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 3392, in __do_object
+    return self._do(method, self.bucket_name, key, **kwargs)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 241, in _do
+    raise e
+oss2.exceptions.ServerError: {'status': 403, 'x-oss-request-id': '69BF90F20B05F13833DEE994', 'details': {'Code': 'InvalidAccessKeyId', 'Message': 'The OSS Access Key Id you provided does not exist in our records.', 'RequestId': '69BF90F20B05F13833DEE994', 'HostId': 'your-bucket-name.oss-cn-hangzhou.aliyuncs.com', 'OSSAccessKeyId': 'LTAIxxxxxxxx', 'EC': '0002-00000902', 'RecommendDoc': 'https://api.aliyun.com/troubleshoot?q=0002-00000902'}}
+2026-03-22T14:51:49+08:00 [oss-backup] start pid=1764295 env=/tmp/pycharm_project_231/.oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T065149Z.db
+上传: jiaowu_primary_20260322T065149Z.db -> oss://your-bucket-name/jiaowu-backups/sqlite/jiaowu_primary_20260322T065149Z.db
+Traceback (most recent call last):
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 291, in <module>
+    raise SystemExit(main())
+  File "/tmp/pycharm_project_231/scripts/backup_db_to_oss.py", line 279, in main
+    oss2.resumable_upload(bucket, oss_key, str(local_path))
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/resumable.py", line 97, in resumable_upload
+    result = bucket.put_object(key, f, headers=headers, progress_callback=progress_callback)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 858, in put_object
+    resp = self.__do_object('PUT', key, data=data, headers=headers)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 3392, in __do_object
+    return self._do(method, self.bucket_name, key, **kwargs)
+  File "/usr/local/python3.9/lib/python3.9/site-packages/oss2/api.py", line 241, in _do
+    raise e
+oss2.exceptions.ServerError: {'status': 403, 'x-oss-request-id': '69BF918562131A38341E3693', 'details': {'Code': 'InvalidAccessKeyId', 'Message': 'The OSS Access Key Id you provided does not exist in our records.', 'RequestId': '69BF918562131A38341E3693', 'HostId': 'your-bucket-name.oss-cn-hangzhou.aliyuncs.com', 'OSSAccessKeyId': 'LTAIxxxxxxxx', 'EC': '0002-00000902', 'RecommendDoc': 'https://api.aliyun.com/troubleshoot?q=0002-00000902'}}
+2026-03-22T14:52:11+08:00 [oss-backup] start pid=1764424 env=/etc/jiaowu/oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T065211Z.db
+上传: jiaowu_primary_20260322T065211Z.db -> oss://jwdata/jiaowu-backups/sqlite/jiaowu_primary_20260322T065211Z.db
+全部上传完成。
+2026-03-22T14:52:11+08:00 [oss-backup] exit 0
+2026-03-22T14:53:27+08:00 [oss-backup] start pid=1764650 env=/etc/jiaowu/oss_backup.env
+备份 SQLite（在线 backup）: /tmp/pycharm_project_231/jiaowu.db -> jiaowu_primary_20260322T065327Z.db
+上传: jiaowu_primary_20260322T065327Z.db -> oss://jwdata/jiaowu-backups/sqlite/jiaowu_primary_20260322T065327Z.db
+全部上传完成。
+2026-03-22T14:53:28+08:00 [oss-backup] exit 0

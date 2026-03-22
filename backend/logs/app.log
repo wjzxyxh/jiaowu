@@ -1,0 +1,10 @@
+2026-03-11 20:31:14 - backend.app - INFO - /tmp/pycharm_project_231/backend/utils/logging_config.py:86 - 日志系统初始化完成
+2026-03-11 20:31:16 - backend.app - INFO - /tmp/pycharm_project_231/backend/app.py:98 - 应用初始化完成，配置: development
+2026-03-11 20:34:23 - backend.app - INFO - /tmp/pycharm_project_231/backend/utils/logging_config.py:86 - 日志系统初始化完成
+2026-03-11 20:34:24 - backend.app - INFO - /tmp/pycharm_project_231/backend/app.py:98 - 应用初始化完成，配置: development
+2026-03-11 20:38:12 - backend.app - INFO - /tmp/pycharm_project_231/backend/utils/logging_config.py:86 - 日志系统初始化完成
+2026-03-11 20:38:13 - backend.app - INFO - /tmp/pycharm_project_231/backend/app.py:106 - 应用初始化完成，配置: development
+2026-03-11 20:41:56 - backend.app - INFO - /tmp/pycharm_project_231/backend/utils/logging_config.py:86 - 日志系统初始化完成
+2026-03-11 20:42:03 - backend.app - INFO - /tmp/pycharm_project_231/backend/app.py:106 - 应用初始化完成，配置: development
+2026-03-11 20:45:28 - backend.app - INFO - /tmp/pycharm_project_231/backend/utils/logging_config.py:86 - 日志系统初始化完成
+2026-03-11 20:45:30 - backend.app - INFO - /tmp/pycharm_project_231/backend/app.py:106 - 应用初始化完成，配置: development
